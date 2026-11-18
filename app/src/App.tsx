@@ -72,7 +72,6 @@ function useTheme(theme: Theme) {
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches)
       document.documentElement.classList.toggle('dark', dark)
-      document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
     }
     apply()
     media.addEventListener('change', apply)

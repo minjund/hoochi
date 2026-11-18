@@ -414,6 +414,8 @@ input {
 
 .hw-mine {
   display: grid;
+  /* rows never widen the panel: long texts end in "…" */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 .hw-mine-head {
@@ -429,6 +431,7 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .hw-mine-row[data-off] .hw-mine-go {
   opacity: 0.55;

@@ -1,88 +1,65 @@
-<p align="center"><img src="assets/icon.png" width="112" alt="hookwich 图标"></p>
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="hookwich" />
+</p>
 
 <h1 align="center">hookwich</h1>
 
-<p align="center"><b>在 Claude Code 工作的那一刻，告诉它你想要什么。</b><br>
-屏幕角落的小窗口会用一张图展示 Claude 工作的每个时刻。<br>
-点一个时刻，选择要在那时加入的话、命令或技能就行。</p>
+<p align="center">
+  <b>在编码智能体工作的每个时刻之间，夹进你想要的任何东西。</b><br />
+  一个小窗口，把 Claude Code 和 Codex 工作的每个时刻画成图，让你在任意时刻加入文字、命令或技能。
+</p>
 
-<p align="center"><a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <b>中文</b></p>
+<p align="center">
+  <a href="https://github.com/minjund/hookwich/releases/latest"><img src="https://img.shields.io/github/v/release/minjund/hookwich?label=release&labelColor=333333&color=3fa34d" alt="最新发布" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fa34d?labelColor=333333" alt="MIT 许可证" /></a>
+  <img src="https://img.shields.io/badge/macOS-11%2B%20%C2%B7%20Apple%20silicon%20%26%20Intel-3fa34d?labelColor=333333&logo=apple&logoColor=white" alt="macOS 11 及以上，Apple 芯片与 Intel" />
+  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-3fa34d?labelColor=333333" alt="支持 Claude Code 与 Codex" />
+  <a href="https://github.com/minjund/hookwich/stargazers"><img src="https://img.shields.io/github/stars/minjund/hookwich?labelColor=333333&color=3fa34d&logo=github" alt="GitHub 星标" /></a>
+</p>
+
+<p align="center">
+  <a href="#安装">安装</a> · <a href="#马上试试">马上试试</a> · <a href="#工作原理">工作原理</a> · <a href="#常见问题">常见问题</a> · <a href="https://github.com/minjund/hookwich/releases">发布</a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <b>中文</b>
+</p>
+
+<p align="center">
+  <img src="assets/hero.png" width="920" alt="浅色与深色的 hookwich 窗口：停在某个时刻上显示的钩子，以及我加入的全部内容" />
+</p>
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
 
 ---
 
-## 有什么用？
+Claude Code 或 Codex 工作时，同样的时刻会一再出现：对话开始、你发送消息、准备使用工具、回答结束。
+每个时刻都是一个 **钩子（hook）**，而钩子正是教会智能体你的习惯的方式。可它们藏在大多数人从不打开的 JSON 文件里。
 
-Claude Code 工作时，同样的时刻会一次次出现：对话开始、你发送消息、Claude 使用工具（运行命令、修改文件）、
-Claude 回答完毕……
+**hookwich 把它们搬到屏幕上。** 屏幕角落浮着一个小窗口，把这些时刻画成图，点一下就能往任意时刻里加东西。
+不用写代码，也不用改配置文件。
 
-用 hookwich，不用写代码，就能在这些时刻加上你想要的内容。
+## 功能
 
-| 加入 | 会发生什么 | 例子 |
-|---|---|---|
-| **文字** | Claude 会在那一刻读到。 | 每次发消息时：“请用英文回答。” |
-| **命令** | 在你的电脑上运行。结果可以总是交给 Claude，或只在失败时交给它。 | 回答结束时运行 `npm test`，只在失败时 → Claude 会一直修到测试通过。 |
-| **技能** | 让 Claude 使用你已安装的某个技能。 | 回答结束时用 `code-review`。 |
-
-每一项都可以开关；选 **只一次** 的话，运行一次后会自动关闭。
-在使用工具的时刻，还可以指定只对哪些工具生效。
-
-<p align="center"><img src="assets/screenshot.png" alt="四种语言的 hookwich 窗口"></p>
-
-## 在哪里生效？
-
-你加入的内容会放在下面三处之一：
-
-- **所有地方**：所有对话。
-- **这个项目**：只在该项目文件夹中打开的对话。
-- **这个终端**：只在那个终端窗口或标签页中，即使在里面重新启动 Claude Code 或 Codex 也一样。
-
-每个时刻都由最近的一处决定：这个终端 → 这个项目 → 所有地方。
-关闭的项目也会占位，所以可以只在某个项目里让“所有地方”的项目安静下来。
-项目和终端的设置只保存在你的电脑上，不会放进项目里。
-
-标签页下方的按钮可以在不同地方之间复制设置。不会覆盖，已有的会跳过；刚复制的可以用 **撤销** 还原。
-有 **用“所有地方”的设置来设定**、**用项目的设置来设定**（在终端中）、**应用到所有项目**、**应用到“所有地方”**。
-只显示在当前位置能用的按钮。
-
-**这个终端** 始终指你现在正在聊天的终端：hookwich 会看你在哪里输入并自动切换，不需要从列表里选终端。
-窗口顶部会显示你正在聊天的地方（文件夹、AI，同一文件夹有多个对话时还有编号），每个终端颜色不同（气泡上也有圆点）。
-换到另一个终端时会提示你。
-
-把鼠标停在某个时刻上，就能看到里面有什么（你加入的、已有的钩子）。
-
-跟随你聊天的地方时，项目文件夹里的终端会先打开 **这个项目**，不在项目里的终端会先打开 **所有地方**。
-
-已有的钩子也会显示。Claude Code 设置、插件（包括靠钩子运行的技能）、Codex 的 `hooks.json` 里的钩子，
-会在每个时刻左上角显示为 **灰色数字**，打开方框就能看到名字。黑色数字是用 hookwich 加入的。
-每个已有的钩子都有开关。Claude Code 设置里的钩子关闭时会被移到一旁（`~/.hookwich/parked.json`），打开时再放回去。
-Codex 的钩子和 `/hooks` 一样在原处关闭，所以信任保持不变。插件的钩子只能随整个插件开关，所以会先询问。
-每次修改前都会在 `~/.hookwich/backups/` 留下备份。
-
-## Claude Code 和 Codex
-
-窗口里两者各有一个标签页。Codex 有自己的流程图（请求模型前、使用工具前、回答结束时等）。
-要使用 Codex 标签页，请按一次 **连接 Codex**：hookwich 只会在 `~/.codex/hooks.json` 末尾加入自己的项目，
-原有的钩子保持不变，并在旁边保存备份。然后在 Codex 中输入一次 `/hooks`，信任 hookwich 的钩子。
-按 **断开连接** 即可移除。
-
-## 窗口
-
-- 它以右下角的小 🥪 气泡浮在其他窗口之上，可以拖到任何地方。
-- 点气泡就会展开 Claude 工作流程图。它参照官方
-  [Claude Code 钩子生命周期图](https://code.claude.com/docs/en/hooks#hook-lifecycle)绘制。
-- 点任意方框即可添加内容。方框上的数字表示已开启的项数。
-- 刚刚发生的时刻会亮起来，你能看到 Claude 正在做什么。
-- 底部的 **我加入的** 会列出最近加入的 3 项，每项都有开关；更多时可点 **查看全部**，按位置查看完整列表，逐个开关或点一下去编辑。
-- **跟随我正在聊天的地方**（默认开启）：窗口会自动切换到你最后输入的 AI（Claude Code 或 Codex）、项目和终端。
-  自己选择标签页或终端时会关闭。
-- 没有固定顺序的时刻（发送通知、设置变化、切换模型等）集中在图下方的 **随时** 区域。
-- `–` 收成气泡，`×` 隐藏；隐藏后它会留在屏幕顶部的菜单栏。
-- 语言：English、한국어、日本語、中文。默认跟随电脑语言，可在窗口顶部切换。
-- 浅色·深色：顶部按钮可在跟随电脑设置、浅色、深色之间切换。
+- **一眼看到每个时刻** — 参照官方 [Claude Code 钩子生命周期图](https://code.claude.com/docs/en/hooks#hook-lifecycle) 绘制，
+  Codex 也有自己的图。每个方框都能点，刚刚发生的时刻会亮起来。
+- **文字、命令或技能** — 文字会在那一刻被智能体读到；命令在你的电脑上运行并交回结果（总是，或只在失败时）；技能按名字调用。
+  每一项都可单独开关、只运行一次，或只对某些工具生效。
+- **所有地方、按项目、按终端** — 最近的那一处优先。一键在不同地方之间复制设置，不会覆盖，还能撤销。
+- **跟随你聊天的地方** — 在终端里开始输入，窗口就会切到那个 AI、项目和终端。每个终端颜色不同，换到另一个终端时会提示你。
+- **已有的钩子也一目了然** — 你的设置、插件（包括靠钩子运行的技能）和 Codex 里的钩子会显示为灰色数字，鼠标停上去能看到名字，
+  还能关掉再打开。Codex 钩子和 `/hooks` 一样在原处切换，信任保持不变。
+- **我加入的，一眼可见** — 最近加入的几项带着开关显示在底部；完整列表按位置分组打开，点一下就去编辑。
+- **小巧原生** — 用 Tauri（Rust）打造，下载只有 3.7MB，不是 Electron。直接从 macOS 内核读取打开的对话，约 7ms 就能找到；
+  窗口隐藏时什么都不读。
+- **自动更新** — 窗口始终与插件版本一致：插件更新后，下一次对话时窗口也会换成新版，先校验 SHA-256 和签名。
+- **四种语言，浅色与深色** — English、한국어、日本語、中文；跟随电脑设置，或选浅色、深色。
 
 ## 安装
 
-**1. 插件**：在终端中
+**1. 插件** — 在终端中
 
 ```sh
 claude plugin install hookwich --marketplace minjund/hookwich
@@ -95,13 +72,7 @@ claude plugin install hookwich --marketplace minjund/hookwich
 /plugin install hookwich@hookwich
 ```
 
-然后重新开始一个 Claude Code 对话。
-
-**2. 窗口（macOS 11 及以上，Apple 芯片和 Intel 都可以）**：第一次开始 Claude Code 对话时，插件会从
-[最新发布](https://github.com/minjund/hookwich/releases/latest)下载窗口，用 SHA-256 确认文件可信后打开。
-输入 `/hookwich` 即可显示或隐藏窗口。窗口始终与插件版本一致：插件更新后，下一次对话时窗口也会换成新版（同样会校验）。
-
-要手动安装窗口：
+**2. 窗口** 会在第一次开始 Claude Code 对话时自动下载（macOS 11 及以上，Apple 芯片和 Intel 都可以）。要手动安装：
 
 ```sh
 mkdir -p ~/.hookwich && cd ~/.hookwich
@@ -110,16 +81,81 @@ curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich
 ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 ```
 
-这个应用没有经过 Apple 公证。像上面这样用 `curl` 下载可以直接打开；如果用浏览器下载 zip，macOS 第一次可能会阻止打开，
-这时右键点 `Hookwich.app`，选择 **打开**。
+**3. Codex（可选）** — 在窗口的 Codex 标签页按 **连接 Codex**，然后在 Codex 中输入一次 `/hooks`，信任 hookwich 的钩子。
 
-**3. Codex（可选）**：在窗口的 Codex 标签页按 **连接 Codex**，然后在 Codex 中输入一次 `/hooks`，信任 hookwich 的钩子。
+**更新：** 先运行 `claude plugin marketplace update hookwich`，再开始一个新对话。
 
-## 安全吗？
+## 马上试试
 
-你加入的命令会在每次对应时刻到来时，以和你相同的权限在你的电脑上运行。
-只加入你自己也愿意运行的命令。命令超过 30 秒会被停止。
+1. 开始一个新的 Claude Code 对话。右下角出现 🥪 气泡后点它。
+2. 点 **回答结束**，选 **命令**，输入 `npm test`，再选 **只在失败时**。
+3. 让 Claude 改点东西。如果它想在测试失败时结束，就会读取失败信息并一直修到测试通过。
+
+输入 `/hookwich` 可以显示或隐藏窗口。`–` 收成气泡，`×` 隐藏到菜单栏。
+
+## 工作原理
+
+```mermaid
+flowchart LR
+  subgraph 智能体
+    CC["Claude Code<br/>hookwich 插件"]
+    CX["Codex<br/>hookwich 钩子"]
+  end
+  subgraph 文件["~/.hookwich"]
+    CFG["config.json<br/>你加入的"]
+    ACT["activity-*.json<br/>刚刚发生的"]
+  end
+  W["hookwich 窗口<br/>Tauri · Rust"]
+  CC -- 每个时刻读取 --> CFG
+  CX -- 每个时刻读取 --> CFG
+  CC -- 记录 --> ACT
+  CX -- 记录 --> ACT
+  W -- 编辑 --> CFG
+  ACT -- 亮起 --> W
+```
+
+- 每个时刻，原有的钩子先运行；然后 hookwich 加入最近一处（这个终端，没有就这个项目，再没有就所有地方）中开启的内容。
+- 智能体想要结束回答时，**每次回答最多只让它再继续一次**，所以不会无限循环。
+- 一切都只在你电脑的 `~/.hookwich` 里：`config.json`（你加入的）、`activity-claude.json` 和 `activity-codex.json`、
+  `places.json`（见过的项目和终端）、`parked.json`（你关掉的钩子）、`control.json`（显示或隐藏）。
+  hookwich 修改的文件会先备份到 `~/.hookwich/backups/`。
+
+## 常见问题
+
+**安全吗？** 你加入的命令会在每次对应时刻到来时，以和你相同的权限在你的电脑上运行。只加入你自己也愿意运行的命令。
+命令超过 30 秒会被停止。
+
+**会让智能体变慢吗？** 文字和技能立即生效；命令运行多久就花多久。窗口空闲时 CPU 不到 1%，隐藏时什么都不读。
+
+**打开时 macOS 发出警告？** 应用做了临时签名，但没有经过 Apple 公证。像插件那样用 `curl` 下载可以直接打开；
+如果用浏览器下载，右键点 `Hookwich.app` 选 **打开** 一次即可。
+
+**会改动我原有的钩子吗？** 只有在你关掉或重新打开时才会，而且总会先备份。Codex 钩子和 Codex 自己的 `/hooks` 一样在原处切换。
+
+**支持 Windows 或 Linux 吗？** 暂时不支持，窗口目前只有 macOS 版。
+
+## 开发
+
+```sh
+git clone https://github.com/minjund/hookwich && cd hookwich
+cd app && npm install
+npm run tauri dev                                         # 运行窗口
+npm run tauri build -- --target universal-apple-darwin    # 生成 Hookwich.app
+cd src-tauri && cargo test                                # 窗口的测试
+cd ../.. && claude plugin test plugin                     # 插件的测试
+```
+
+- `plugin/` — Claude Code 部分（使用 `classic.*` 钩子和 `prompt.edit` 的 TypeScript 模组）。
+- `app/` — 窗口：Tauri（Rust）+ React + 免费的 [affectUI](https://www.affectui.com) 组件，以及 Codex 钩子执行器
+  （`hookwich hook codex <Event>`）。
+
+需要 Node 20+、Rust 和 Xcode 命令行工具。
+
+## 致谢
+
+生命周期图是 hookwich 参照官方 [Claude Code 钩子图](https://code.claude.com/docs/en/hooks#hook-lifecycle) 的布局重新绘制的，
+不包含原图文件。UI 组件来自 [affectUI](https://www.affectui.com)（免费项目，MIT）。部分图和图标是与 Codex 一起绘制的。
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)

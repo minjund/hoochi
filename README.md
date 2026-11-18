@@ -1,92 +1,69 @@
-<p align="center"><img src="assets/icon.png" width="112" alt="hookwich icon"></p>
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="hookwich" />
+</p>
 
 <h1 align="center">hookwich</h1>
 
-<p align="center"><b>Tell Claude Code or Codex what to do at the exact moment you want.</b><br>
-A little window in the corner of your screen shows every moment of Claude's work as a picture.<br>
-Tap a moment, and add a sentence, a command or a skill there.</p>
+<p align="center">
+  <b>Put anything between the moments of your coding agent's work.</b><br />
+  A small window that draws every moment of Claude Code and Codex, and lets you slip words, commands or skills into any of them.
+</p>
 
-<p align="center"><b>English</b> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh.md">中文</a></p>
+<p align="center">
+  <a href="https://github.com/minjund/hookwich/releases/latest"><img src="https://img.shields.io/github/v/release/minjund/hookwich?label=release&labelColor=333333&color=3fa34d" alt="latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fa34d?labelColor=333333" alt="MIT license" /></a>
+  <img src="https://img.shields.io/badge/macOS-11%2B%20%C2%B7%20Apple%20silicon%20%26%20Intel-3fa34d?labelColor=333333&logo=apple&logoColor=white" alt="macOS 11 or later, Apple silicon and Intel" />
+  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-3fa34d?labelColor=333333" alt="works with Claude Code and Codex" />
+  <a href="https://github.com/minjund/hookwich/stargazers"><img src="https://img.shields.io/github/stars/minjund/hookwich?labelColor=333333&color=3fa34d&logo=github" alt="GitHub stars" /></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> · <a href="#quick-start">Quick start</a> · <a href="#how-it-works">How it works</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/minjund/hookwich/releases">Releases</a>
+</p>
+
+<p align="center">
+  <b>English</b> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh.md">中文</a>
+</p>
+
+<p align="center">
+  <img src="assets/hero.png" width="920" alt="The hookwich window in light and dark: the lifecycle picture with a moment's hooks on hover, and the list of everything you put in" />
+</p>
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
 
 ---
 
-## What is it for?
+Every time Claude Code or Codex works, the same moments come around: a chat starts, you send a
+message, a tool is about to run, the answer ends. Each of these is a **hook**, and hooks are how you
+teach an agent your habits. They live in JSON files most people never open.
 
-When Claude Code works, the same moments come around again and again: the chat starts, you send a
-message, Claude uses a tool (runs a command, edits a file), Claude finishes its answer…
+**hookwich puts them on screen.** A little window floats in the corner, draws the lifecycle as a
+picture, and lets you put something into any moment with a click: no code, no config files.
 
-hookwich lets you attach something to any of those moments, without writing code.
+## Features
 
-| You add | What happens | Example |
-|---|---|---|
-| **Words** | Claude reads them at that moment. | Every time you send a message: *"Please answer in English."* |
-| **A command** | It runs on your computer. Claude can read the result — always, or only when it fails. | When Claude finishes answering: `npm test`, only if it fails — Claude keeps fixing until the tests pass. |
-| **A skill** | Claude is asked to use one of your installed skills. | When Claude finishes answering: `code-review`. |
-
-You can turn each one on or off, pick **Just once** so it switches itself off after one run, and for
-tool moments choose which tools it applies to.
-
-<p align="center"><img src="assets/screenshot.png" alt="The hookwich window in four languages"></p>
-
-## Where it applies
-
-Each thing you add lives in one of three places:
-
-- **Everywhere** — every chat.
-- **This project** — only chats opened in that project folder.
-- **This terminal** — only that terminal window or tab, even after you restart Claude Code or Codex in it.
-
-For each moment, the closest one wins: this terminal, otherwise this project, otherwise everywhere.
-A switched-off item still counts, so you can quiet an "everywhere" item in one project.
-Project and terminal settings are kept on your computer only, never inside the project.
-
-Buttons under the tabs copy between places without overwriting anything (what is already there is
-skipped, and **Undo** takes the last copy back): **Set from "Everywhere"**, **Set from this project**
-(in a terminal), **Apply to all projects** and **Apply to "Everywhere"**. Only the buttons that can
-do something there are shown.
-
-**This terminal** always means the terminal you are chatting in right now: hookwich notices where you
-type and switches by itself, so you never pick a terminal from a list. The top of the window says
-where you are chatting (folder, AI, and a number when one folder has several chats), each terminal has
-its own color — also shown as a dot on the bubble — and a note tells you when you move to another one.
-
-Rest the pointer on a moment to see what it holds: what you added and the hooks you already have.
-
-When the window follows where you chat, a terminal in a project folder opens on **This project**, and
-one outside any project opens on **Everywhere**.
-
-Hooks you already have — in Claude Code's settings, in plugins (often a skill run by a hook) or in
-Codex's `hooks.json` — show as a **grey number** at the top left of each moment, and by name when
-you open it. Black numbers are what you added with hookwich.
-Each one has a switch. A hook in your Claude Code settings is moved aside (kept in
-`~/.hookwich/parked.json`) and put back when you switch it on again; a Codex hook is switched in
-place, the same way `/hooks` does it, so its trust stays. A plugin's hooks can only be switched with
-the whole plugin, so hookwich asks first. Every file is backed up in `~/.hookwich/backups/` before
-it changes.
-
-## Claude Code and Codex
-
-The window has a tab for each. Codex has its own picture of its moments (before asking the model,
-before a tool, when the answer ends…). To use the Codex tab, press **Connect Codex** once: hookwich
-adds itself to the end of `~/.codex/hooks.json` (your other hooks stay as they are, and a backup is
-saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks.
-**Disconnect** takes them out again.
-
-## The window
-
-- It floats above other windows as a small 🥪 bubble in the bottom-right corner. Drag it anywhere.
-- Click the bubble to open the picture of Claude's work. It is drawn after the official
-  [Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle).
-- Click any box to add something there. A number on a box shows how many things are on.
-- The moment that just happened lights up, so you can watch Claude work.
-- **What you put in** at the bottom lists your newest three items with a switch each; with more, **See all** opens the whole list by place, where you can switch any of them or tap one to edit it.
-- **Follow where I chat** (on by default): the window switches by itself to the AI (Claude Code or Codex),
-  project and terminal you last typed in. Picking a tab or a terminal yourself turns it off.
-- Moments that have no fixed place in the order (a notification, a settings change, a model switch…)
-  sit together in an **Anytime** band under the picture.
-- `–` folds it back into the bubble. `×` hides it; it waits in the menu bar at the top of the screen.
-- Languages: English, 한국어, 日本語, 中文. It follows your computer's language; change it at the top.
-- Light or dark: the button at the top switches between your computer's setting, light and dark.
+- **See every moment** — the lifecycle is drawn after the official
+  [Claude Code hooks figure](https://code.claude.com/docs/en/hooks#hook-lifecycle), and Codex has its
+  own. Every box is clickable, and the moment that just happened lights up.
+- **Words, a command, or a skill** — words are read by the agent at that moment; a command runs on
+  your machine and hands back its output (always, or only when it fails); a skill is called by name.
+  Switch each one on or off, run it just once, or limit it to certain tools.
+- **Everywhere, per project, per terminal** — the closest one wins. Copy settings between places with
+  one click, never overwriting, with an undo.
+- **Follows where you chat** — start typing in a terminal and the window switches to that AI, project
+  and terminal. Each terminal has its own color, and you are told when you move to another one.
+- **Your existing hooks, in plain view** — hooks from your settings, your plugins (often a skill run by
+  a hook) and Codex show as grey numbers, by name on hover, and can be switched off and back on.
+  Codex keeps its trust, the same way `/hooks` does it.
+- **What you put in, at a glance** — your newest items sit at the bottom with a switch each; the full
+  list opens grouped by place, one tap away from editing.
+- **Small and native** — Tauri (Rust), a 3.7 MB download, no Electron. It finds open chats straight
+  from the macOS kernel in about 7 ms and reads nothing while hidden.
+- **Updates itself** — the window always matches the plugin: a newer plugin swaps the window on the
+  next chat, after checking its SHA-256 and signature.
+- **Four languages, light and dark** — English, 한국어, 日本語, 中文; your computer's look, light or dark.
 
 ## Install
 
@@ -96,22 +73,15 @@ saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks
 claude plugin install hookwich --marketplace minjund/hookwich
 ```
 
-Or inside Claude Code:
+or inside Claude Code:
 
 ```
 /plugin marketplace add minjund/hookwich
 /plugin install hookwich@hookwich
 ```
 
-Then start a new Claude Code chat.
-
-**2. The window (macOS 11 or later, Apple silicon or Intel).** The first time a Claude Code chat
-starts, the plugin downloads the window from the
-[latest release](https://github.com/minjund/hookwich/releases/latest), checks its SHA-256, and opens
-it. Type `/hookwich` to show or hide it. The window always matches the plugin's version: after the
-plugin updates, the next chat replaces the window with the new one (checked the same way).
-
-To install the window by hand instead:
+**2. The window** downloads itself the first time a Claude Code chat starts (macOS 11 or later, Apple
+silicon or Intel). To install it by hand instead:
 
 ```sh
 mkdir -p ~/.hookwich && cd ~/.hookwich
@@ -120,45 +90,91 @@ curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich
 ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 ```
 
-The app is not notarized by Apple. Downloaded with `curl` as above it opens normally; if you
-download the zip in a browser, macOS may refuse to open it the first time — right-click
-`Hookwich.app` and choose **Open**.
+**3. Codex (optional).** In the window's Codex tab press **Connect Codex**, then type `/hooks` in
+Codex once and trust the hookwich hooks.
 
-**3. Codex (optional).** Open the window's Codex tab and press **Connect Codex**, then type `/hooks`
-in Codex once and trust the hookwich hooks.
+**Update:** `claude plugin marketplace update hookwich`, then start a new chat.
 
-## Is it safe?
+## Quick start
 
-A command you add runs on your computer every time its moment comes, with the same rights as you.
-Only add commands you would run yourself. A command is stopped after 30 seconds.
+1. Start a new Claude Code chat. A 🥪 bubble appears in the bottom-right corner; click it.
+2. Click **Answer ends**, choose **Command**, type `npm test` and pick **Only if it fails**.
+3. Ask Claude for a change. When it tries to finish with failing tests, it reads the failure and keeps
+   going until they pass.
 
-## For developers
+Type `/hookwich` to show or hide the window. `–` folds it into the bubble, `×` hides it in the menu bar.
 
-- `plugin/` — the Claude Code part. At every moment (a "hook event") it lets your existing hooks run
-  first, then adds what is switched on. When Claude is about to finish, it asks Claude to keep going
-  at most once per answer, so it never loops.
-- `app/` — the window: Tauri (Rust) + React + free [affectUI](https://www.affectui.com) components.
-- They share files in `~/.hookwich/`: `config.json` (what you added), `activity-claude.json` and
-  `activity-codex.json` (what just happened), `places.json` (projects and terminals seen),
-  `parked.json` (hooks you switched off) and `control.json` (show/hide).
+## How it works
 
-Build it yourself (needs Node 20+, Rust and the Xcode command line tools):
+```mermaid
+flowchart LR
+  subgraph Agents
+    CC["Claude Code<br/>hookwich plugin"]
+    CX["Codex<br/>hookwich hook"]
+  end
+  subgraph Files["~/.hookwich"]
+    CFG["config.json<br/>what you put in"]
+    ACT["activity-*.json<br/>what just happened"]
+  end
+  W["hookwich window<br/>Tauri · Rust"]
+  CC -- reads at every moment --> CFG
+  CX -- reads at every moment --> CFG
+  CC -- writes --> ACT
+  CX -- writes --> ACT
+  W -- edits --> CFG
+  ACT -- lights up --> W
+```
+
+- At every moment, your existing hooks run first; then hookwich adds what is switched on for the
+  closest place (this terminal, else this project, else everywhere).
+- When the agent is about to finish, hookwich asks it to keep going **at most once per answer**, so it
+  never loops.
+- Everything stays on your computer, in `~/.hookwich`: `config.json` (what you put in),
+  `activity-claude.json` and `activity-codex.json`, `places.json` (projects and terminals seen),
+  `parked.json` (hooks you switched off) and `control.json` (show or hide). Files hookwich changes are
+  backed up first in `~/.hookwich/backups/`.
+
+## FAQ
+
+**Is it safe?** A command you add runs on your computer with your rights, every time its moment comes.
+Only add commands you would run yourself. Each one is stopped after 30 seconds.
+
+**Will it slow my agent down?** Words and skills are instant. A command takes as long as it runs. The
+window itself sits idle at well under 1% CPU and reads nothing while hidden.
+
+**Why does macOS warn me when I open it?** The app is ad-hoc signed but not notarized by Apple.
+Downloaded with `curl` (as the plugin does) it opens normally; from a browser, right-click
+`Hookwich.app` and choose **Open** once.
+
+**Does it change my existing hooks?** Only when you switch one off or back on, and always with a
+backup. Codex hooks are switched in place, exactly as Codex's own `/hooks` does.
+
+**Windows or Linux?** Not yet: the window is macOS only for now.
+
+## Development
 
 ```sh
+git clone https://github.com/minjund/hookwich && cd hookwich
 cd app && npm install
-npm run tauri dev      # run the window
-npm run tauri build    # make Hookwich.app
-claude plugin test plugin   # test the plugin
+npm run tauri dev                                         # run the window
+npm run tauri build -- --target universal-apple-darwin    # make Hookwich.app
+cd src-tauri && cargo test                                # the window's tests
+cd ../.. && claude plugin test plugin                     # the plugin's tests
 ```
+
+- `plugin/` — the Claude Code part (a TypeScript mod on `classic.*` hooks and `prompt.edit`).
+- `app/` — the window: Tauri (Rust) + React + free [affectUI](https://www.affectui.com) components,
+  and the Codex hook runner (`hookwich hook codex <Event>`).
+
+Needs Node 20+, Rust and the Xcode command line tools.
 
 ## Credits
 
-The picture of Claude's work is hookwich's own drawing of the layout of the official
-[Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle); the
-figure's file is not included. UI parts from [affectUI](https://www.affectui.com) (free items, MIT),
-icons from [Hugeicons Free](https://hugeicons.com) (MIT). The bubble and the picture were built with
-Codex.
+The lifecycle picture is hookwich's own drawing of the layout of the official
+[Claude Code hooks figure](https://code.claude.com/docs/en/hooks#hook-lifecycle); the figure's file is
+not included. UI parts from [affectUI](https://www.affectui.com) (free items, MIT). Parts of the
+picture and the icon were drawn with Codex.
 
 ## License
 
-MIT
+[MIT](LICENSE)
