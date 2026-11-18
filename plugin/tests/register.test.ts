@@ -274,7 +274,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.7/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.8/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -292,7 +292,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.7'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.8'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -435,4 +435,117 @@ test('a chat working in the background does not take "where you are chatting" ba
   const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
   expect(after.lastEvent).toBe('PostToolUse')
   expect(after.lastChat.place.terminal).toBe('whitebox:terminal:t9')
+})
+
+const CONTEXT = '/home/me/.hookwich/context/whitebox_terminal_t1.json'
+
+/** What `$.session.usage({ breakdown })` answers: /context's figures. */
+const usage = (used: number) => ({
+  startedAt: 0,
+  rateLimits: [],
+  context: {
+    window: 200_000,
+    tokens: used,
+    percent: Math.round(used / 2000),
+    breakdown: {
+      categories: [
+        { name: 'System prompt', tokens: 3000, color: 'promptBorder', isDeferred: false, kind: 'used' as const },
+        { name: 'MCP tools', tokens: 900, color: 'cyan', isDeferred: false, kind: 'used' as const },
+        { name: 'Custom agents', tokens: 0, color: 'warning', isDeferred: false, kind: 'used' as const },
+        { name: 'Messages', tokens: used - 3900, color: 'purple', isDeferred: false, kind: 'used' as const },
+        { name: 'Free space', tokens: 200_000 - used, color: 'inactive', isDeferred: false, kind: 'free' as const },
+      ],
+      totalTokens: used,
+      maxTokens: 200_000,
+      rawMaxTokens: 200_000,
+      autocompactSource: 'model-default' as const,
+      percentage: Math.round(used / 2000),
+      gridRows: [],
+      model: 'claude-opus-5-5',
+      memoryFiles: [{ path: '/home/me/.claude/CLAUDE.md', type: 'User', tokens: 120 }],
+      mcpTools: [
+        { name: 'a', serverName: 'docs', tokens: 500, isLoaded: true },
+        { name: 'b', serverName: 'docs', tokens: 300, isLoaded: true },
+        { name: 'c', serverName: 'files', tokens: 100, isLoaded: true },
+        { name: 'd', serverName: 'later', tokens: 9000, isLoaded: false },
+      ],
+      agents: [],
+      skills: { totalSkills: 4, includedSkills: 3, tokens: 250, skillFrontmatter: [] },
+      autoCompactThreshold: 167_000,
+      isAutoCompactEnabled: true,
+      apiUsage: null,
+    },
+  },
+})
+
+const measure = ($: Parameters<TestBody>[0]) =>
+  ($.session as unknown as { measure(e: unknown): Promise<unknown> }).measure({
+    context: { window: 200_000 },
+    rateLimits: [],
+    changed: ['context'],
+  })
+
+test('after a turn, what /context shows is written for this terminal', async ($, on) => {
+  const { fs, ran } = machine(on, {})
+  const asked: unknown[] = []
+  on('session.usage', (_, e) => {
+    asked.push(e)
+    return { value: usage(40_000) }
+  })
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await measure($)
+
+  expect(asked).toEqual([{ breakdown: 'summary' }])
+  expect(ran).toContain('/bin/mkdir -p /home/me/.hookwich/context')
+  const snap = JSON.parse(fs.get(CONTEXT) ?? '{}')
+  expect(snap).toMatchObject({ v: 1, used: 40_000, max: 200_000, percent: 20, compactAt: 167_000 })
+  expect(snap.place.terminal).toBe('whitebox:terminal:t1')
+  // empty rows are left out, the free space stays
+  expect(snap.rows.map((r: { name: string }) => r.name)).toEqual([
+    'System prompt',
+    'MCP tools',
+    'Messages',
+    'Free space',
+  ])
+  expect(snap.mcp).toEqual([
+    { server: 'docs', tools: 2, tokens: 800 },
+    { server: 'files', tools: 1, tokens: 100 },
+  ])
+  expect(snap.skills).toEqual({ count: 3, tokens: 250 })
+})
+
+test('a measurement where the context did not move writes nothing', async ($, on) => {
+  const { fs } = machine(on, {})
+  on('session.usage', () => ({ value: usage(40_000) }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await ($.session as unknown as { measure(e: unknown): Promise<unknown> }).measure({
+    context: { window: 200_000 },
+    rateLimits: [],
+    changed: ['cost'],
+  })
+
+  expect(fs.has(CONTEXT)).toBe(false)
+})
+
+test('while tools run, /context is written at most every two seconds', async ($, on) => {
+  const { fs } = machine(on, {})
+  let asked = 0
+  on('session.usage', () => {
+    asked += 1
+    return { value: usage(10_000 + asked * 1000) }
+  })
+  on('tool.call', () => ({ result: { content: 'ok' } }) as never)
+
+  const call = () =>
+    ($.tool as unknown as { call(e: unknown): Promise<unknown> }).call({ tool: 'Read', input: {} })
+  await call()
+  await call()
+  await call()
+  const later = (globalThis as unknown as { setTimeout(f: () => void, ms: number): void }).setTimeout
+  await new Promise<void>(r => later(r, 20))
+
+  expect(asked).toBe(1)
+  expect(JSON.parse(fs.get(CONTEXT) ?? '{}').used).toBe(11_000)
 })

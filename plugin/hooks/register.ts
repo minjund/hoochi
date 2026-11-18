@@ -1,18 +1,29 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Activity, AgentConfig, Config, Fired, Item, Place, Scope } from '../types'
+import type {
+  Activity,
+  AgentConfig,
+  Config,
+  ContextRow,
+  ContextSnapshot,
+  Fired,
+  Item,
+  Place,
+  Scope,
+} from '../types'
 
 // hookwich: put text, commands or skills before or after any Claude Code hook
 // event. The window edits ~/.hookwich/config.json (everywhere / per project /
 // per terminal); this module reads it on every event and puts the enabled items
 // of the narrowest scope in. It writes activity-claude.json for the window to
 // light up, places.json so the window knows the projects and terminals, and
-// control.json to show or hide the window.
+// control.json to show or hide the window, and context/<terminal>.json with what /context
+// shows for that terminal's chat.
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.7'
+export const APP_VERSION = '0.1.8'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -419,6 +430,72 @@ export async function noteTyping($: EngineInterface): Promise<boolean> {
   return true
 }
 
+/** The file name a terminal's context snapshot goes in; the window builds the same one. */
+export function contextFile(terminal: string): string {
+  return `${terminal.replace(/[^A-Za-z0-9._-]/g, '_')}.json`
+}
+
+type Breakdown = NonNullable<Awaited<ReturnType<EngineInterface['session']['usage']>>['context']['breakdown']>
+
+/** /context's figures in the small shape the window draws. */
+export function contextSnapshot(b: Breakdown, place: Place, at: number): ContextSnapshot {
+  const rows: ContextRow[] = b.categories
+    .filter(c => c.tokens > 0 || c.kind === 'free')
+    .map(c => ({ name: c.name, tokens: Math.round(c.tokens), kind: c.kind }))
+  const servers = new Map<string, { server: string; tools: number; tokens: number }>()
+  // Only the schemas loaded now take room; deferred ones wait outside the window.
+  for (const tool of b.mcpTools.filter(t => t.isLoaded)) {
+    const s = servers.get(tool.serverName) ?? { server: tool.serverName, tools: 0, tokens: 0 }
+    s.tools += 1
+    s.tokens += tool.tokens
+    servers.set(tool.serverName, s)
+  }
+  const byTokens = <T extends { tokens: number }>(list: T[]) =>
+    [...list].sort((x, y) => y.tokens - x.tokens).slice(0, 8)
+  return {
+    v: 1,
+    at,
+    place,
+    model: b.model,
+    used: Math.round(b.totalTokens),
+    max: b.rawMaxTokens,
+    percent: b.percentage,
+    ...(b.isAutoCompactEnabled && b.autoCompactThreshold ? { compactAt: b.autoCompactThreshold } : {}),
+    rows,
+    memory: byTokens(b.memoryFiles.map(m => ({ path: m.path, tokens: m.tokens }))),
+    mcp: byTokens([...servers.values()]),
+    ...(b.skills ? { skills: { count: b.skills.includedSkills, tokens: b.skills.tokens } } : {}),
+  }
+}
+
+/**
+ * Writes what /context would show for this chat, for the window to draw live. After every turn,
+ * and at most every CONTEXT_MS while tools run, counted locally (no token-count requests).
+ */
+const CONTEXT_MS = 2000
+let lastContext = -Infinity
+let contextDir: Promise<string> | undefined
+export async function noteContext($: EngineInterface, force = false): Promise<boolean> {
+  const now = await $.clock.now()
+  if (!force && now - lastContext < CONTEXT_MS) return false
+  lastContext = now
+  const usage = await $.session.usage({ breakdown: 'summary' })
+  const b = usage.context.breakdown
+  if (!b) return false
+  contextDir ??= (async () => {
+    const dir = `${await home($)}/.hookwich/context`
+    await $.process.run(['/bin/mkdir', '-p', dir])
+    return dir
+  })()
+  const dir = await contextDir.catch(err => {
+    contextDir = undefined
+    throw err
+  })
+  const place = await placeOf($)
+  await $.fs.write(`${dir}/${contextFile(place.terminal)}`, JSON.stringify(contextSnapshot(b, place, now)))
+  return true
+}
+
 /** Switches "once" items off in the scope they came from. */
 function spend(config: Config, scope: Scope, key: string, ids: Set<string>): Config {
   const off = (list: Item[] = []) => list.map(i => (ids.has(i.id) ? { ...i, enabled: false } : i))
@@ -520,8 +597,22 @@ export const register: Register = on => {
       .then(place => notePlace($, dir, place))
       .catch(() => undefined)
     void ensureApp($, dir).then(trouble => showTrouble($, trouble))
+    void noteContext($, true).catch(() => undefined)
 
     return started
+  })
+
+  // /context, live: after each turn (and a compaction), and while tools run.
+  on('session.measure', async ($, e, next) => {
+    const result = await next(e)
+    if (e.changed.includes('context')) await noteContext($, true).catch(() => undefined)
+    return result
+  })
+
+  on('tool.call', async ($, e, next) => {
+    const result = await next(e)
+    void noteContext($).catch(() => undefined)
+    return result
   })
 
   on('command.run', { command: 'hookwich' }, async ($, e) => {

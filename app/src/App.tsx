@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { ContextMeter } from './components/hookwich/context-meter'
 import { CLAUDE_LAYOUT, CODEX_LAYOUT, LifecycleDiagram } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
 import { SlotEditor } from './components/hookwich/slot-editor'
@@ -13,6 +14,7 @@ import {
   codexConnect,
   codexDisconnect,
   codexStatus,
+  contextUsage,
   EMPTY_ACTIVITY,
   hideWindow,
   listSkills,
@@ -25,6 +27,7 @@ import {
   startDrag,
   writeConfig,
   type CodexStatus,
+  type ContextSnapshot,
   type ExistingHooks,
   type Running,
   type Skill,
@@ -218,6 +221,7 @@ export default function App() {
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
   const [done, setDone] = useState<{ message: string; before: Config } | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [context, setContext] = useState<ContextSnapshot | null>(null)
   useEffect(() => {
     if (!showAll) return
     const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowAll(false)
@@ -319,6 +323,24 @@ export default function App() {
       setScope(isProject(latest.place.project, latest.place.terminal) ? 'project' : 'global')
     }
   }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // /context for the Claude Code terminal in view, as its chat keeps writing it.
+  const contextTerminal = agent === 'claude' ? terminalKey : ''
+  useEffect(() => {
+    setContext(null)
+    if (!expanded || !visible || !contextTerminal) return
+    let alive = true
+    const read = () =>
+      void contextUsage(contextTerminal)
+        .then(snap => alive && setContext(snap))
+        .catch(() => undefined)
+    read()
+    const id = window.setInterval(read, POLL_MS)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [expanded, visible, contextTerminal])
 
   // Moving to another terminal shows a short notice, and the "chatting now" chip flashes.
   const [switched, setSwitched] = useState<{ terminal: string; at: number } | null>(null)
@@ -725,6 +747,7 @@ export default function App() {
             {t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent))}
           </p>
         )}
+        {contextTerminal && <ContextMeter snap={context} t={t} now={Date.now()} />}
         <SegmentedControl
           fullWidth
           size="sm"

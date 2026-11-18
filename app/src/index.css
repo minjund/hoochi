@@ -507,3 +507,129 @@ input {
   font-weight: 600;
   color: var(--hw-soft);
 }
+
+/* /context, live: a bar of what fills the context, opening into the rows. */
+.hw-ctx {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hw-line-strong);
+  border-radius: 8px;
+  background: var(--hw-card);
+  font-size: 12px;
+  color: var(--hw-ink);
+}
+.hw-ctx-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+div.hw-ctx-head {
+  cursor: default;
+}
+.hw-ctx-head > span:first-child {
+  color: var(--hw-soft);
+  font-size: 11px;
+}
+.hw-ctx-head b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.hw-ctx-ago,
+.hw-ctx-caret {
+  color: var(--hw-soft);
+  font-size: 11px;
+}
+.hw-ctx-bar {
+  position: relative;
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hw-line-strong);
+}
+.hw-ctx-bar > span {
+  height: 100%;
+  transition: width 400ms ease-out;
+}
+.hw-ctx-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--hw-ink);
+  opacity: 0.55;
+}
+.hw-ctx-near {
+  margin: 0;
+  font-weight: 600;
+  color: var(--hw-ink);
+}
+.hw-ctx[data-near] {
+  border-color: #d08a1e;
+}
+.hw-ctx-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hw-ctx-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hw-ctx-rows li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hw-ctx-rows li[data-kind='free'],
+.hw-ctx-rows li[data-kind='buffer'],
+.hw-ctx-rows li[data-kind='deferred'] {
+  color: var(--hw-soft);
+}
+.hw-ctx-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.hw-ctx-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hw-ctx-num {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--hw-soft);
+}
+.hw-ctx details summary {
+  cursor: pointer;
+  color: var(--hw-soft);
+  font-size: 11px;
+}
+.hw-ctx details .hw-ctx-rows {
+  margin-top: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hw-ctx-bar > span {
+    transition: none;
+  }
+}

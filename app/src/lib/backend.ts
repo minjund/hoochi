@@ -314,6 +314,75 @@ export async function runningChats(): Promise<Running[]> {
   ]
 }
 
+/** One row of the /context breakdown. */
+export type ContextRow = { name: string; tokens: number; kind: 'used' | 'free' | 'buffer' | 'deferred' }
+
+/** What /context shows for one terminal's Claude Code chat: ~/.hookwich/context/<terminal>.json */
+export type ContextSnapshot = {
+  at: number
+  model: string
+  used: number
+  max: number
+  percent: number
+  compactAt?: number
+  rows: ContextRow[]
+  memory: { path: string; tokens: number }[]
+  mcp: { server: string; tools: number; tokens: number }[]
+  skills?: { count: number; tokens: number }
+}
+
+function parseContext(v: unknown): ContextSnapshot | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Partial<ContextSnapshot>
+  if (typeof o.used !== 'number' || typeof o.max !== 'number' || !Array.isArray(o.rows)) return null
+  return {
+    at: typeof o.at === 'number' ? o.at : 0,
+    model: typeof o.model === 'string' ? o.model : '',
+    used: o.used,
+    max: o.max,
+    percent: typeof o.percent === 'number' ? o.percent : Math.round((o.used / Math.max(o.max, 1)) * 100),
+    compactAt: typeof o.compactAt === 'number' ? o.compactAt : undefined,
+    rows: o.rows.filter(r => r && typeof r.name === 'string' && typeof r.tokens === 'number'),
+    memory: Array.isArray(o.memory) ? o.memory : [],
+    mcp: Array.isArray(o.mcp) ? o.mcp : [],
+    skills: o.skills,
+  }
+}
+
+/** /context for a terminal, as its chat last wrote it; null before the plugin wrote any. */
+export async function contextUsage(terminal: string): Promise<ContextSnapshot | null> {
+  if (inApp) return parseContext(await invoke('context_usage', { terminal }))
+  if (!browserFlags.demo) return null
+  const used = 61_400
+  return {
+    at: Date.now() - 3000,
+    model: 'claude-opus-5-5',
+    used,
+    max: 200_000,
+    percent: 31,
+    compactAt: 167_000,
+    rows: [
+      { name: 'System prompt', tokens: 3100, kind: 'used' },
+      { name: 'System tools', tokens: 14_800, kind: 'used' },
+      { name: 'MCP tools', tokens: 6200, kind: 'used' },
+      { name: 'Memory files', tokens: 2300, kind: 'used' },
+      { name: 'Skills', tokens: 1900, kind: 'used' },
+      { name: 'Messages', tokens: 33_100, kind: 'used' },
+      { name: 'Free space', tokens: 105_600, kind: 'free' },
+      { name: 'Autocompact buffer', tokens: 33_000, kind: 'buffer' },
+    ],
+    memory: [
+      { path: '~/.claude/CLAUDE.md', tokens: 1400 },
+      { path: '~/Projects/shop/CLAUDE.md', tokens: 900 },
+    ],
+    mcp: [
+      { server: 'docs', tools: 2, tokens: 3900 },
+      { server: 'browser', tools: 6, tokens: 2300 },
+    ],
+    skills: { count: 18, tokens: 1900 },
+  }
+}
+
 /** Switches one existing hook off or back on, and returns the fresh list. */
 export async function setExistingHook(project: string, id: string, on: boolean): Promise<ExistingHooks> {
   if (inApp) return invoke('set_existing_hook', { project, id, on })

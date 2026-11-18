@@ -59,6 +59,9 @@ picture, and lets you put something into any moment with a click: no code, no co
   Codex keeps its trust, the same way `/hooks` does it.
 - **What you put in, at a glance** — your newest items sit at the bottom with a switch each; the full
   list opens grouped by place, one tap away from editing.
+- **/context, live** — the context fill of the chat you are in sits under "Chatting now" as a bar
+  that moves while Claude works, and opens into what /context lists: each part, memory files, MCP
+  servers and skills, and where it will compact. Counted on your machine, no extra requests.
 - **Small and native** — Tauri (Rust), a 3.7 MB download, no Electron. It finds open chats straight
   from the macOS kernel in about 7 ms and reads nothing while hidden.
 - **Updates itself** — the window always matches the plugin: a newer plugin swaps the window on the
@@ -131,7 +134,8 @@ flowchart LR
   never loops.
 - Everything stays on your computer, in `~/.hookwich`: `config.json` (what you put in),
   `activity-claude.json` and `activity-codex.json`, `places.json` (projects and terminals seen),
-  `parked.json` (hooks you switched off) and `control.json` (show or hide). Files hookwich changes are
+  `parked.json` (hooks you switched off), `control.json` (show or hide) and `context/` (what
+  /context shows, per terminal). Files hookwich changes are
   backed up first in `~/.hookwich/backups/`.
 
 ## FAQ

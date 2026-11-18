@@ -73,6 +73,31 @@ export type Activity = {
   lastChat?: { at: number; place: Place }
 }
 
+/** One row of the breakdown, as /context lists it. */
+export type ContextRow = { name: string; tokens: number; kind: 'used' | 'free' | 'buffer' | 'deferred' }
+
+/**
+ * What /context shows for one terminal's chat, kept fresh while it works:
+ * ~/.hookwich/context/<terminal file>.json, read by the window.
+ */
+export type ContextSnapshot = {
+  v: 1
+  at: number
+  place: Place
+  model: string
+  /** tokens in use and the window measured against, as /context counts them */
+  used: number
+  max: number
+  percent: number
+  /** the token count at which auto-compaction runs, when it is on */
+  compactAt?: number
+  rows: ContextRow[]
+  /** the biggest memory files, MCP servers and the skill listing, as /context lists them */
+  memory: { path: string; tokens: number }[]
+  mcp: { server: string; tools: number; tokens: number }[]
+  skills?: { count: number; tokens: number }
+}
+
 declare module 'claude-code' {
   interface PluginState {
     hookwich: { activity: Shaped<Activity> }

@@ -98,6 +98,28 @@ async fn set_existing_hook(project: String, id: String, on: bool) -> Result<Valu
     Ok(existing::existing(&project))
 }
 
+/// The file the plugin keeps a terminal's /context figures in (the plugin names it the same way).
+fn context_file(terminal: &str) -> String {
+    let safe: String = terminal
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' })
+        .collect();
+    format!("{safe}.json")
+}
+
+/// What /context shows for one terminal's Claude Code chat, as the plugin last wrote it; null if never.
+#[tauri::command]
+fn context_usage(terminal: String) -> Value {
+    if terminal.is_empty() {
+        return Value::Null;
+    }
+    let path = data_dir().join("context").join(context_file(&terminal));
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(Value::Null)
+}
+
 /// Claude Code and Codex chats open in terminals right now.
 #[tauri::command]
 async fn running_chats() -> Value {
@@ -313,7 +335,8 @@ pub fn run() {
             codex_disconnect,
             running_chats,
             existing_hooks,
-            set_existing_hook
+            set_existing_hook,
+            context_usage
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.
@@ -374,4 +397,17 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running hookwich");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_file;
+
+    #[test]
+    fn context_file_matches_the_plugin() {
+        // plugin: terminal.replace(/[^A-Za-z0-9._-]/g, '_') + '.json'
+        assert_eq!(context_file("whitebox:terminal:t1"), "whitebox_terminal_t1.json");
+        assert_eq!(context_file("iterm:w0t1p0:AB-12.x"), "iterm_w0t1p0_AB-12.x.json");
+        assert_eq!(context_file("session:한/1"), "session___1.json");
+    }
 }
