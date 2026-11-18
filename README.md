@@ -41,8 +41,14 @@ A switched-off item still counts, so you can quiet an "everywhere" item in one p
 Project and terminal settings are kept on your computer only, never inside the project.
 
 Buttons under the tabs copy between places without overwriting anything (what is already there is
-skipped, and **Undo** takes the last copy back): **Load "Everywhere"**, **Load this project** (in a
-terminal), **Apply to all projects** and **Apply to "Everywhere"**.
+skipped, and **Undo** takes the last copy back): **Set from "Everywhere"**, **Set from this project**
+(in a terminal), **Apply to all projects** and **Apply to "Everywhere"**. Only the buttons that can
+do something there are shown.
+
+**This terminal** always means the terminal you are chatting in right now: hookwich notices where you
+type and switches by itself, so you never pick a terminal from a list.
+
+Rest the pointer on a moment to see what it holds: what you added and the hooks you already have.
 
 When the window follows where you chat, a terminal in a project folder opens on **This project**, and
 one outside any project opens on **Everywhere**.

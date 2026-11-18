@@ -304,3 +304,29 @@ input {
   font-size: 11px;
   color: var(--hw-soft);
 }
+
+.hw-tip {
+  display: grid;
+  gap: 3px;
+}
+.hw-tip b {
+  font-size: 12px;
+}
+.hw-tip span {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-tip p {
+  margin: 0;
+  color: var(--hw-soft);
+}
+.hw-tip ul {
+  margin: 0;
+  padding-left: 14px;
+}
+.hw-tip li[data-off] {
+  opacity: 0.5;
+  text-decoration: line-through;
+}

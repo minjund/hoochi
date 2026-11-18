@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useReducer } from 'react'
+import { useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import { eventHint, eventName, subtitleOf, UI, type Lang } from '../../lib/i18n'
 import { type Activity, type Item } from '../../lib/lifecycle'
 
@@ -14,6 +14,8 @@ export type LifecycleDiagramProps = {
   lang: Lang
   /** hooks already set up outside hookwich, per event: drawn as a grey number at the top left */
   existing?: Readonly<Record<string, number>>
+  /** what a moment holds, shown in a card while the pointer rests on its box */
+  describe?(event: string): ReactNode
 }
 
 type Tone = 'neutral' | 'green' | 'yellow' | 'pink' | 'side' | 'tool'
@@ -220,7 +222,7 @@ const styles = `
   --ui-lcd-yellow: #FFF8E1; --ui-lcd-orange: #D4A27F;
   --ui-lcd-blue: #4A8DB8; --ui-lcd-tool: #6AABD2;
   --ui-lcd-pink: #F8D0D0; --ui-lcd-pink-border: #E0A0A0; --ui-lcd-resume: #333333;
-  --ui-lcd-hover: #4A8DB8; --ui-lcd-glow: #429EFF; --ui-lcd-badge-ink: #FFFFFF;
+  --ui-lcd-hover: #4A8DB8; --ui-lcd-glow: #429EFF; --ui-lcd-badge-ink: #FFFFFF; --ui-lcd-card-bg: #FFFFFF;
   display: block; width: 100%; height: auto; font-family: system-ui, -apple-system, sans-serif;
   isolation: isolate; color-scheme: light;
 }
@@ -232,7 +234,7 @@ const styles = `
   --ui-lcd-yellow: #3C3524; --ui-lcd-orange: #C69A78;
   --ui-lcd-blue: #79B4DA; --ui-lcd-tool: #315F7B;
   --ui-lcd-pink: #503237; --ui-lcd-pink-border: #BF858D; --ui-lcd-resume: #D0D4D8;
-  --ui-lcd-hover: #8BCBFF; --ui-lcd-glow: #69B6FF; --ui-lcd-badge-ink: #191B1D;
+  --ui-lcd-hover: #8BCBFF; --ui-lcd-glow: #69B6FF; --ui-lcd-badge-ink: #191B1D; --ui-lcd-card-bg: #24262B;
   color-scheme: dark;
 }
 .ui-lcd-backdrop { fill: var(--ui-lcd-bg); }
@@ -283,6 +285,15 @@ const styles = `
 .ui-lcd-flash { fill: none; stroke: var(--ui-lcd-glow); stroke-width: 3; pointer-events: none; animation: ui-lcd-fired 2500ms linear both; }
 .ui-lcd-badge { fill: var(--ui-lcd-ink); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-disabled { fill: var(--ui-lcd-bg); stroke: var(--ui-lcd-subtle); }
+.ui-lcd-wrap { position: relative; }
+.ui-lcd-card {
+  position: absolute; box-sizing: border-box; z-index: 5; width: min(260px, 70%); padding: 8px 10px; border-radius: 10px;
+  transform: translate(-50%, calc(-100% - 6px)); pointer-events: none;
+  background: var(--ui-lcd-card-bg, #ffffff); color: var(--ui-lcd-ink);
+  border: 1px solid var(--ui-lcd-subtle); box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left;
+}
+.ui-lcd-card[data-below] { transform: translate(-50%, 6px); }
 .ui-lcd-badge-existing { fill: var(--ui-lcd-muted); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 9px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
@@ -349,7 +360,31 @@ export function LifecycleDiagram({
   lang,
   agent = 'claude',
   existing = {},
+  describe,
 }: LifecycleDiagramProps) {
+  // The hover card: which box, and where it sits in the picture (as fractions, so it scales).
+  const wrap = useRef<HTMLDivElement | null>(null)
+  const [hover, setHover] = useState<{ event: string; left: number; top: number; below: boolean } | null>(
+    null,
+  )
+  const showCard = (event: string, el: Element) => {
+    const host = wrap.current?.getBoundingClientRect()
+    const box = el.getBoundingClientRect()
+    if (!host || !describe) return
+    const below = box.top - host.top < host.height * 0.7
+    // Keep the card inside the picture: its center stays half a card away from either edge.
+    const card = Math.min(260, host.width * 0.7)
+    const center = Math.min(
+      Math.max(box.left + box.width / 2 - host.left, card / 2 + 4),
+      host.width - card / 2 - 4,
+    )
+    setHover({
+      event,
+      left: center / host.width,
+      top: ((below ? box.bottom : box.top) - host.top) / host.height,
+      below,
+    })
+  }
   const t = UI[lang]
   const id = `ui-lcd-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [, redraw] = useReducer((value: number) => value + 1, 0)
@@ -404,6 +439,10 @@ export function LifecycleDiagram({
         aria-pressed={selectedEvent === event}
         data-event={event}
         onClick={() => onSelect(event)}
+        onMouseEnter={e => showCard(event, e.currentTarget)}
+        onMouseLeave={() => setHover(h => (h?.event === event ? null : h))}
+        onFocus={e => showCard(event, e.currentTarget)}
+        onBlur={() => setHover(null)}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
@@ -411,7 +450,7 @@ export function LifecycleDiagram({
           }
         }}
       >
-        <title>{title}</title>
+        {!describe && <title>{title}</title>}
         <rect className="ui-lcd-hit" x={x} y={y} width={width} height={height} rx={compact ? 2 : 6} />
         <rect className="ui-lcd-hover" x={x} y={y} width={width} height={height} rx={compact ? 2 : 6} />
         {recentEvent === event && (
@@ -581,7 +620,7 @@ export function LifecycleDiagram({
   }
 
   return (
-    <>
+    <div className="ui-lcd-wrap" ref={wrap}>
       <style href="ui-lcd-lifecycle-diagram" precedence="default">
         {styles}
       </style>
@@ -655,7 +694,17 @@ export function LifecycleDiagram({
         </g>
         {layout.boxes.map(renderBox)}
       </svg>
-    </>
+      {hover && describe && (
+        <div
+          className="ui-lcd-card"
+          role="tooltip"
+          data-below={hover.below || undefined}
+          style={{ left: `${hover.left * 100}%`, top: `${hover.top * 100}%` }}
+        >
+          {describe(hover.event)}
+        </div>
+      )}
+    </div>
   )
 }
 

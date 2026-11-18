@@ -33,6 +33,7 @@ import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
 import {
   decidingScope,
   emptyAgent,
+  itemLabel,
   listOf,
   mergeItems,
   slotOf,
@@ -252,11 +253,13 @@ export default function App() {
   }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Without a chat seen yet, open on the project and terminal that were active last.
+  // (Once a chat is known, following decides; this must not overwrite it.)
   const last = activity[agent].place
   useEffect(() => {
+    if (latest) return
     if (last && !projectKey) setProjectKey(last.project)
     if (last && !terminalKey) setTerminalKey(last.terminal)
-  }, [last, projectKey, terminalKey])
+  }, [latest, last, projectKey, terminalKey])
 
   const save = useCallback((next: Config) => {
     setConfig(next)
@@ -295,6 +298,9 @@ export default function App() {
   const terminalProject =
     running.find(r => r.terminal === terminalKey)?.project ?? places.terminals[terminalKey]?.cwd ?? ''
   const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
+  const terminalAgent: Agent =
+    running.find(r => r.terminal === terminalKey)?.agent ??
+    (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
   const allProjects = [
     ...new Set([
       ...running.filter(r => r.hasProject).map(r => r.project),
@@ -331,7 +337,7 @@ export default function App() {
     act(withList(config, agent, 'global', '', merged.list), t.copied(merged.added))
   }
   const applyAllProjects = () => {
-    const targets = allProjects.filter(p => !(scope === 'project' && p === projectKey))
+    const targets = targetProjects
     let next = config
     let added = 0
     for (const p of targets) {
@@ -341,6 +347,25 @@ export default function App() {
     }
     act(next, t.copiedProjects(added, targets.length))
   }
+  // Only what can be done here is shown.
+  const targetProjects = allProjects.filter(p => !(scope === 'project' && p === projectKey))
+  const actions: { label: string; title?: string; strong?: boolean; run(): void }[] = [
+    ...(scope !== 'global' ? [{ label: t.setFromGlobal, strong: true, run: () => loadFrom('global') }] : []),
+    ...(scope === 'terminal' && terminalHasProject
+      ? [{ label: t.setFromProject, title: terminalProject, strong: true, run: () => loadFrom('project') }]
+      : []),
+    ...(list.length > 0 && targetProjects.length > 0
+      ? [
+          {
+            label: t.applyAllProjects,
+            title: targetProjects.map(folderName).join(', '),
+            run: applyAllProjects,
+          },
+        ]
+      : []),
+    ...(scope !== 'global' && list.length > 0 ? [{ label: t.applyGlobal, run: applyGlobal }] : []),
+  ]
+
   const undo = () => {
     if (!done) return
     save(done.before)
@@ -414,22 +439,6 @@ export default function App() {
       .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
       .map(([path]) => ({ value: path, label: folderName(path), description: `${t.closed} · ${path}` })),
   ]
-  const shortId = (label: string) => label.split(' ').pop() ?? label
-  const terminalOptions = [
-    ...running.map(r => ({
-      value: r.terminal,
-      label: `${folderName(r.project || r.cwd)} · ${t.agents[r.agent]} · ${shortId(r.terminalLabel)}`,
-      description: `${r.terminalLabel} · ${places.terminals[r.terminal] ? t.open : t.notHooked}`,
-    })),
-    ...Object.entries(places.terminals)
-      .filter(([id]) => !running.some(r => r.terminal === id))
-      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
-      .map(([id, v]) => ({
-        value: id,
-        label: `${folderName(v.cwd)} · ${v.agent === 'codex' ? t.agents.codex : t.agents.claude} · ${shortId(v.label)}`,
-        description: `${v.label} · ${t.closed}`,
-      })),
-  ]
 
   const slot = selected ? slotOf(selected, agent) : undefined
   const recent = activity[agent].recent
@@ -498,12 +507,7 @@ export default function App() {
           label={t.follow}
           description={
             follow && latest
-              ? t.followNow(
-                  t.agents[latest.agent],
-                  places.terminals[latest.place.terminal]?.label ||
-                    latest.place.terminalLabel ||
-                    folderName(latest.place.project),
-                ) +
+              ? t.followNow(t.agents[latest.agent], folderName(latest.place.project)) +
                 (latest.agent === 'claude' && codex?.installed && !codex.connected
                   ? ` — ${t.followCodex}`
                   : '')
@@ -555,54 +559,24 @@ export default function App() {
           ) : (
             <p className="hw-editor-hint">{t.noPlaces}</p>
           ))}
-        {scope === 'terminal' &&
-          (terminalOptions.length ? (
-            <Select
-              size="sm"
-              aria-label={t.pickTerminal}
-              placeholder={t.pickTerminal}
-              options={terminalOptions}
-              value={terminalKey || null}
-              onChange={next => {
-                setTerminalKey(next)
-                setFollow(false)
-              }}
-            />
-          ) : (
-            <p className="hw-editor-hint">{t.noPlaces}</p>
-          ))}
-        {scopeReady && (
+        {scope === 'terminal' && (
+          <p className="hw-editor-hint">
+            {terminalKey ? t.terminalNow(folderName(terminalProject), t.agents[terminalAgent]) : t.noPlaces}
+          </p>
+        )}
+        {scopeReady && actions.length > 0 && (
           <div className="hw-actions">
-            {scope !== 'global' && (
-              <Button size="sm" variant="secondary" onClick={() => loadFrom('global')}>
-                {t.loadGlobal}
-              </Button>
-            )}
-            {scope === 'terminal' && (
+            {actions.map(a => (
               <Button
+                key={a.label}
                 size="sm"
-                variant="secondary"
-                disabled={!terminalHasProject}
-                title={terminalHasProject ? terminalProject : t.noProjectHere}
-                onClick={() => loadFrom('project')}
+                variant={a.strong ? 'secondary' : 'ghost'}
+                title={a.title}
+                onClick={a.run}
               >
-                {t.loadProject}
+                {a.label}
               </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={list.length === 0 || allProjects.length === 0}
-              title={allProjects.length === 0 ? t.noProjects : allProjects.map(folderName).join(', ')}
-              onClick={applyAllProjects}
-            >
-              {t.applyAllProjects}
-            </Button>
-            {scope !== 'global' && (
-              <Button size="sm" variant="ghost" disabled={list.length === 0} onClick={applyGlobal}>
-                {t.applyGlobal}
-              </Button>
-            )}
+            ))}
           </div>
         )}
         {done && (
@@ -689,6 +663,45 @@ export default function App() {
               onSelect={setSelected}
               lang={lang}
               existing={existingCounts}
+              describe={event => {
+                const added = list.filter(i => i.event === event)
+                const already = existing[agent].filter(h => h.event === event)
+                return (
+                  <div className="hw-tip">
+                    <b>{eventName(event, lang, agent)}</b>
+                    {added.length === 0 && already.length === 0 && <p>{t.tipEmpty}</p>}
+                    {added.length > 0 && (
+                      <>
+                        <span>
+                          {t.tipAdded} · {t.scopes[scope]}
+                        </span>
+                        <ul>
+                          {added.map(i => (
+                            <li key={i.id} data-off={!i.enabled || undefined}>
+                              {t.kinds[i.kind]}: {itemLabel(i)}
+                              {i.enabled ? '' : ` (${t.tipOff})`}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {already.length > 0 && (
+                      <>
+                        <span>{t.tipExisting}</span>
+                        <ul>
+                          {already.map(h => (
+                            <li key={h.id} data-off={h.off || undefined}>
+                              {h.name} · {t.existingFrom(h.from)}
+                              {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                              {h.off ? ` (${t.tipOff})` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )
+              }}
             />
           </>
         )}
