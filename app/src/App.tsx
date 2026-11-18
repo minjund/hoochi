@@ -4,6 +4,7 @@ import { LifecycleDiagram } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { IconButton } from './components/ui/icon-button'
+import { SegmentedControl } from './components/ui/segmented-control'
 import {
   browserFlags,
   EMPTY_ACTIVITY,
@@ -18,6 +19,7 @@ import {
   writeConfig,
   type Skill,
 } from './lib/backend'
+import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
 import { ALL_SLOTS, slotOf, type Activity, type Config, type Item } from './lib/lifecycle'
 
 const POLL_MS = 800
@@ -69,6 +71,12 @@ export default function App() {
   const [activity, setActivity] = useState<Activity>(EMPTY_ACTIVITY)
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   const [skills, setSkills] = useState<Skill[]>([])
+  const [lang, setLang] = useState<Lang>(detectLang)
+  const t = UI[lang]
+
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
 
   // The config text we last wrote or read, and whether an edit is waiting to be saved.
   const known = useRef('')
@@ -140,7 +148,6 @@ export default function App() {
 
   const removeItem = (id: string) => save({ ...config, items: config.items.filter(i => i.id !== id) })
 
-
   const activeCount = useMemo(() => config.items.filter(i => i.enabled).length, [config.items])
   const slot = selected ? ALL_SLOTS.find(s => s.event === selected) : undefined
 
@@ -168,20 +175,35 @@ export default function App() {
       >
         <div className="hw-head-title">
           hookwich
-          <span>{activeCount} on</span>
+          <span>{t.on(activeCount)}</span>
         </div>
+        <SegmentedControl
+          size="sm"
+          aria-label={t.language}
+          options={[
+            { value: 'en', label: 'EN', ariaLabel: 'English' },
+            { value: 'ko', label: '한', ariaLabel: '한국어' },
+            { value: 'ja', label: '日', ariaLabel: '日本語' },
+            { value: 'zh', label: '中', ariaLabel: '中文' },
+          ]}
+          value={lang}
+          onChange={next => {
+            setLang(next)
+            saveLang(next)
+          }}
+        />
         <IconButton
           size="sm"
           variant="ghost"
           icon={MinimizeIcon}
-          label="Fold into the bubble"
+          label={t.fold}
           onClick={() => void collapse()}
         />
         <IconButton
           size="sm"
           variant="ghost"
           icon={HideIcon}
-          label="Hide to the menu bar"
+          label={t.hide}
           onClick={() => void hideWindow()}
         />
       </header>
@@ -192,6 +214,7 @@ export default function App() {
             slot={slot}
             items={config.items.filter(i => i.event === slot.event)}
             skills={skills}
+            lang={lang}
             onChange={changeItem}
             onRemove={removeItem}
             onAdd={() => addTo(slot.event)}
@@ -199,20 +222,26 @@ export default function App() {
           />
         ) : (
           <>
-            <p className="hw-diagram-hint">Click any event to put text, a command or a skill there.</p>
-            <LifecycleDiagram items={config.items} activity={activity} selectedEvent={selected} onSelect={setSelected} />
+            <p className="hw-diagram-hint">{t.diagramHint}</p>
+            <LifecycleDiagram
+              items={config.items}
+              activity={activity}
+              selectedEvent={selected}
+              onSelect={setSelected}
+              lang={lang}
+            />
           </>
         )}
       </main>
 
       {activity.recent.length > 0 && (
-        <footer className="hw-feed" aria-label="Recently put in">
+        <footer className="hw-feed" aria-label={t.recent}>
           {activity.recent
             .slice(-3)
             .reverse()
             .map((f, i) => (
               <div className="hw-feed-row" key={`${f.at}-${i}`}>
-                <b>{f.event}</b>
+                <b>{eventName(f.event, lang)}</b>
                 {f.tool ? ` · ${f.tool}` : ''} — {f.label}
               </div>
             ))}

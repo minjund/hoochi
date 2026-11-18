@@ -1,11 +1,14 @@
 import { useEffect, useId, useMemo, useReducer } from 'react'
-import { slotOf, type Activity, type Item } from '../../lib/lifecycle'
+import { eventHint, eventName, subtitleOf, UI, type Lang } from '../../lib/i18n'
+import { type Activity, type Item } from '../../lib/lifecycle'
 
 export type LifecycleDiagramProps = {
   items: Item[]
   activity: Activity
   selectedEvent: string | null
   onSelect(event: string): void
+  /** the language the labels are drawn in */
+  lang: Lang
 }
 
 type Tone = 'neutral' | 'green' | 'yellow' | 'pink' | 'side' | 'tool'
@@ -153,6 +156,8 @@ const styles = `
 .ui-lcd-head-orange { fill: var(--ui-lcd-orange); }
 .ui-lcd-head-blue { fill: var(--ui-lcd-blue); }
 .ui-lcd-head-resume { fill: var(--ui-lcd-resume); }
+.ui-lcd-split { stroke: var(--ui-lcd-orange); stroke-width: 1; opacity: .45; }
+.ui-lcd-pink .ui-lcd-split { stroke: var(--ui-lcd-pink-border); }
 .ui-lcd-resume-label { fill: var(--ui-lcd-muted); font-size: 11px; pointer-events: none; }
 .ui-lcd-target { cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
 .ui-lcd-hit { fill: transparent; pointer-events: all; }
@@ -173,7 +178,55 @@ const styles = `
 }
 `
 
-export function LifecycleDiagram({ items, activity, selectedEvent, onSelect }: LifecycleDiagramProps) {
+/** Rough text width for system-ui: CJK glyphs are square, Latin ones about half. */
+function textWidth(text: string, size: number): number {
+  let w = 0
+  for (const ch of text) w += ch.codePointAt(0)! >= 0x2e80 ? size : size * 0.58
+  return w
+}
+
+/** Breaks a label into at most `max` lines that fit `width`, ending in … if it must. */
+export function wrapLabel(text: string, width: number, size: number, max = 2): string[] {
+  const hasSpaces = text.includes(' ')
+  const tokens = hasSpaces ? text.split(' ') : Array.from(text)
+  const glue = hasSpaces ? ' ' : ''
+  const lines: string[] = []
+  let line = ''
+  for (const token of tokens) {
+    const next = line ? line + glue + token : token
+    if (textWidth(next, size) <= width || !line) {
+      line = next
+      continue
+    }
+    lines.push(line)
+    line = token
+  }
+  if (line) lines.push(line)
+  // Two lines: split where both halves are closest in width, so no word is left alone.
+  if (lines.length === 2 && max >= 2 && tokens.length > 1) {
+    let best: string[] = lines
+    let bestWidth = Infinity
+    for (let cut = 1; cut < tokens.length; cut++) {
+      const a = tokens.slice(0, cut).join(glue)
+      const b = tokens.slice(cut).join(glue)
+      const widest = Math.max(textWidth(a, size), textWidth(b, size))
+      if (widest <= width && widest < bestWidth) {
+        best = [a, b]
+        bestWidth = widest
+      }
+    }
+    return best
+  }
+  if (lines.length <= max) return lines
+  const kept = lines.slice(0, max)
+  let last = kept[max - 1]!
+  while (last.length > 1 && textWidth(last + '…', size) > width) last = last.slice(0, -1)
+  kept[max - 1] = last + '…'
+  return kept
+}
+
+export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lang }: LifecycleDiagramProps) {
+  const t = UI[lang]
   const id = `ui-lcd-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [, redraw] = useReducer((value: number) => value + 1, 0)
   const now = Date.now()
@@ -199,8 +252,14 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect }: L
 
   function target(event: string, x: number, y: number, width: number, height: number, compact = false) {
     const count = itemCounts.get(event)
-    const hint = slotOf(event)?.hint
-    const title = [event, hint, `fired ${activity.counts[event] ?? 0} times`].filter(Boolean).join('\n')
+    const note = subtitleOf(event, lang)
+    const title = [
+      `${eventName(event, lang)} (${event})${note ? ` · ${note}` : ''}`,
+      eventHint(event, lang),
+      t.fired(activity.counts[event] ?? 0),
+    ]
+      .filter(Boolean)
+      .join('\n')
     const disabledOnly = count?.enabled === 0
     const badgeText = String(count?.enabled ?? 0)
     const badgeRadius = compact ? 5 : Math.max(7, badgeText.length * 2.7 + 2)
@@ -274,69 +333,75 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect }: L
     )
   }
 
+  /** Centered lines of a label inside one area of a box. */
+  function labelLines(text: string, cx: number, top: number, height: number, width: number, narrow: boolean) {
+    const size = narrow ? 11.5 : 12.5
+    const lines = wrapLabel(text, width - 10, size)
+    const step = size + 2
+    const block = lines.length * step
+    const first = top + (height - block) / 2 + size - 1
+    return lines.map((line, i) => (
+      <text
+        key={i}
+        className="ui-lcd-label"
+        style={{ fontSize: size }}
+        x={cx}
+        y={first + i * step}
+        textAnchor="middle"
+      >
+        {line}
+      </text>
+    ))
+  }
+
   function renderBox(box: Box) {
-    const { x, y, width, events, subtitle, lines } = box
+    const { x, y, width, events } = box
     const height = box.height ?? 42
     const center = x + width / 2
-    const labelClass = `ui-lcd-label${subtitle ? ' ui-lcd-small-label' : ''}`
     const threeLines = events.length === 3
+    const offsets = [0, 15, 28, 54]
     return (
       <g key={events[0] ?? 'tool'} className={`ui-lcd-${box.tone}`}>
         <rect className="ui-lcd-box" x={x} y={y} width={width} height={height} rx={6} />
-        {events.map((event, index) => {
-          if (threeLines) {
-            // Each label owns its line; the shared sub-label belongs to the last row.
-            const offsets = [0, 16, 28, 54]
-            return target(event, x, y + offsets[index]!, width, offsets[index + 1]! - offsets[index]!, true)
-          }
-          return target(event, x + (index * width) / events.length, y, width / events.length, height)
-        })}
+        {events.map((event, index) =>
+          threeLines
+            ? target(event, x, y + offsets[index]!, width, offsets[index + 1]! - offsets[index]!, true)
+            : target(event, x + (index * width) / events.length, y, width / events.length, height),
+        )}
         <g aria-hidden="true" pointerEvents="none">
-          {threeLines ? (
-            events.map((event, index) => (
-              <text
-                key={event}
-                className="ui-lcd-label ui-lcd-tiny-label"
-                x={center}
-                y={y + 12 + index * 12}
-                textAnchor="middle"
-              >
-                {event}
-              </text>
-            ))
-          ) : lines ? (
-            lines.map((line, index) => (
-              <text key={line} className={labelClass} x={center} y={y + 12 + index * 13} textAnchor="middle">
-                {line}
-              </text>
-            ))
-          ) : events.length === 2 ? (
-            <>
-              <text className={labelClass} x={center - 8} y={y + 26} textAnchor="end">
-                {events[0]}
-              </text>
-              <text className={labelClass} x={center} y={y + 26} textAnchor="middle">
-                /
-              </text>
-              <text className={labelClass} x={center + 8} y={y + 26} textAnchor="start">
-                {events[1]}
-              </text>
-            </>
-          ) : (
-            <text className={labelClass} x={center} y={y + (subtitle ? 17 : 26)} textAnchor="middle">
-              {box.label ?? events[0]}
-            </text>
-          )}
-          {subtitle && (
-            <text
-              className={`ui-lcd-label ui-lcd-subtitle${threeLines || lines ? ' ui-lcd-tiny-subtitle' : ''}`}
-              x={center}
-              y={y + (threeLines ? 49 : lines ? 37 : 33)}
-              textAnchor="middle"
-            >
-              {subtitle}
-            </text>
-          )}
+          {threeLines
+            ? events.map((event, index) => (
+                <text
+                  key={event}
+                  className="ui-lcd-label"
+                  style={{ fontSize: 9.5 }}
+                  x={center}
+                  y={y + 11 + index * 12.5}
+                  textAnchor="middle"
+                >
+                  {wrapLabel(eventName(event, lang), width - 8, 9.5, 1)[0]}
+                </text>
+              ))
+            : events.length === 0
+              ? labelLines(t.toolRuns, center, y, height, width, false)
+              : events.map((event, index) => {
+                  const w = width / events.length
+                  return (
+                    <g key={event}>
+                      {labelLines(
+                        eventName(event, lang),
+                        x + w * index + w / 2,
+                        y,
+                        height,
+                        w,
+                        box.tone === 'side',
+                      )}
+                      {index > 0 && (
+                        <path className="ui-lcd-split" d={`M${x + w * index} ${y + 9}V${y + height - 9}`} />
+                      )}
+                    </g>
+                  )
+                })}
         </g>
       </g>
     )
@@ -379,15 +444,15 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect }: L
           <rect className="ui-lcd-container ui-lcd-turn" x={44} y={88} width={420} height={775} rx={8} />
           <rect className="ui-lcd-container ui-lcd-agent" x={60} y={158} width={380} height={610} rx={8} />
           <text className="ui-lcd-container-label ui-lcd-agent-label" x={85} y={185}>
-            AGENTIC
+            {t.loop[0]}
             <tspan x={85} dy={17}>
-              LOOP
+              {t.loop[1]}
             </tspan>
           </text>
           <text className="ui-lcd-container-label ui-lcd-turn-label" x={69} y={785}>
-            EACH
+            {t.turn[0]}
             <tspan x={69} dy={17}>
-              TURN
+              {t.turn[1]}
             </tspan>
           </text>
           {downward.map(([start, tip]) => (
@@ -423,7 +488,7 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect }: L
             textAnchor="middle"
             transform="rotate(-90 483 564)"
           >
-            resumed sessions
+            {t.resumed}
           </text>
         </g>
         {boxes.map(renderBox)}

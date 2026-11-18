@@ -1,4 +1,5 @@
 import type { Skill } from '../../lib/backend'
+import { eventHint, eventName, UI, type Lang } from '../../lib/i18n'
 import type { Item, ItemKind, Slot } from '../../lib/lifecycle'
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
@@ -12,28 +13,31 @@ type Props = {
   slot: Slot
   items: Item[]
   skills: Skill[]
+  lang: Lang
   onChange(item: Item): void
   onRemove(id: string): void
   onAdd(): void
   onBack(): void
 }
 
-/** Everything put into one slot, each item editable in place. */
-export function SlotEditor({ slot, items, skills, onChange, onRemove, onAdd, onBack }: Props) {
+/** Everything put into one moment, each item editable in place. */
+export function SlotEditor({ slot, items, skills, lang, onChange, onRemove, onAdd, onBack }: Props) {
+  const t = UI[lang]
   return (
     <div className="hw-editor">
       <div className="hw-editor-head">
         <Button variant="ghost" size="sm" onClick={onBack}>
-          ← Lifecycle
+          {t.back}
         </Button>
-        <div className="hw-editor-title">
-          <strong>{slot.event}</strong>
-          {!slot.canInject && <code>commands only</code>}
-        </div>
       </div>
-      <p className="hw-editor-hint">{slot.hint}</p>
+      <div className="hw-editor-title">
+        <strong>{eventName(slot.event, lang)}</strong>
+        <code>{slot.event}</code>
+        {!slot.canInject && <span className="hw-tag">{t.onlyCommandsTag}</span>}
+      </div>
+      <p className="hw-editor-hint">{eventHint(slot.event, lang)}</p>
 
-      {items.length === 0 && <p className="hw-editor-empty">Nothing here yet.</p>}
+      {items.length === 0 && <p className="hw-editor-empty">{t.empty}</p>}
 
       {items.map(item => (
         <ItemCard
@@ -41,13 +45,14 @@ export function SlotEditor({ slot, items, skills, onChange, onRemove, onAdd, onB
           item={item}
           slot={slot}
           skills={skills}
+          lang={lang}
           onChange={onChange}
           onRemove={() => onRemove(item.id)}
         />
       ))}
 
       <Button variant="secondary" size="sm" onClick={onAdd}>
-        + Add to {slot.event}
+        + {t.add}
       </Button>
     </div>
   )
@@ -57,20 +62,23 @@ function ItemCard({
   item,
   slot,
   skills,
+  lang,
   onChange,
   onRemove,
 }: {
   item: Item
   slot: Slot
   skills: Skill[]
+  lang: Lang
   onChange(item: Item): void
   onRemove(): void
 }) {
+  const t = UI[lang]
   const set = (patch: Partial<Item>) => onChange({ ...item, ...patch })
   const kinds: { value: ItemKind; label: string; disabled?: boolean }[] = [
-    { value: 'text', label: 'Text', disabled: !slot.canInject },
-    { value: 'command', label: 'Command' },
-    { value: 'skill', label: 'Skill', disabled: !slot.canInject },
+    { value: 'text', label: t.kinds.text, disabled: !slot.canInject },
+    { value: 'command', label: t.kinds.command },
+    { value: 'skill', label: t.kinds.skill, disabled: !slot.canInject },
   ]
 
   return (
@@ -79,7 +87,7 @@ function ItemCard({
         <div className="hw-item-row">
           <SegmentedControl
             size="sm"
-            aria-label="What to put in"
+            aria-label={t.kindLabel}
             options={kinds}
             value={item.kind}
             onChange={kind => set({ kind })}
@@ -88,14 +96,14 @@ function ItemCard({
             size="sm"
             checked={item.enabled}
             onChange={e => set({ enabled: e.target.checked })}
-            label="On"
+            label={t.enabled}
           />
         </div>
 
         {item.kind === 'text' && (
           <TextArea
-            aria-label="Text"
-            placeholder="e.g. Answer in English, and keep it short."
+            aria-label={t.kinds.text}
+            placeholder={t.textPlaceholder}
             minRows={2}
             maxRows={8}
             value={item.text}
@@ -106,29 +114,30 @@ function ItemCard({
         {item.kind === 'command' && (
           <>
             <TextField
-              aria-label="Command"
-              placeholder="e.g. npm test"
+              aria-label={t.kinds.command}
+              placeholder={t.commandPlaceholder}
               size="sm"
-              prefix="$"
+              prefix="$ "
               inputClassName="hw-mono"
               value={item.command}
               onChange={e => set({ command: e.target.value })}
             />
             {slot.canInject ? (
-              <SegmentedControl
-                size="sm"
-                aria-label="When to put its output in"
-                options={[
-                  { value: 'always', label: 'Always add output' },
-                  { value: 'onFail', label: 'Only when it fails' },
-                ]}
-                value={item.mode}
-                onChange={mode => set({ mode })}
-              />
+              <div className="hw-field">
+                <span className="hw-field-label">{t.modeLabel}</span>
+                <SegmentedControl
+                  size="sm"
+                  aria-label={t.modeLabel}
+                  options={[
+                    { value: 'always', label: t.modes.always },
+                    { value: 'onFail', label: t.modes.onFail },
+                  ]}
+                  value={item.mode}
+                  onChange={mode => set({ mode })}
+                />
+              </div>
             ) : (
-              <p className="hw-editor-hint">
-                Runs here for its side effects; the model doesn't see the output.
-              </p>
+              <p className="hw-editor-hint">{t.sideEffect}</p>
             )}
           </>
         )}
@@ -136,8 +145,8 @@ function ItemCard({
         {item.kind === 'skill' && (
           <Select
             size="sm"
-            aria-label="Skill"
-            placeholder={skills.length ? 'Pick a skill' : 'No skills found'}
+            aria-label={t.kinds.skill}
+            placeholder={skills.length ? t.pickSkill : t.noSkills}
             options={skills.map(s => ({ value: s.name, label: s.name, description: s.description }))}
             value={item.skill || null}
             onChange={skill => set({ skill })}
@@ -147,8 +156,8 @@ function ItemCard({
         {slot.hasTools && (
           <TextField
             size="sm"
-            aria-label="Tools"
-            placeholder="Only for these tools (e.g. Bash, Edit) — empty: all"
+            aria-label={t.tools}
+            placeholder={t.tools}
             value={item.tools}
             onChange={e => set({ tools: e.target.value })}
           />
@@ -159,11 +168,11 @@ function ItemCard({
             size="sm"
             checked={item.once}
             onChange={e => set({ once: e.target.checked })}
-            label="Once"
-            description="Switches itself off after it runs"
+            label={t.once}
+            description={t.onceHint}
           />
           <Button variant="ghost" size="sm" onClick={onRemove}>
-            Remove
+            {t.remove}
           </Button>
         </div>
       </CardContent>

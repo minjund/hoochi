@@ -167,3 +167,25 @@ input {
   font-size: 11px;
   color: var(--hw-soft);
 }
+
+.hw-tag {
+  padding: 0 6px;
+  border: 1px solid var(--hw-line);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--hw-soft);
+}
+
+.hw-field {
+  display: grid;
+  gap: 6px;
+}
+
+.hw-field-label {
+  font-size: 11px;
+  color: var(--hw-soft);
+}
+
+.hw-editor-title {
+  flex-wrap: wrap;
+}

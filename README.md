@@ -2,106 +2,88 @@
 
 <h1 align="center">hookwich</h1>
 
-<p align="center"><b>The hook sandwich for Claude Code.</b><br>
-Put text, commands or skills before or after any moment of Claude Code's lifecycle,<br>
-from a little window that floats in the corner of your screen.</p>
+<p align="center"><b>Tell Claude Code what to do at the exact moment you want.</b><br>
+A little window in the corner of your screen shows every moment of Claude's work as a picture.<br>
+Tap a moment, and add a sentence, a command or a skill there.</p>
 
-<p align="center"><a href="README.ko.md">한국어</a></p>
+<p align="center"><b>English</b> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh.md">中文</a></p>
 
 ---
 
-Claude Code runs in a loop: a session starts, you send a prompt, it calls tools, it stops.
-Hooks let you step in at each of those moments, but writing them means editing JSON and shell scripts.
+## What is it for?
 
-hookwich draws that loop the way the official
-[hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle) does — every turn, the
-agentic loop, the loop-backs and the side events — and makes every event in it clickable.
-Click one and sandwich something in before or after that moment:
+When Claude Code works, the same moments come around again and again: the chat starts, you send a
+message, Claude uses a tool (runs a command, edits a file), Claude finishes its answer…
 
-| Put in | What happens |
-|---|---|
-| **Text** | Handed to the model at that moment. *"Answer in English."* before every prompt. |
-| **Command** | Runs in the session's folder; its output goes to the model — always, or only when it fails. `npm test` after the turn, only on failure, and Claude keeps fixing until it passes. |
-| **Skill** | Asks the model to use one of your installed skills. `code-review` after the turn. |
+hookwich lets you attach something to any of those moments, without writing code.
 
-Turn items on and off, limit tool slots to certain tools (`Bash, Edit`), or mark an item **Once**
-so it switches itself off after it runs.
+| You add | What happens | Example |
+|---|---|---|
+| **Words** | Claude reads them at that moment. | Every time you send a message: *"Please answer in English."* |
+| **A command** | It runs on your computer. Claude can read the result — always, or only when it fails. | When Claude finishes answering: `npm test`, only if it fails — Claude keeps fixing until the tests pass. |
+| **A skill** | Claude is asked to use one of your installed skills. | When Claude finishes answering: `code-review`. |
 
-<p align="center"><img src="assets/screenshot.png" width="460" alt="The hookwich panel and its bubble"></p>
+You can turn each one on or off, pick **Just once** so it switches itself off after one run, and for
+tool moments choose which tools it applies to.
+
+<p align="center"><img src="assets/screenshot.png" alt="The hookwich window in four languages"></p>
 
 ## The window
 
-- Floats above everything, folded into a 🥪 bubble in the bottom-right corner.
-- Click to unfold, drag to move it anywhere.
-- `–` folds it back, `×` hides it to the menu bar; click the menu bar icon to bring it back.
-- The event that just fired lights up on the diagram, badges count what is in each event, and the last few
-  things hookwich put in are listed at the bottom.
+- It floats above other windows as a small 🥪 bubble in the bottom-right corner. Drag it anywhere.
+- Click the bubble to open the picture of Claude's work. It is drawn after the official
+  [Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle).
+- Click any box to add something there. A number on a box shows how many things are on.
+- The moment that just happened lights up, so you can watch Claude work.
+- `–` folds it back into the bubble. `×` hides it; it waits in the menu bar at the top of the screen.
+- Languages: English, 한국어, 日本語, 中文. It follows your computer's language; change it at the top.
 
 ## Install
 
-**1. The plugin** — at the Claude Code prompt (answer `y` to add the marketplace, then pick a scope):
+**1. The plugin.** Type this in Claude Code, then answer `y` and pick where to install it:
 
 ```
 /plugin install hookwich --marketplace minjund/hookwich
 ```
 
-From a shell: `claude plugin install hookwich --marketplace minjund/hookwich`
+From a terminal instead: `claude plugin install hookwich --marketplace minjund/hookwich`
 
-**2. The window app (macOS)** — the plugin downloads it from the latest
-[release](https://github.com/minjund/hookwich/releases) the first time a session starts, checks its
-SHA-256, and opens it. You can also build it yourself (below).
+**2. The window (macOS).** The first time a Claude Code chat starts, the plugin downloads the window
+from the [releases page](https://github.com/minjund/hookwich/releases), checks that the file is
+genuine, and opens it.
 
-Then `/hookwich` shows or hides the window (`/hookwich show`, `/hookwich hide`).
+Type `/hookwich` to show or hide the window.
 
-## How it works
+## Is it safe?
 
-```
-  ┌───────────────┐   writes config.json    ┌────────────────────────┐
-  │ hookwich app  │ ──────────────────────▶ │ ~/.hookwich/           │
-  │ (Tauri)       │ ◀────────────────────── │  config.json           │
-  └───────────────┘   reads activity.json   │  activity.json         │
-          ▲            control.json ─────▶  │  control.json          │
-          │ show/hide                       └───────────┬────────────┘
-          │                                             │ read on every hook event
-          │                                 ┌───────────▼────────────┐
-          └──────────── /hookwich ───────── │ hookwich plugin        │
-                                            │ (Claude Code mod)      │
-                                            └────────────────────────┘
-```
+A command you add runs on your computer every time its moment comes, with the same rights as you.
+Only add commands you would run yourself. A command is stopped after 30 seconds.
 
-- **plugin/** — a Claude Code mod. It hooks every lifecycle event (`classic.*`), lets your existing
-  settings hooks run first, then adds the enabled items to the event's answer. On `Stop` and
-  `SubagentStop` it asks Claude to keep going once, never twice in the same turn.
-- **app/** — the window: Tauri (Rust) + React + [affectUI](https://www.affectui.com) free components.
-  It only edits the config; it never talks to Claude directly.
+## For developers
 
-Events where the model can't hear anything (session end, notifications, compaction…) accept
-commands only, for their side effects.
+- `plugin/` — the Claude Code part. At every moment (a "hook event") it lets your existing hooks run
+  first, then adds what is switched on. When Claude is about to finish, it asks Claude to keep going
+  at most once per answer, so it never loops.
+- `app/` — the window: Tauri (Rust) + React + free [affectUI](https://www.affectui.com) components.
+- Both share three files in `~/.hookwich/`: `config.json` (what you added), `activity.json` (what just
+  happened) and `control.json` (show/hide).
 
-## Build from source
-
-Requires Node 20+, Rust (stable) and Xcode command line tools.
+Build it yourself (needs Node 20+, Rust and the Xcode command line tools):
 
 ```sh
-cd app
-npm install
-npm run tauri dev        # run the window
-npm run tauri build      # build Hookwich.app
+cd app && npm install
+npm run tauri dev      # run the window
+npm run tauri build    # make Hookwich.app
+claude plugin test plugin   # test the plugin
 ```
-
-Plugin tests: `claude plugin test plugin`.
-
-## Safety
-
-Command items run shell commands on your machine every time their event fires — the same power as a
-settings hook. Only put in commands you'd run yourself. A command gets 30 seconds, then it is stopped.
 
 ## Credits
 
-The lifecycle diagram is hookwich's own redraw of the layout of the official
-[Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle); the figure's
-file is not included. UI components from [affectUI](https://www.affectui.com) (free items, MIT) and icons from
-[Hugeicons Free](https://hugeicons.com) (MIT). The bubble and diagram components were written with Codex.
+The picture of Claude's work is hookwich's own drawing of the layout of the official
+[Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle); the
+figure's file is not included. UI parts from [affectUI](https://www.affectui.com) (free items, MIT),
+icons from [Hugeicons Free](https://hugeicons.com) (MIT). The bubble and the picture were built with
+Codex.
 
 ## License
 

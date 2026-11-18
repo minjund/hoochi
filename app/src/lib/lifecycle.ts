@@ -37,15 +37,13 @@ export type Slot = {
   canInject: boolean
   /** tool events take a tool filter */
   hasTools: boolean
-  /** one line on what happens when something is put here */
-  hint: string
 }
 
-const slot = (event: string, canInject: boolean, hint: string, hasTools = false): Slot => ({
+// Plain-language names and explanations live in i18n.ts.
+const slot = (event: string, canInject: boolean, _hint: string, hasTools = false): Slot => ({
   event,
   canInject,
   hasTools,
-  hint,
 })
 
 /** Every hook event, in the order of the official lifecycle figure. */
@@ -89,7 +87,8 @@ export const slotOf = (event: string): Slot | undefined => ALL_SLOTS.find(s => s
 
 /** A short label for an item, for chips and the feed. */
 export function itemLabel(item: Item): string {
-  const raw = item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
+  const raw =
+    item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
   const one = raw.replace(/\s+/g, ' ').trim()
   return one.length > 40 ? `${one.slice(0, 39)}…` : one || '(empty)'
 }
