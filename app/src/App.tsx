@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import { ContextMeter } from './components/hookwich/context-meter'
-import { CLAUDE_LAYOUT, CODEX_LAYOUT, LifecycleDiagram } from './components/hookwich/lifecycle-diagram'
+import {
+  CLAUDE_LAYOUT,
+  CODEX_LAYOUT,
+  LifecycleDiagram,
+  tokens,
+  type ContextFill,
+} from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { Button } from './components/ui/button'
@@ -353,6 +358,101 @@ export default function App() {
       window.clearInterval(id)
     }
   }, [expanded, visible, contextTerminal])
+
+  // The figures the picture draws, from the snapshot: drawn only on Claude Code's picture.
+  const contextFill: ContextFill | undefined =
+    context && agent === 'claude'
+      ? {
+          used: context.used,
+          max: context.max,
+          percent: context.percent,
+          compactAt: context.compactAt,
+          loaded: context.rows
+            .filter(r => r.kind === 'used' && r.name !== 'Messages')
+            .reduce((n, r) => n + r.tokens, 0),
+          messages: context.rows.find(r => r.name === 'Messages')?.tokens ?? 0,
+        }
+      : undefined
+  /** What the hover card adds about the context, at the moments it fills up. */
+  const contextTip = (event: string): ReactNode => {
+    if (!context || !contextFill) return null
+    const rowName = (name: string) => t.ctxRows[name] ?? name
+    const head = (
+      <span>
+        {t.ctxTitle} · {t.ago(Math.max(0, Date.now() - context.at))}
+      </span>
+    )
+    if (event === 'SessionStart')
+      return (
+        <>
+          {head}
+          <p>{t.ctxTipLoaded(tokens(contextFill.loaded))}</p>
+          <ul>
+            {context.rows
+              .filter(r => r.kind === 'used' && r.name !== 'Messages')
+              .map(r => (
+                <li key={r.name}>
+                  {rowName(r.name)} · {tokens(r.tokens)}
+                </li>
+              ))}
+          </ul>
+          {context.mcp.length > 0 && (
+            <p>
+              MCP:{' '}
+              {context.mcp
+                .slice(0, 3)
+                .map(m => `${m.server} ${tokens(m.tokens)}`)
+                .join(' · ')}
+            </p>
+          )}
+          {context.skills && context.skillGroups.length > 0 && (
+            <p>
+              {t.ctxSkills(context.skills.count)}:{' '}
+              {context.skillGroups
+                .slice(0, 3)
+                .map(
+                  g =>
+                    `${g.kind === 'plugin' ? g.name : g.kind === 'other' && g.name ? g.name : t.ctxFrom[g.kind]} ${tokens(g.tokens)}`,
+                )
+                .join(' · ')}
+            </p>
+          )}
+          {context.agents.length > 0 && (
+            <p>
+              {t.ctxAgents}: {context.agents.map(a => a.name).join(', ')}
+            </p>
+          )}
+        </>
+      )
+    if (event === 'UserPromptSubmit' || event === 'PostToolUse')
+      return (
+        <>
+          {head}
+          <p>{t.ctxTipMessages(tokens(contextFill.messages))}</p>
+        </>
+      )
+    if (event === 'PreCompact' || event === 'PostCompact')
+      return (
+        <>
+          {head}
+          <p>
+            {contextFill.compactAt === undefined
+              ? t.ctxCompactOff
+              : t.ctxTipCompact(tokens(contextFill.used), tokens(contextFill.compactAt))}
+          </p>
+          <ul>
+            {context.rows
+              .filter(r => r.kind === 'free' || r.kind === 'buffer')
+              .map(r => (
+                <li key={r.name}>
+                  {rowName(r.name)} · {tokens(r.tokens)}
+                </li>
+              ))}
+          </ul>
+        </>
+      )
+    return null
+  }
 
   // Moving to another terminal shows a short notice, and the "chatting now" chip flashes.
   const [switched, setSwitched] = useState<{ terminal: string; at: number } | null>(null)
@@ -787,7 +887,6 @@ export default function App() {
             {t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent))}
           </p>
         )}
-        {contextTerminal && <ContextMeter snap={context} t={t} now={Date.now()} />}
         <SegmentedControl
           fullWidth
           size="sm"
@@ -928,6 +1027,7 @@ export default function App() {
               onSelect={setSelected}
               lang={lang}
               existing={existingCounts}
+              context={contextFill}
               describe={event => {
                 const added = list.filter(i => i.event === event)
                 const already = existing[agent].filter(h => h.event === event)
@@ -935,6 +1035,7 @@ export default function App() {
                   <div className="hw-tip">
                     <b>{eventName(event, lang, agent)}</b>
                     {added.length === 0 && already.length === 0 && <p>{t.tipEmpty}</p>}
+                    {contextTip(event)}
                     {added.length > 0 && (
                       <>
                         <span>

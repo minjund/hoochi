@@ -16,6 +16,28 @@ export type LifecycleDiagramProps = {
   existing?: Readonly<Record<string, number>>
   /** what a moment holds, shown in a card while the pointer rests on its box */
   describe?(event: string): ReactNode
+  /** what /context shows for the chat in view, drawn at the moments it fills up */
+  context?: ContextFill
+}
+
+/** The context window at a glance: what is in it, what came in at the start, what the talk took. */
+export type ContextFill = {
+  used: number
+  max: number
+  percent: number
+  /** the token count where it compacts itself; absent when auto-compaction is off */
+  compactAt?: number
+  /** what the chat starts with: system prompt, tools, memory files, skills, agents */
+  loaded: number
+  /** what was said and what the tools gave back */
+  messages: number
+}
+
+/** 61400 → "61.4k", 1000000 → "1M" */
+export function tokens(n: number): string {
+  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${+(n / 1000).toFixed(1)}k`
+  return String(Math.round(n))
 }
 
 type Tone = 'neutral' | 'green' | 'yellow' | 'pink' | 'side' | 'tool'
@@ -58,6 +80,16 @@ export type DiagramLayout = {
   }[]
   /** Label keys reference UI[lang], including the rotated resumed label. */
   labels: readonly DiagramLabel[]
+  /** Where the context figures go: beside the start, under the loop, in the compaction box. */
+  context?: {
+    total: readonly [x: number, y: number]
+    loaded: readonly [x: number, y: number]
+    messages: readonly [x: number, y: number]
+    compact: {
+      box: readonly [x: number, y: number, width: number, height: number]
+      text: readonly [x: number, y: number]
+    }
+  }
 }
 
 // The original Claude figure's 520 × 1336 geometry, with the "anytime" moments moved into a band below.
@@ -154,6 +186,12 @@ export const CLAUDE_LAYOUT: DiagramLayout = {
     { key: 'anytime', tone: 'anytime', x: 24, y: 1194 },
     { key: 'resumed', tone: 'resume', x: 483, y: 564, rotation: -90, textAnchor: 'middle' },
   ],
+  context: {
+    total: [366, 64],
+    loaded: [248, 81],
+    messages: [72, 228],
+    compact: { box: [160, 956, 190, 42], text: [358, 974] },
+  },
 }
 
 /** Codex flow: https://learn.chatgpt.com/docs/hooks (no official figure). */
@@ -297,9 +335,16 @@ const styles = `
 .ui-lcd-badge-existing { fill: var(--ui-lcd-muted); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 9px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
+.ui-lcd-ctx { fill: var(--ui-lcd-muted); font-size: 12px; pointer-events: none; }
+.ui-lcd-ctx-strong { fill: var(--ui-lcd-ink); font-size: 14px; font-weight: 700; pointer-events: none; }
+.ui-lcd-ctx-track { fill: var(--ui-lcd-border); pointer-events: none; }
+.ui-lcd-ctx-fill { fill: var(--ui-lcd-blue); pointer-events: none; transition: width 400ms ease-out; }
+.ui-lcd-ctx[data-near], .ui-lcd-ctx-strong[data-near] { fill: #C2410C; }
+.ui-lcd-ctx-fill[data-near] { fill: #EA580C; }
+:where(.dark, [data-theme="dark"]) .ui-lcd-ctx[data-near], :where(.dark, [data-theme="dark"]) .ui-lcd-ctx-strong[data-near] { fill: #FDBA74; }
 @keyframes ui-lcd-fired { 0%, 20% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .ui-lcd-hover { transition: none; }
+  .ui-lcd-hover, .ui-lcd-ctx-fill { transition: none; }
   .ui-lcd-flash { animation: none; opacity: .8; }
 }
 `
@@ -361,6 +406,7 @@ export function LifecycleDiagram({
   agent = 'claude',
   existing = {},
   describe,
+  context,
 }: LifecycleDiagramProps) {
   // The hover card: which box, and where it sits in the picture (as fractions, so it scales).
   const wrap = useRef<HTMLDivElement | null>(null)
@@ -619,6 +665,51 @@ export function LifecycleDiagram({
     )
   }
 
+  /** The context figures, laid on the picture where the window fills up. */
+  function renderContext() {
+    const at = layout.context
+    if (!at || !context) return null
+    const goal = context.compactAt ?? context.max
+    const near = context.used >= goal * 0.9 || undefined
+    const [bx, by, bw, bh] = at.compact.box
+    const track = bw - 16
+    return (
+      <g aria-hidden="true" pointerEvents="none">
+        <text className="ui-lcd-ctx-strong" data-near={near} x={at.total[0]} y={at.total[1]}>
+          {context.percent}%
+        </text>
+        <text className="ui-lcd-ctx" x={at.total[0]} y={at.total[1] + 15}>
+          {tokens(context.used)} / {tokens(context.max)}
+        </text>
+        <text className="ui-lcd-ctx" x={at.loaded[0]} y={at.loaded[1]} textAnchor="end">
+          {t.ctxLoaded(tokens(context.loaded))}
+        </text>
+        <text className="ui-lcd-ctx" x={at.messages[0]} y={at.messages[1]}>
+          {t.ctxMessagesShort}
+        </text>
+        <text className="ui-lcd-ctx-strong" x={at.messages[0]} y={at.messages[1] + 17}>
+          {tokens(context.messages)}
+        </text>
+        <rect className="ui-lcd-ctx-track" x={bx + 8} y={by + bh - 7} width={track} height={3.5} rx={1.75} />
+        <rect
+          className="ui-lcd-ctx-fill"
+          data-near={near}
+          x={bx + 8}
+          y={by + bh - 7}
+          width={track * Math.min(1, context.used / Math.max(goal, 1))}
+          height={3.5}
+          rx={1.75}
+        />
+        <text className="ui-lcd-ctx-strong" data-near={near} x={at.compact.text[0]} y={at.compact.text[1]}>
+          {tokens(context.used)} / {tokens(goal)}
+        </text>
+        <text className="ui-lcd-ctx" x={at.compact.text[0]} y={at.compact.text[1] + 16}>
+          {context.compactAt === undefined ? t.ctxCompactOff : t.ctxCompactHere}
+        </text>
+      </g>
+    )
+  }
+
   return (
     <div className="ui-lcd-wrap" ref={wrap}>
       <style href="ui-lcd-lifecycle-diagram" precedence="default">
@@ -693,6 +784,7 @@ export function LifecycleDiagram({
           {layout.labels.filter(label => label.tone === 'resume').map(renderLabel)}
         </g>
         {layout.boxes.map(renderBox)}
+        {renderContext()}
       </svg>
       {hover && describe && (
         <div
