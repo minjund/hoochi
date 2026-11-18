@@ -324,8 +324,10 @@ export default function App() {
     }
   }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // /context for the Claude Code terminal in view, as its chat keeps writing it.
-  const contextTerminal = agent === 'claude' ? terminalKey : ''
+  // /context for the Claude Code chat you are in (or, when that is Codex, the Claude terminal in
+  // view), as its chat keeps writing it. Shown whether or not the window follows you.
+  const contextTerminal =
+    latest?.agent === 'claude' ? latest.place.terminal : agent === 'claude' ? terminalKey : ''
   useEffect(() => {
     setContext(null)
     if (!expanded || !visible || !contextTerminal) return

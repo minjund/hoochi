@@ -7,6 +7,7 @@ import type {
   Config,
   ContextRow,
   ContextSnapshot,
+  SkillGroup,
   Fired,
   Item,
   Place,
@@ -23,7 +24,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.8'
+export const APP_VERSION = '0.1.9'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -452,6 +453,26 @@ export function contextSnapshot(b: Breakdown, place: Place, at: number): Context
   }
   const byTokens = <T extends { tokens: number }>(list: T[]) =>
     [...list].sort((x, y) => y.tokens - x.tokens).slice(0, 8)
+  const groups = new Map<string, SkillGroup>()
+  for (const skill of b.skills?.skillFrontmatter ?? []) {
+    const kind: SkillGroup['kind'] = skill.pluginName
+      ? 'plugin'
+      : skill.source === 'userSettings'
+        ? 'user'
+        : skill.source === 'projectSettings'
+          ? 'project'
+          : skill.source === 'built-in'
+            ? 'builtin'
+            : skill.source === 'syncedSkills'
+              ? 'synced'
+              : 'other'
+    // a plugin by name; an unknown source by its own word, so it can still be told apart
+    const name = kind === 'plugin' ? (skill.pluginName ?? '') : kind === 'other' ? String(skill.source) : ''
+    const g = groups.get(`${kind}:${name}`) ?? { kind, name, skills: 0, tokens: 0 }
+    g.skills += 1
+    g.tokens += skill.tokens
+    groups.set(`${kind}:${name}`, g)
+  }
   return {
     v: 1,
     at,
@@ -465,6 +486,10 @@ export function contextSnapshot(b: Breakdown, place: Place, at: number): Context
     memory: byTokens(b.memoryFiles.map(m => ({ path: m.path, tokens: m.tokens }))),
     mcp: byTokens([...servers.values()]),
     ...(b.skills ? { skills: { count: b.skills.includedSkills, tokens: b.skills.tokens } } : {}),
+    ...(groups.size > 0 ? { skillGroups: byTokens([...groups.values()]) } : {}),
+    ...(b.agents.length > 0
+      ? { agents: byTokens(b.agents.map(a => ({ name: a.agentType, source: a.source, tokens: a.tokens }))) }
+      : {}),
   }
 }
 

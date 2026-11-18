@@ -329,6 +329,16 @@ export type ContextSnapshot = {
   memory: { path: string; tokens: number }[]
   mcp: { server: string; tools: number; tokens: number }[]
   skills?: { count: number; tokens: number }
+  skillGroups: SkillGroup[]
+  agents: { name: string; source: string; tokens: number }[]
+}
+
+/** Where listed skills come from: a plugin (by name), your own, the project's, built in. */
+export type SkillGroup = {
+  kind: 'plugin' | 'user' | 'project' | 'builtin' | 'synced' | 'other'
+  name: string
+  skills: number
+  tokens: number
 }
 
 function parseContext(v: unknown): ContextSnapshot | null {
@@ -346,6 +356,8 @@ function parseContext(v: unknown): ContextSnapshot | null {
     memory: Array.isArray(o.memory) ? o.memory : [],
     mcp: Array.isArray(o.mcp) ? o.mcp : [],
     skills: o.skills,
+    skillGroups: Array.isArray(o.skillGroups) ? o.skillGroups : [],
+    agents: Array.isArray(o.agents) ? o.agents : [],
   }
 }
 
@@ -380,6 +392,12 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
       { server: 'browser', tools: 6, tokens: 2300 },
     ],
     skills: { count: 18, tokens: 1900 },
+    skillGroups: [
+      { kind: 'plugin', name: 'review-kit', skills: 9, tokens: 1100 },
+      { kind: 'user', name: '', skills: 6, tokens: 520 },
+      { kind: 'builtin', name: '', skills: 3, tokens: 280 },
+    ],
+    agents: [{ name: 'tester', source: 'review-kit', tokens: 300 }],
   }
 }
 

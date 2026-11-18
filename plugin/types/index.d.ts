@@ -96,6 +96,18 @@ export type ContextSnapshot = {
   memory: { path: string; tokens: number }[]
   mcp: { server: string; tools: number; tokens: number }[]
   skills?: { count: number; tokens: number }
+  /** where the listed skills come from: each plugin, your own, the project's, built in */
+  skillGroups?: SkillGroup[]
+  /** the custom agents the Agent tool describes */
+  agents?: { name: string; source: string; tokens: number }[]
+}
+
+export type SkillGroup = {
+  kind: 'plugin' | 'user' | 'project' | 'builtin' | 'synced' | 'other'
+  /** the plugin's name for kind "plugin", the source's own word for "other", else empty */
+  name: string
+  skills: number
+  tokens: number
 }
 
 declare module 'claude-code' {

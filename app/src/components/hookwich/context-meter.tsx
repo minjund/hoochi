@@ -45,7 +45,11 @@ export function ContextMeter({ snap, t, now }: { snap: ContextSnapshot | null; t
   const max = Math.max(snap.max, 1)
   const used = snap.rows.filter(r => r.kind === 'used')
   const colorOf = (r: ContextRow) =>
-    r.kind === 'free' ? 'var(--hw-line-strong)' : r.kind === 'buffer' ? 'var(--hw-soft)' : COLORS[used.indexOf(r) % COLORS.length]
+    r.kind === 'free'
+      ? 'var(--hw-line-strong)'
+      : r.kind === 'buffer'
+        ? 'var(--hw-soft)'
+        : COLORS[used.indexOf(r) % COLORS.length]
   const name = (r: ContextRow) => t.ctxRows[r.name] ?? r.name
   const near = snap.compactAt !== undefined && snap.used >= snap.compactAt * 0.9
   const toggle = () => {
@@ -100,7 +104,9 @@ export function ContextMeter({ snap, t, now }: { snap: ContextSnapshot | null; t
               </li>
             ))}
           </ul>
-          {snap.compactAt !== undefined && <p className="hw-editor-hint">{t.ctxCompact(tokens(snap.compactAt))}</p>}
+          {snap.compactAt !== undefined && (
+            <p className="hw-editor-hint">{t.ctxCompact(tokens(snap.compactAt))}</p>
+          )}
           {snap.memory.length > 0 && (
             <details>
               <summary>
@@ -135,10 +141,47 @@ export function ContextMeter({ snap, t, now }: { snap: ContextSnapshot | null; t
               </ul>
             </details>
           )}
-          {snap.skills && (
-            <p className="hw-editor-hint">
-              {t.ctxSkills(snap.skills.count)} · {tokens(snap.skills.tokens)}
-            </p>
+          {snap.skills &&
+            (snap.skillGroups.length > 0 ? (
+              <details>
+                <summary>
+                  {t.ctxSkills(snap.skills.count)} · {tokens(snap.skills.tokens)}
+                </summary>
+                <ul className="hw-ctx-rows">
+                  {snap.skillGroups.map(g => (
+                    <li key={`${g.kind}:${g.name}`}>
+                      <span className="hw-ctx-name">
+                        {g.kind === 'plugin'
+                          ? t.ctxFromPlugin(g.name)
+                          : g.kind === 'other' && g.name
+                            ? g.name
+                            : t.ctxFrom[g.kind]}{' '}
+                        · {t.ctxSkillCount(g.skills)}
+                      </span>
+                      <span className="hw-ctx-num">{tokens(g.tokens)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : (
+              <p className="hw-editor-hint">
+                {t.ctxSkills(snap.skills.count)} · {tokens(snap.skills.tokens)}
+              </p>
+            ))}
+          {snap.agents.length > 0 && (
+            <details>
+              <summary>
+                {t.ctxAgents} · {snap.agents.length}
+              </summary>
+              <ul className="hw-ctx-rows">
+                {snap.agents.map(a => (
+                  <li key={a.name}>
+                    <span className="hw-ctx-name">{a.name}</span>
+                    <span className="hw-ctx-num">{tokens(a.tokens)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       )}
