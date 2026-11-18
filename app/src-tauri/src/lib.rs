@@ -91,6 +91,13 @@ async fn existing_hooks(project: String) -> Value {
     existing::existing(&project)
 }
 
+/// Switches one existing hook off or back on; returns the fresh list.
+#[tauri::command]
+async fn set_existing_hook(project: String, id: String, on: bool) -> Result<Value, String> {
+    existing::set_on(&project, &id, on)?;
+    Ok(existing::existing(&project))
+}
+
 /// Claude Code and Codex chats open in terminals right now.
 #[tauri::command]
 async fn running_chats() -> Value {
@@ -305,7 +312,8 @@ pub fn run() {
             codex_connect,
             codex_disconnect,
             running_chats,
-            existing_hooks
+            existing_hooks,
+            set_existing_hook
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

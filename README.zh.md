@@ -47,6 +47,9 @@ Claude 回答完毕……
 
 已有的钩子也会显示。Claude Code 设置、插件（包括靠钩子运行的技能）、Codex 的 `hooks.json` 里的钩子，
 会在每个时刻左上角显示为 **灰色数字**，打开方框就能看到名字。黑色数字是用 hookwich 加入的。
+每个已有的钩子都有开关。Claude Code 设置里的钩子关闭时会被移到一旁（`~/.hookwich/parked.json`），打开时再放回去。
+Codex 的钩子和 `/hooks` 一样在原处关闭，所以信任保持不变。插件的钩子只能随整个插件开关，所以会先询问。
+每次修改前都会在 `~/.hookwich/backups/` 留下备份。
 
 ## Claude Code 和 Codex
 

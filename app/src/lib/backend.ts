@@ -245,6 +245,13 @@ export type ExistingHook = {
   /** "settings" | "project" | "managed" | "plugin:<name>" */
   from: string
   scope: 'global' | 'project'
+  id: string
+  /** switched off (it stays listed so it can be put back) */
+  off: boolean
+  /** how it is switched: moved out of a Claude settings file, the whole plugin, or Codex's own switch */
+  toggle: 'park' | 'plugin' | 'codex'
+  /** for plugin hooks: "name@marketplace" */
+  plugin: string
 }
 export type ExistingHooks = Record<'claude' | 'codex', ExistingHook[]>
 
@@ -252,6 +259,10 @@ export async function existingHooks(project: string): Promise<ExistingHooks> {
   if (inApp) return invoke('existing_hooks', { project })
   if (!browserFlags.demo) return { claude: [], codex: [] }
   const hook = (event: string, name: string, from: string, matcher = ''): ExistingHook => ({
+    id: `${event}-${name}`,
+    off: localStorage.getItem(`hookwich.demo.off.${event}-${name}`) === '1',
+    toggle: from.startsWith('plugin:') ? 'plugin' : 'park',
+    plugin: from.startsWith('plugin:') ? `${from.slice(7)}@demo` : '',
     event,
     matcher,
     kind: 'command',
@@ -293,6 +304,14 @@ export async function runningChats(): Promise<Running[]> {
     chat('codex', 'd4', '/Users/me/Projects/api'),
     chat('claude', 'e5', '/Users/me'),
   ]
+}
+
+/** Switches one existing hook off or back on, and returns the fresh list. */
+export async function setExistingHook(project: string, id: string, on: boolean): Promise<ExistingHooks> {
+  if (inApp) return invoke('set_existing_hook', { project, id, on })
+  if (on) localStorage.removeItem(`hookwich.demo.off.${id}`)
+  else localStorage.setItem(`hookwich.demo.off.${id}`, '1')
+  return existingHooks(project)
 }
 
 export async function codexStatus(): Promise<CodexStatus> {

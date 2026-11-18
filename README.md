@@ -50,6 +50,11 @@ one outside any project opens on **Everywhere**.
 Hooks you already have — in Claude Code's settings, in plugins (often a skill run by a hook) or in
 Codex's `hooks.json` — show as a **grey number** at the top left of each moment, and by name when
 you open it. Black numbers are what you added with hookwich.
+Each one has a switch. A hook in your Claude Code settings is moved aside (kept in
+`~/.hookwich/parked.json`) and put back when you switch it on again; a Codex hook is switched in
+place, the same way `/hooks` does it, so its trust stays. A plugin's hooks can only be switched with
+the whole plugin, so hookwich asks first. Every file is backed up in `~/.hookwich/backups/` before
+it changes.
 
 ## Claude Code and Codex
 

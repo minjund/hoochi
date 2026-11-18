@@ -1,6 +1,8 @@
 import type { ExistingHook, Skill } from '../../lib/backend'
 import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
 import type { Agent, Item, ItemKind, Slot } from '../../lib/lifecycle'
+import { useState } from 'react'
+
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
 import { SegmentedControl } from '../ui/segmented-control'
@@ -19,6 +21,8 @@ type Props = {
   note?: string
   /** hooks already set up outside hookwich for this moment, shown read-only */
   existing?: ExistingHook[]
+  /** switch an existing hook off or back on */
+  onToggleExisting?(hook: ExistingHook, on: boolean): void
   onChange(item: Item): void
   onRemove(id: string): void
   onAdd(): void
@@ -34,12 +38,15 @@ export function SlotEditor({
   agent,
   note,
   existing = [],
+  onToggleExisting,
   onChange,
   onRemove,
   onAdd,
   onBack,
 }: Props) {
   const t = UI[lang]
+  // A plugin hook switches the whole plugin off, so that asks first.
+  const [asking, setAsking] = useState<ExistingHook | null>(null)
   return (
     <div className="hw-editor">
       <div className="hw-editor-head">
@@ -58,20 +65,58 @@ export function SlotEditor({
       {existing.length > 0 && (
         <section className="hw-existing" aria-label={t.existingTitle}>
           <div className="hw-existing-title">
-            {t.existingTitle} <span>{existing.length}</span>
+            {t.existingTitle} <span>{existing.filter(h => !h.off).length}</span>
           </div>
           <ul>
-            {existing.map((h, i) => (
-              <li key={`${h.from}-${h.name}-${i}`} title={h.detail}>
-                <b>{h.name}</b>
-                <span>
-                  {t.existingFrom(h.from)}
-                  {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
-                </span>
+            {existing.map(h => (
+              <li key={h.id} title={h.detail} data-off={h.off || undefined}>
+                <div className="hw-existing-text">
+                  <b>{h.name}</b>
+                  <span>
+                    {h.off ? `${t.existingOff} · ` : ''}
+                    {t.existingFrom(h.from)}
+                    {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                  </span>
+                </div>
+                {onToggleExisting && (
+                  <Switch
+                    size="sm"
+                    aria-label={t.existingSwitch(h.name)}
+                    title={h.toggle === 'plugin' ? t.pluginOnly : undefined}
+                    checked={!h.off}
+                    onChange={e => {
+                      const on = e.currentTarget.checked
+                      if (!on && h.toggle === 'plugin') setAsking(h)
+                      else onToggleExisting(h, on)
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>
-          <p className="hw-editor-hint">{t.existingNote}</p>
+          {asking && (
+            <div className="hw-confirm" role="alertdialog">
+              <span>{t.pluginWhole(asking.from.replace('plugin:', ''))}</span>
+              <div>
+                <Button size="sm" variant="ghost" onClick={() => setAsking(null)}>
+                  {t.cancel}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    onToggleExisting?.(asking, false)
+                    setAsking(null)
+                  }}
+                >
+                  {t.turnOffPlugin}
+                </Button>
+              </div>
+            </div>
+          )}
+          <p className="hw-editor-hint">
+            {t.existingNote} {t.reopenNote}
+          </p>
         </section>
       )}
 

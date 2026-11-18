@@ -19,6 +19,7 @@ import {
   newId,
   existingHooks,
   readState,
+  setExistingHook,
   runningChats,
   setExpanded,
   startDrag,
@@ -356,7 +357,7 @@ export default function App() {
   }, [expanded, existingProject])
   const existingCounts = useMemo(() => {
     const counts: Record<string, number> = {}
-    for (const h of existing[agent]) counts[h.event] = (counts[h.event] ?? 0) + 1
+    for (const h of existing[agent]) if (!h.off) counts[h.event] = (counts[h.event] ?? 0) + 1
     return counts
   }, [existing, agent])
 
@@ -646,6 +647,11 @@ export default function App() {
             agent={agent}
             note={noteFor(slot.event)}
             existing={existing[agent].filter(h => h.event === slot.event)}
+            onToggleExisting={(hook, on) =>
+              void setExistingHook(existingProject, hook.id, on)
+                .then(setExisting)
+                .catch((e: unknown) => setDone({ message: t.toggleFailed(String(e)), before: config }))
+            }
             items={list.filter(i => i.event === slot.event)}
             skills={skills}
             lang={lang}
