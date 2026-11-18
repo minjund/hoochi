@@ -274,7 +274,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.13/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.14/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -292,7 +292,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.13'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.14'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -449,11 +449,23 @@ const usage = (used: number) => ({
     percent: Math.round(used / 2000),
     breakdown: {
       categories: [
-        { name: 'System prompt', tokens: 3000, color: 'promptBorder', isDeferred: false, kind: 'used' as const },
+        {
+          name: 'System prompt',
+          tokens: 3000,
+          color: 'promptBorder',
+          isDeferred: false,
+          kind: 'used' as const,
+        },
         { name: 'MCP tools', tokens: 900, color: 'cyan', isDeferred: false, kind: 'used' as const },
         { name: 'Custom agents', tokens: 0, color: 'warning', isDeferred: false, kind: 'used' as const },
         { name: 'Messages', tokens: used - 3900, color: 'purple', isDeferred: false, kind: 'used' as const },
-        { name: 'Free space', tokens: 200_000 - used, color: 'inactive', isDeferred: false, kind: 'free' as const },
+        {
+          name: 'Free space',
+          tokens: 200_000 - used,
+          color: 'inactive',
+          isDeferred: false,
+          kind: 'free' as const,
+        },
       ],
       totalTokens: used,
       maxTokens: 200_000,
@@ -562,4 +574,33 @@ test('while tools run, /context is written at most every two seconds', async ($,
 
   expect(asked).toBe(1)
   expect(JSON.parse(fs.get(CONTEXT) ?? '{}').used).toBe(11_000)
+})
+
+test('a claude -p run in the same terminal is not where you chat', async ($, on) => {
+  const earlier = {
+    at: 500,
+    place: { project: '/work/app', terminal: 'whitebox:terminal:t1', terminalLabel: 'Whitebox t1' },
+  }
+  const { fs } = machine(on, {
+    [CONFIG]: v2({}),
+    [ACTIVITY]: JSON.stringify({ lastEvent: '', lastAt: 0, counts: {}, recent: [], lastChat: earlier }),
+  })
+  let asked = 0
+  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => {
+    asked += 1
+    return { value: usage(10_000) }
+  })
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+  on('classic.UserPromptSubmit', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/scratch', surface: null, isInteractive: false })
+  await $.classic.UserPromptSubmit({ prompt: 'reply ok' })
+  await measure($)
+
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat).toEqual(earlier)
+  expect(fs.has('/home/me/.hookwich/places.json')).toBe(false)
+  expect(asked).toBe(0)
+  expect(fs.has(CONTEXT)).toBe(false)
 })

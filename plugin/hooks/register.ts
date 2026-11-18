@@ -24,7 +24,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.13'
+export const APP_VERSION = '0.1.14'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -55,6 +55,12 @@ const QUIET: ReadonlySet<string> = new Set(['MessageDisplay', 'FileChanged'])
 
 /** You are here: a chat opened or a message typed. The window follows these. */
 const HERE: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit'])
+
+/**
+ * Whether a person is at this session's prompt. A `claude -p` run or an SDK script in the same
+ * terminal is not "where you chat": it neither moves the window nor writes over that chat's /context.
+ */
+let interactive = true
 
 const activity = atom({ plugin: 'hookwich', key: 'activity' } as const, emptyActivity(), {
   shape: 'activity-2',
@@ -502,6 +508,7 @@ let lastContext = -Infinity
 let contextDir: Promise<string> | undefined
 export async function noteContext($: EngineInterface, force = false): Promise<boolean> {
   const now = await $.clock.now()
+  if (!interactive) return false
   if (!force && now - lastContext < CONTEXT_MS) return false
   lastContext = now
   const usage = await $.session.usage({ breakdown: 'summary' })
@@ -573,13 +580,13 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     await $.fs.write(`${dir}/config.json`, JSON.stringify(next2, null, 2)).catch(() => undefined)
   }
 
-  if (HERE.has(event)) await notePlace($, dir, place).catch(() => undefined)
+  if (HERE.has(event) && interactive) await notePlace($, dir, place).catch(() => undefined)
 
   if (!QUIET.has(event) || fired.length > 0) {
     const before0 = await read($, activity)
     // Other Claude Code chats write this file too: keep the newest "where you last chatted",
     // so a chat working in the background never takes it back from the one you are typing in.
-    const mine = HERE.has(event) ? { at, place } : before0.lastChat
+    const mine = HERE.has(event) && interactive ? { at, place } : before0.lastChat
     const seen: Activity = {
       lastEvent: event,
       lastAt: at,
@@ -605,6 +612,7 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    interactive = e.isInteractive !== false
     const started = await next(e)
     await $.command.register({
       name: 'hookwich',
@@ -618,9 +626,10 @@ export const register: Register = on => {
         JSON.stringify({ version: 2, claude: empty, codex: empty }, null, 2),
       )
     }
-    void placeOf($)
-      .then(place => notePlace($, dir, place))
-      .catch(() => undefined)
+    if (interactive)
+      void placeOf($)
+        .then(place => notePlace($, dir, place))
+        .catch(() => undefined)
     void ensureApp($, dir).then(trouble => showTrouble($, trouble))
     void noteContext($, true).catch(() => undefined)
 

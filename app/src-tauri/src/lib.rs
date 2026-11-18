@@ -27,7 +27,6 @@ use tauri::{
 const BUBBLE: (f64, f64) = (76.0, 76.0);
 const PANEL: (f64, f64) = (440.0, 760.0);
 const MARGIN: f64 = 24.0;
-const DOCK_ROOM: f64 = 90.0;
 const EMPTY_CONFIG: &str = "{\n  \"version\": 2,\n  \"claude\": { \"global\": [], \"projects\": {}, \"terminals\": {} },\n  \"codex\": { \"global\": [], \"projects\": {}, \"terminals\": {} }\n}\n";
 
 fn home() -> PathBuf {
@@ -259,8 +258,9 @@ fn set_expanded(window: WebviewWindow, expanded: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .to_logical::<f64>(scale);
     let (w, h) = if expanded { PANEL } else { BUBBLE };
-    let x = (pos.x + size.width - w).max(0.0);
-    let y = (pos.y + size.height - h).max(0.0);
+    // Keep the bottom-right corner where it was, but never off the display.
+    let now = (pos.x, pos.y, size.width, size.height);
+    let (x, y) = keep_on_screen(&areas(&window), now, pos.x + size.width - w, pos.y + size.height - h, w, h);
     window
         .set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
@@ -292,21 +292,82 @@ fn toggle(app: &AppHandle, want: Option<bool>) {
     let Some(window) = app.get_webview_window("main") else { return };
     let visible = window.is_visible().unwrap_or(false);
     if want.unwrap_or(!visible) {
+        bring_on_screen(&window);
         let _ = window.show();
     } else {
         let _ = window.hide();
     }
 }
 
-/// Places the bubble at the bottom-right of the primary screen.
+/// A display's usable area (without the menu bar and the Dock), in logical points.
+type Area = (f64, f64, f64, f64);
+
+fn areas(window: &WebviewWindow) -> Vec<Area> {
+    window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| {
+            let s = m.scale_factor();
+            let wa = m.work_area();
+            (
+                f64::from(wa.position.x) / s,
+                f64::from(wa.position.y) / s,
+                f64::from(wa.size.width) / s,
+                f64::from(wa.size.height) / s,
+            )
+        })
+        .collect()
+}
+
+/// A rectangle in logical points: x, y, width, height.
+type Rect = (f64, f64, f64, f64);
+
+/// Where a w×h window at (x, y) should go so all of it shows. The display is the one `from` (where
+/// the window is now) overlaps most, or the nearest to it; the window is pushed inside its usable area.
+pub fn keep_on_screen(areas: &[Area], from: Rect, x: f64, y: f64, w: f64, h: f64) -> (f64, f64) {
+    let (fx, fy, fw, fh) = from;
+    let overlap = |&(ax, ay, aw, ah): &Area| {
+        let ox = ((fx + fw).min(ax + aw) - fx.max(ax)).max(0.0);
+        let oy = ((fy + fh).min(ay + ah) - fy.max(ay)).max(0.0);
+        ox * oy
+    };
+    let (cx, cy) = (fx + fw / 2.0, fy + fh / 2.0);
+    let gap = |&(ax, ay, aw, ah): &Area| {
+        let dx = (ax - cx).max(0.0).max(cx - (ax + aw));
+        let dy = (ay - cy).max(0.0).max(cy - (ay + ah));
+        dx * dx + dy * dy
+    };
+    let best = areas
+        .iter()
+        .filter(|a| overlap(a) > 0.0)
+        .max_by(|a, b| overlap(a).total_cmp(&overlap(b)))
+        .or_else(|| areas.iter().min_by(|a, b| gap(a).total_cmp(&gap(b))));
+    let Some(&(ax, ay, aw, ah)) = best else { return (x, y) };
+    let fit = |v: f64, lo: f64, size: f64, room: f64| if size >= room { lo } else { v.clamp(lo, lo + room - size) };
+    (fit(x, ax, w, aw), fit(y, ay, h, ah))
+}
+
+/// Places the bubble at the bottom-right of the primary display, above the Dock.
 fn place_bottom_right(window: &WebviewWindow) {
     let Ok(Some(monitor)) = window.primary_monitor() else { return };
-    let scale = monitor.scale_factor();
-    let screen = monitor.size().to_logical::<f64>(scale);
-    let origin = monitor.position().to_logical::<f64>(scale);
-    let x = origin.x + screen.width - BUBBLE.0 - MARGIN;
-    let y = origin.y + screen.height - BUBBLE.1 - DOCK_ROOM;
+    let s = monitor.scale_factor();
+    let wa = monitor.work_area();
+    let x = f64::from(wa.position.x) / s + f64::from(wa.size.width) / s - BUBBLE.0 - MARGIN;
+    let y = f64::from(wa.position.y) / s + f64::from(wa.size.height) / s - BUBBLE.1 - MARGIN;
     let _ = window.set_position(LogicalPosition::new(x, y));
+}
+
+/// Pulls the window back inside a display if any of it is off screen.
+fn bring_on_screen(window: &WebviewWindow) {
+    let Ok(scale) = window.scale_factor() else { return };
+    let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else { return };
+    let (pos, size) = (pos.to_logical::<f64>(scale), size.to_logical::<f64>(scale));
+    let now = (pos.x, pos.y, size.width, size.height);
+    let (x, y) = keep_on_screen(&areas(window), now, pos.x, pos.y, size.width, size.height);
+    if (x - pos.x).abs() > 0.5 || (y - pos.y).abs() > 0.5 {
+        let _ = window.set_position(LogicalPosition::new(x, y));
+    }
 }
 
 /// Watches control.json, which the plugin's /hookwich command writes.
@@ -421,7 +482,41 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::context_file;
+    use super::{context_file, keep_on_screen};
+
+    // A 2560×1440 display with a 25-point menu bar and a Dock, and a portrait one to its right.
+    const MAIN: (f64, f64, f64, f64) = (0.0, 25.0, 2560.0, 1335.0);
+    const SIDE: (f64, f64, f64, f64) = (2560.0, 0.0, 1440.0, 2560.0);
+
+    #[test]
+    fn folding_a_panel_dragged_below_the_edge_keeps_the_bubble_on_screen() {
+        // the case seen: the panel hung below the bottom edge, so its corner was off screen
+        let panel = (2096.0, 1124.0, 440.0, 760.0);
+        assert_eq!(keep_on_screen(&[MAIN, SIDE], panel, 2460.0, 1808.0, 76.0, 76.0), (2460.0, 1284.0));
+    }
+
+    #[test]
+    fn a_window_inside_stays_put() {
+        let panel = (2096.0, 590.0, 440.0, 760.0);
+        assert_eq!(keep_on_screen(&[MAIN, SIDE], panel, 2096.0, 590.0, 440.0, 760.0), (2096.0, 590.0));
+        let bubble = (3000.0, 2000.0, 76.0, 76.0);
+        assert_eq!(keep_on_screen(&[MAIN, SIDE], bubble, 3000.0, 2000.0, 76.0, 76.0), (3000.0, 2000.0));
+    }
+
+    #[test]
+    fn a_panel_opening_past_an_edge_is_pushed_inside() {
+        let bubble = (2400.0, 1250.0, 76.0, 76.0);
+        assert_eq!(keep_on_screen(&[MAIN], bubble, 2036.0, 566.0, 440.0, 760.0), (2036.0, 566.0));
+        assert_eq!(keep_on_screen(&[MAIN], bubble, 2400.0, 1000.0, 440.0, 760.0), (2120.0, 600.0));
+        assert_eq!(keep_on_screen(&[MAIN], (10.0, 30.0, 76.0, 76.0), -100.0, 10.0, 440.0, 760.0), (0.0, 25.0));
+    }
+
+    #[test]
+    fn a_window_on_an_unplugged_display_moves_to_the_nearest() {
+        let lost = (-900.0, 400.0, 76.0, 76.0);
+        assert_eq!(keep_on_screen(&[MAIN], lost, -900.0, 400.0, 76.0, 76.0), (0.0, 400.0));
+        assert_eq!(keep_on_screen(&[], lost, 5.0, 6.0, 76.0, 76.0), (5.0, 6.0));
+    }
 
     #[test]
     fn context_file_matches_the_plugin() {
