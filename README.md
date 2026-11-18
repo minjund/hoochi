@@ -13,8 +13,10 @@ from a little window that floats in the corner of your screen.</p>
 Claude Code runs in a loop: a session starts, you send a prompt, it calls tools, it stops.
 Hooks let you step in at each of those moments, but writing them means editing JSON and shell scripts.
 
-hookwich draws that loop as a stack of sandwiches. Each stage is the filling; the slot before it
-and the slot after it are the bread. Click `+` on a slot and put something in:
+hookwich draws that loop the way the official
+[hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle) does — every turn, the
+agentic loop, the loop-backs and the side events — and makes every event in it clickable.
+Click one and sandwich something in before or after that moment:
 
 | Put in | What happens |
 |---|---|
@@ -32,7 +34,8 @@ so it switches itself off after it runs.
 - Floats above everything, folded into a 🥪 bubble in the bottom-right corner.
 - Click to unfold, drag to move it anywhere.
 - `–` folds it back, `×` hides it to the menu bar; click the menu bar icon to bring it back.
-- The slot that just fired lights up, and the last few things hookwich put in are listed at the bottom.
+- The event that just fired lights up on the diagram, badges count what is in each event, and the last few
+  things hookwich put in are listed at the bottom.
 
 ## Install
 
@@ -95,8 +98,10 @@ settings hook. Only put in commands you'd run yourself. A command gets 30 second
 
 ## Credits
 
-UI components from [affectUI](https://www.affectui.com) (free items, MIT) and icons from
-[Hugeicons Free](https://hugeicons.com) (MIT). The bubble and lifecycle components were written with Codex.
+The lifecycle diagram is hookwich's own redraw of the layout of the official
+[Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle); the figure's
+file is not included. UI components from [affectUI](https://www.affectui.com) (free items, MIT) and icons from
+[Hugeicons Free](https://hugeicons.com) (MIT). The bubble and diagram components were written with Codex.
 
 ## License
 

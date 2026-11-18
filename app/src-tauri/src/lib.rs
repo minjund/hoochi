@@ -19,7 +19,7 @@ use tauri::{
 };
 
 const BUBBLE: (f64, f64) = (76.0, 76.0);
-const PANEL: (f64, f64) = (380.0, 620.0);
+const PANEL: (f64, f64) = (440.0, 760.0);
 const MARGIN: f64 = 24.0;
 const DOCK_ROOM: f64 = 90.0;
 const EMPTY_CONFIG: &str = "{\n  \"version\": 1,\n  \"items\": []\n}\n";

@@ -27,8 +27,8 @@ export function SlotEditor({ slot, items, skills, onChange, onRemove, onAdd, onB
           ← Lifecycle
         </Button>
         <div className="hw-editor-title">
-          <strong>{slot.label}</strong>
-          <code>{slot.event}</code>
+          <strong>{slot.event}</strong>
+          {!slot.canInject && <code>commands only</code>}
         </div>
       </div>
       <p className="hw-editor-hint">{slot.hint}</p>
@@ -47,7 +47,7 @@ export function SlotEditor({ slot, items, skills, onChange, onRemove, onAdd, onB
       ))}
 
       <Button variant="secondary" size="sm" onClick={onAdd}>
-        + Add to {slot.label}
+        + Add to {slot.event}
       </Button>
     </div>
   )

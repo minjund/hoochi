@@ -16,6 +16,7 @@ const inApp = isTauri()
 export const browserFlags = {
   demo: !inApp && location.search.includes('demo'),
   panel: !inApp && location.search.includes('panel'),
+  select: inApp ? null : new URLSearchParams(location.search).get('select'),
 }
 
 if (browserFlags.demo) {

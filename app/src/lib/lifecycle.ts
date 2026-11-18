@@ -1,9 +1,11 @@
-// The Claude Code lifecycle as hookwich draws it: each stage is a sandwich,
-// with a slot before it and a slot after it. A slot is one hook event.
+// The Claude Code hook lifecycle as hookwich draws it. Every hook event is a
+// slot: put text, commands or skills into it and the plugin hands them over
+// when that event fires. The diagram's layout follows the official hooks
+// lifecycle figure: https://code.claude.com/docs/en/hooks#hook-lifecycle
 
 export type ItemKind = 'text' | 'command' | 'skill'
 
-/** One thing sandwiched into a slot. Mirrors plugin/types/index.d.ts. */
+/** One thing put into a slot. Mirrors plugin/types/index.d.ts. */
 export type Item = {
   id: string
   event: string
@@ -31,8 +33,6 @@ export type Activity = {
 export type Slot = {
   /** the hook event name */
   event: string
-  /** short label shown on the bread */
-  label: string
   /** can words reach the model here? If not, only commands run (side effects). */
   canInject: boolean
   /** tool events take a tool filter */
@@ -41,106 +41,55 @@ export type Slot = {
   hint: string
 }
 
-export type Stage = {
-  id: string
-  /** the filling */
-  name: string
-  before: Slot
-  after: Slot
-}
-
-const slot = (event: string, label: string, canInject: boolean, hint: string, hasTools = false): Slot => ({
+const slot = (event: string, canInject: boolean, hint: string, hasTools = false): Slot => ({
   event,
-  label,
   canInject,
   hasTools,
   hint,
 })
 
-/** The main lifecycle, in the order it happens. */
-export const STAGES: Stage[] = [
-  {
-    id: 'session',
-    name: 'Session',
-    before: slot(
-      'SessionStart',
-      'start',
-      true,
-      'Given to the model when a session starts, resumes, clears or compacts.',
-    ),
-    after: slot('SessionEnd', 'end', false, 'Runs when the session ends. Commands only: the model is gone.'),
-  },
-  {
-    id: 'prompt',
-    name: 'Prompt',
-    before: slot('UserPromptSubmit', 'before', true, 'Sent with every prompt you submit.'),
-    after: slot('Stop', 'after', true, 'When Claude is about to stop: it keeps going once with this.'),
-  },
-  {
-    id: 'tool',
-    name: 'Tool call',
-    before: slot('PreToolUse', 'before', true, 'Attached to each tool call before it runs.', true),
-    after: slot('PostToolUse', 'after', true, 'Attached to each tool result.', true),
-  },
-  {
-    id: 'subagent',
-    name: 'Subagent',
-    before: slot('SubagentStart', 'start', true, 'Given to a subagent when it starts.'),
-    after: slot(
-      'SubagentStop',
-      'end',
-      true,
-      'When a subagent is about to finish: it keeps going once with this.',
-    ),
-  },
-  {
-    id: 'compact',
-    name: 'Compaction',
-    before: slot('PreCompact', 'before', false, 'Runs before the conversation is compacted. Commands only.'),
-    after: slot(
-      'PostCompact',
-      'after',
-      false,
-      'Runs after compaction. Commands only (Session start also fires).',
-    ),
-  },
+/** Every hook event, in the order of the official lifecycle figure. */
+export const ALL_SLOTS: Slot[] = [
+  slot('Setup', true, 'During first-run setup (opt-in).'),
+  slot('SessionStart', true, 'Given to the model when a session starts, resumes, clears or compacts.'),
+  slot('UserPromptSubmit', true, 'Sent with every prompt you submit, before the model sees it.'),
+  slot('UserPromptExpansion', true, 'When a slash command expands into a prompt.'),
+  slot('PreToolUse', true, 'Attached to each tool call before it runs.', true),
+  slot('PermissionRequest', false, 'When a permission prompt appears. Commands only.'),
+  slot('PermissionDenied', false, 'When auto mode denies a tool call. Commands only.'),
+  slot('Elicitation', false, 'When an MCP server asks for input. Commands only.'),
+  slot('ElicitationResult', false, 'When the MCP input comes back. Commands only.'),
+  slot('PostToolUse', true, 'Attached to each tool result.', true),
+  slot('PostToolUseFailure', true, 'Attached when a tool call fails.', true),
+  slot('PostToolBatch', true, 'After a batch of tool calls finishes.'),
+  slot('SubagentStart', true, 'Given to a subagent when it starts.'),
+  slot('SubagentStop', true, 'When a subagent is about to finish: it keeps going once with this.'),
+  slot('TaskCreated', false, 'When a task is created. Commands only.'),
+  slot('TaskCompleted', false, 'When a task completes. Commands only.'),
+  slot('Stop', true, 'When Claude is about to end its turn: it keeps going once with this.'),
+  slot('StopFailure', false, 'When a turn ends in an API error. Commands only.'),
+  slot('TeammateIdle', false, 'When a teammate goes idle. Commands only.'),
+  slot('PreCompact', false, 'Before the conversation is compacted. Commands only.'),
+  slot('PostCompact', false, 'After compaction. Commands only (Session start fires too).'),
+  slot('SessionEnd', false, 'When the session ends. Commands only: the model is gone.'),
+  slot('Notification', false, 'When Claude Code sends a notification. Commands only.'),
+  slot('ConfigChange', false, 'When settings change. Commands only.'),
+  slot('PreModelSwitch', false, 'Before the model changes. Commands only.'),
+  slot('PostModelSwitch', true, 'After the model changes.'),
+  slot('WorktreeCreate', false, 'When a worktree is created. Commands only.'),
+  slot('WorktreeRemove', false, 'When a worktree is removed. Commands only.'),
+  slot('CwdChanged', false, 'When the working folder changes. Commands only.'),
+  slot('FileChanged', false, 'When a watched file changes. Commands only.'),
+  slot('DirectoryAdded', false, 'When a folder is added to the session. Commands only.'),
+  slot('InstructionsLoaded', false, 'When CLAUDE.md files load. Commands only.'),
+  slot('MessageDisplay', false, 'When a message is shown. Commands only.'),
 ]
-
-/** Every other hook event, for "anywhere you like". */
-export const MORE_SLOTS: Slot[] = [
-  slot('PostToolUseFailure', 'tool failed', true, 'Attached when a tool call fails.', true),
-  slot('PostToolBatch', 'after tool batch', true, 'After a batch of parallel tool calls.'),
-  slot(
-    'UserPromptExpansion',
-    'prompt expanded',
-    true,
-    'When a slash command or skill expands into a prompt.',
-  ),
-  slot('Setup', 'setup', true, 'During first-run setup.'),
-  slot('PostModelSwitch', 'model switched', true, 'After the model changes.'),
-  slot('Notification', 'notification', false, 'When Claude Code sends a notification. Commands only.'),
-  slot('PermissionRequest', 'permission asked', false, 'When a permission prompt appears. Commands only.'),
-  slot('PermissionDenied', 'permission denied', false, 'When a tool call is denied. Commands only.'),
-  slot('StopFailure', 'turn failed', false, 'When a turn ends in an API error. Commands only.'),
-  slot('PreModelSwitch', 'before model switch', false, 'Before the model changes. Commands only.'),
-  slot('CwdChanged', 'folder changed', false, 'When the working folder changes. Commands only.'),
-  slot('FileChanged', 'file changed', false, 'When a watched file changes. Commands only.'),
-  slot('InstructionsLoaded', 'instructions loaded', false, 'When CLAUDE.md files load. Commands only.'),
-  slot('TaskCreated', 'task created', false, 'When a task is created. Commands only.'),
-  slot('TaskCompleted', 'task completed', false, 'When a task completes. Commands only.'),
-  slot('TeammateIdle', 'teammate idle', false, 'When a teammate goes idle. Commands only.'),
-  slot('WorktreeCreate', 'worktree created', false, 'When a worktree is created. Commands only.'),
-  slot('WorktreeRemove', 'worktree removed', false, 'When a worktree is removed. Commands only.'),
-]
-
-export const ALL_SLOTS: Slot[] = [...STAGES.flatMap(s => [s.before, s.after]), ...MORE_SLOTS]
 
 export const slotOf = (event: string): Slot | undefined => ALL_SLOTS.find(s => s.event === event)
 
 /** A short label for an item, for chips and the feed. */
 export function itemLabel(item: Item): string {
-  const raw =
-    item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
+  const raw = item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
   const one = raw.replace(/\s+/g, ' ').trim()
   return one.length > 40 ? `${one.slice(0, 39)}…` : one || '(empty)'
 }

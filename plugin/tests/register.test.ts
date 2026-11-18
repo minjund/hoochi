@@ -151,3 +151,14 @@ test('a broken config never breaks the hook', async ($, on) => {
 
   expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['from settings'])
 })
+
+test('a command on a frequent event still runs, and only then is it logged', async ($, on) => {
+  const { fs, ran } = machine(on, {
+    [CONFIG]: config(item({ event: 'FileChanged', kind: 'command', command: 'make docs' })),
+  })
+  on('classic.FileChanged', () => ({}))
+
+  await $.classic.FileChanged({ file_path: '/p/README.md', event: 'change' })
+  expect(ran).toContain('make docs')
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastEvent).toBe('FileChanged')
+})

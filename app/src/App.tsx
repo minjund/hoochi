@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { LifecycleSandwich } from './components/hookwich/lifecycle-sandwich'
+import { LifecycleDiagram } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { IconButton } from './components/ui/icon-button'
@@ -67,7 +67,7 @@ export default function App() {
   const [expanded, setIsExpanded] = useState(browserFlags.panel)
   const [config, setConfig] = useState<Config>({ version: 1, items: [] })
   const [activity, setActivity] = useState<Activity>(EMPTY_ACTIVITY)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(browserFlags.select)
   const [skills, setSkills] = useState<Skill[]>([])
 
   // The config text we last wrote or read, and whether an edit is waiting to be saved.
@@ -140,8 +140,6 @@ export default function App() {
 
   const removeItem = (id: string) => save({ ...config, items: config.items.filter(i => i.id !== id) })
 
-  const toggleItem = (id: string, enabled: boolean) =>
-    save({ ...config, items: config.items.map(i => (i.id === id ? { ...i, enabled } : i)) })
 
   const activeCount = useMemo(() => config.items.filter(i => i.enabled).length, [config.items])
   const slot = selected ? ALL_SLOTS.find(s => s.event === selected) : undefined
@@ -200,14 +198,10 @@ export default function App() {
             onBack={() => setSelected(null)}
           />
         ) : (
-          <LifecycleSandwich
-            items={config.items}
-            activity={activity}
-            selectedEvent={selected}
-            onSelectSlot={setSelected}
-            onAdd={addTo}
-            onToggleItem={toggleItem}
-          />
+          <>
+            <p className="hw-diagram-hint">Click any event to put text, a command or a skill there.</p>
+            <LifecycleDiagram items={config.items} activity={activity} selectedEvent={selected} onSelect={setSelected} />
+          </>
         )}
       </main>
 

@@ -161,3 +161,9 @@ input {
   user-select: text;
   -webkit-user-select: text;
 }
+
+.hw-diagram-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--hw-soft);
+}

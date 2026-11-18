@@ -34,7 +34,7 @@ const CONTINUES: ReadonlySet<string> = new Set(['Stop', 'SubagentStop'])
 
 const TOOL_EVENTS: ReadonlySet<string> = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'])
 
-/** Too frequent to be worth a file write each. */
+/** Too frequent to log each one: recorded only when something was put in. */
 const QUIET: ReadonlySet<string> = new Set(['MessageDisplay', 'FileChanged'])
 
 const activity = atom({ plugin: 'hookwich', key: 'activity' } as const, emptyActivity(), {
@@ -234,15 +234,17 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     await $.fs.write(`${dir}/config.json`, JSON.stringify(next2, null, 2)).catch(() => undefined)
   }
 
-  const before0 = await read($, activity)
-  const seen: Activity = {
-    lastEvent: event,
-    lastAt: at,
-    counts: { ...before0.counts, [event]: (before0.counts[event] ?? 0) + 1 },
-    recent: [...before0.recent, ...fired].slice(-40),
+  if (!QUIET.has(event) || fired.length > 0) {
+    const before0 = await read($, activity)
+    const seen: Activity = {
+      lastEvent: event,
+      lastAt: at,
+      counts: { ...before0.counts, [event]: (before0.counts[event] ?? 0) + 1 },
+      recent: [...before0.recent, ...fired].slice(-40),
+    }
+    await update($, activity, () => seen)
+    await writeActivity($, dir, seen)
   }
-  await update($, activity, () => seen)
-  await writeActivity($, dir, seen)
 
   if (parts.length === 0) return result
   const answer = (result ?? {}) as Loose
@@ -288,7 +290,6 @@ export const register: Register = on => {
   on('classic.*', async ($, e, next) => {
     const event = next.event.slice('classic.'.length)
     const result = await next(e)
-    if (QUIET.has(event)) return result
     try {
       return (await sandwich($, event, e, result)) as typeof result
     } catch {
