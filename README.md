@@ -57,11 +57,11 @@ picture, and lets you put something into any moment with a click: no code, no co
 - **Your existing hooks, in plain view** — hooks from your settings, your plugins (often a skill run by
   a hook) and Codex show as grey numbers, by name on hover, and can be switched off and back on.
   Codex keeps its trust, the same way `/hooks` does it.
-- **What you put in, at a glance** — your newest items sit at the bottom with a switch each; the full
+- **What you put in, at a glance** — your newest items sit at the bottom with a switch and a delete button each; the full
   list opens grouped by place, one tap away from editing.
 - **/context, live** — the context fill of the chat you are in sits under "Chatting now" as a bar
-  that moves while Claude works, and opens into what /context lists: each part, memory files, MCP
-  servers and skills, and where it will compact. Counted on your machine, no extra requests.
+  that moves while Claude works, with a button for each part /context lists. Tap one to see what is in
+  it: the MCP servers, memory files, skills by plugin, agents, and where it will compact. Counted on your machine, no extra requests.
 - **Small and native** — Tauri (Rust), a 3.7 MB download, no Electron. It finds open chats straight
   from the macOS kernel in about 7 ms and reads nothing while hidden.
 - **Updates itself** — the window always matches the plugin: a newer plugin swaps the window on the
@@ -96,7 +96,9 @@ ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 **3. Codex (optional).** In the window's Codex tab press **Connect Codex**, then type `/hooks` in
 Codex once and trust the hookwich hooks.
 
-**Update:** `claude plugin marketplace update hookwich`, then start a new chat.
+**Update:** `claude plugin update hookwich@hookwich`, then start Claude Code again. To get new versions by
+itself, turn on auto-update once: `/plugin` → **Marketplaces** → hookwich → **Enable auto-update**. The
+window follows the plugin to the same version on the next chat.
 
 ## Quick start
 

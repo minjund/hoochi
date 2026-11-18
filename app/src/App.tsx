@@ -154,6 +154,16 @@ const ThemeIcons: Record<Theme, ReactNode> = {
   ),
 }
 
+const TrashIcon = (
+  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path
+      d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
 const HideIcon = (
   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6">
     <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
@@ -219,7 +229,7 @@ export default function App() {
   const [follow, setFollowState] = useState(loadFollow)
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
-  const [done, setDone] = useState<{ message: string; before: Config } | null>(null)
+  const [done, setDone] = useState<{ message: string; before: Config; below?: boolean } | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [context, setContext] = useState<ContextSnapshot | null>(null)
   useEffect(() => {
@@ -438,8 +448,8 @@ export default function App() {
   const removeItem = (id: string) => setList(list.filter(i => i.id !== id))
 
   // Copy between scopes. Nothing is overwritten: items already there are skipped, and one undo is kept.
-  const act = (next: Config, message: string) => {
-    setDone({ message, before: config })
+  const act = (next: Config, message: string, below = false) => {
+    setDone({ message, before: config, below })
     save(next)
   }
   const loadFrom = (from: Scope) => {
@@ -481,7 +491,15 @@ export default function App() {
     ...(scope !== 'global' && list.length > 0 ? [{ label: t.applyGlobal, run: applyGlobal }] : []),
   ]
 
-  const undo = () => {
+  const doneBanner = done && (
+    <div className="hw-done" role="status">
+      <span>{done.message}</span>
+      <Button size="sm" variant="ghost" onClick={undo}>
+        {t.undo}
+      </Button>
+    </div>
+  )
+  function undo() {
     if (!done) return
     save(done.before)
     setDone(null)
@@ -597,6 +615,19 @@ export default function App() {
         listOf(config[agent], m.scope, m.key).map(i => (i.id === m.item.id ? { ...i, enabled } : i)),
       ),
     )
+  // Deleted at once, with the undo kept for a while, as the copy buttons do.
+  const deleteMine = (m: Mine) =>
+    act(
+      withList(
+        config,
+        agent,
+        m.scope,
+        m.key,
+        listOf(config[agent], m.scope, m.key).filter(i => i.id !== m.item.id),
+      ),
+      t.mineDeleted(eventName(m.item.event, lang, agent)),
+      true,
+    )
   const goTo = (m: Mine) => {
     setShowAll(false)
     setScope(m.scope)
@@ -627,6 +658,13 @@ export default function App() {
           aria-label={t.mineSwitch(eventName(m.item.event, lang, agent))}
           checked={m.item.enabled}
           onChange={e => setMine(m, e.currentTarget.checked)}
+        />
+        <IconButton
+          size="sm"
+          variant="ghost"
+          icon={TrashIcon}
+          label={t.mineDelete(eventName(m.item.event, lang, agent))}
+          onClick={() => deleteMine(m)}
         />
       </div>
     )
@@ -813,14 +851,7 @@ export default function App() {
             ))}
           </div>
         )}
-        {done && (
-          <div className="hw-done" role="status">
-            <span>{done.message}</span>
-            <Button size="sm" variant="ghost" onClick={undo}>
-              {t.undo}
-            </Button>
-          </div>
-        )}
+        {done && !done.below && doneBanner}
         {agent === 'codex' && codex && (
           <div className="hw-codex">
             {!codex.installed ? (
@@ -957,6 +988,7 @@ export default function App() {
         ) : (
           mine.slice(0, 3).map(m => mineRow(m))
         )}
+        {done?.below && !showAll && doneBanner}
       </footer>
 
       {showAll && (
@@ -981,6 +1013,7 @@ export default function App() {
               />
             </div>
             <p className="hw-editor-hint">{t.mineHint}</p>
+            {done?.below && doneBanner}
             <div className="hw-modal-list">
               {groups.map(g => (
                 <section key={g.name}>

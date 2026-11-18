@@ -382,6 +382,7 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
       { name: 'Messages', tokens: 33_100, kind: 'used' },
       { name: 'Free space', tokens: 105_600, kind: 'free' },
       { name: 'Autocompact buffer', tokens: 33_000, kind: 'buffer' },
+      { name: 'MCP tools (deferred)', tokens: 48_200, kind: 'deferred' },
     ],
     memory: [
       { path: '~/.claude/CLAUDE.md', tokens: 1400 },
