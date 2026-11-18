@@ -382,3 +382,57 @@ test('each record names the item it came from, so a deleted item can be told apa
   const recent = JSON.parse(fs.get(ACTIVITY) ?? '{}').recent
   expect(recent.at(-1)).toMatchObject({ id: 'g1', label: 'answer in English', scope: 'global' })
 })
+
+const CODEX_ACTIVITY = '/home/me/.hookwich/activity-codex.json'
+/** One key typed in the prompt box, raised as the engine raises it. */
+const edit = ($: Parameters<TestBody>[0]) =>
+  ($.prompt as unknown as { edit(e: unknown): Promise<unknown> }).edit({
+    origin: { kind: 'composer' },
+    text: '',
+    cursor: 0,
+    start: 0,
+    end: 0,
+    inputText: 'h',
+  })
+const elsewhere = (at: number) =>
+  JSON.stringify({
+    lastChat: {
+      at,
+      place: { project: '/other', terminal: 'whitebox:terminal:t9', terminalLabel: 'Whitebox t9' },
+    },
+  })
+
+test('typing here moves "where you are chatting" here before sending, once', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({}), [CODEX_ACTIVITY]: elsewhere(500) })
+  on('prompt.edit', (_, e) => ({ text: `${e.text}h`, cursor: e.cursor + 1 }))
+
+  await edit($)
+  const chat = JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat
+  expect(chat.place.terminal).toBe('whitebox:terminal:t1')
+  expect(chat.place.project).toBe('/work/app')
+})
+
+test('typing where the chat already is writes nothing', async ($, on) => {
+  const here = JSON.stringify({
+    lastChat: {
+      at: 900,
+      place: { project: '/work/app', terminal: 'whitebox:terminal:t1', terminalLabel: '' },
+    },
+  })
+  const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: here })
+  on('prompt.edit', (_, e) => ({ text: `${e.text}h`, cursor: e.cursor + 1 }))
+
+  await edit($)
+  expect(fs.get(ACTIVITY)).toBe(here)
+})
+
+test('a chat working in the background does not take "where you are chatting" back', async ($, on) => {
+  // Another Claude Code chat (t9) was typed in later than this one's own last chat.
+  const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: elsewhere(5_000_000) })
+  on('classic.PostToolUse', () => ({}))
+
+  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {}, tool_use_id: 't1' })
+  const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
+  expect(after.lastEvent).toBe('PostToolUse')
+  expect(after.lastChat.place.terminal).toBe('whitebox:terminal:t9')
+})

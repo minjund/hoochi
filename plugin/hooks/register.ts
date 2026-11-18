@@ -379,6 +379,46 @@ async function sendControl($: EngineInterface, dir: string, cmd: 'show' | 'hide'
   await $.fs.write(`${dir}/control.json`, JSON.stringify({ cmd, at: await $.clock.now() }))
 }
 
+type Chat = NonNullable<Activity['lastChat']>
+
+function newestChat(a: Chat | undefined, b: Chat | undefined): Chat | undefined {
+  if (!a) return b
+  if (!b) return a
+  return b.at > a.at ? b : a
+}
+
+async function chatOnDisk($: EngineInterface, path: string): Promise<Chat | undefined> {
+  try {
+    const chat = (JSON.parse((await readText($, path)) ?? '{}') as Loose).lastChat as Chat | undefined
+    return chat && typeof chat.at === 'number' && chat.place ? chat : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * You started typing here: if the last chat the window knows of is another terminal (a Claude
+ * Code or a Codex one), this one becomes "where you are chatting" right away, before you send.
+ * At most one check a second, and nothing is written while it already points here.
+ */
+let lastTypingCheck = -Infinity
+export async function noteTyping($: EngineInterface): Promise<boolean> {
+  const now = await $.clock.now()
+  if (now - lastTypingCheck < 1000) return false
+  lastTypingCheck = now
+  const dir = `${await home($)}/.hookwich`
+  const place = await placeOf($)
+  const known = newestChat(
+    await chatOnDisk($, `${dir}/activity-claude.json`),
+    await chatOnDisk($, `${dir}/activity-codex.json`),
+  )
+  if (known?.place.terminal === place.terminal) return false
+  const seen: Activity = { ...(await read($, activity)), lastChat: { at: now, place } }
+  await update($, activity, () => seen)
+  await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen))
+  return true
+}
+
 /** Switches "once" items off in the scope they came from. */
 function spend(config: Config, scope: Scope, key: string, ids: Set<string>): Config {
   const off = (list: Item[] = []) => list.map(i => (ids.has(i.id) ? { ...i, enabled: false } : i))
@@ -435,13 +475,16 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
 
   if (!QUIET.has(event) || fired.length > 0) {
     const before0 = await read($, activity)
+    // Other Claude Code chats write this file too: keep the newest "where you last chatted",
+    // so a chat working in the background never takes it back from the one you are typing in.
+    const mine = HERE.has(event) ? { at, place } : before0.lastChat
     const seen: Activity = {
       lastEvent: event,
       lastAt: at,
       counts: { ...before0.counts, [event]: (before0.counts[event] ?? 0) + 1 },
       recent: [...before0.recent, ...fired].slice(-40),
       place,
-      lastChat: HERE.has(event) ? { at, place } : before0.lastChat,
+      lastChat: newestChat(mine, await chatOnDisk($, `${dir}/activity-claude.json`)),
     }
     await update($, activity, () => seen)
     await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen)).catch(() => undefined)
@@ -490,6 +533,14 @@ export const register: Register = on => {
     await sendControl($, dir, cmd)
 
     return { text: trouble === undefined ? `hookwich: ${cmd}` : `${TROUBLE[trouble]}.` }
+  })
+
+  // Typing in the prompt box: "where you are chatting" moves here at the first key, not on send.
+  on('prompt.edit', async ($, e, next) => {
+    const box = await next(e)
+    // At most one quick check a second (two small reads); typing never waits on more.
+    await noteTyping($).catch(() => undefined)
+    return box
   })
 
   on('classic.*', async ($, e, next) => {
