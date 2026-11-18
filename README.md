@@ -79,6 +79,7 @@ saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks
   [Claude Code hooks lifecycle figure](https://code.claude.com/docs/en/hooks#hook-lifecycle).
 - Click any box to add something there. A number on a box shows how many things are on.
 - The moment that just happened lights up, so you can watch Claude work.
+- **What you put in** at the bottom lists your newest three items with a switch each; with more, **See all** opens the whole list by place, where you can switch any of them or tap one to edit it.
 - **Follow where I chat** (on by default): the window switches by itself to the AI (Claude Code or Codex),
   project and terminal you last typed in. Picking a tab or a terminal yourself turns it off.
 - Moments that have no fixed place in the order (a notification, a settings change, a model switch…)

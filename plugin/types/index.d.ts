@@ -20,6 +20,8 @@ export type Item = {
   enabled: boolean
   /** runs once, then switches itself off */
   once: boolean
+  /** when it was put in (ms), to list the newest first */
+  added?: number
 }
 
 /**

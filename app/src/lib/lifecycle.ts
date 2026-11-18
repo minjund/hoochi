@@ -17,6 +17,8 @@ export type Item = {
   tools: string
   enabled: boolean
   once: boolean
+  /** when it was put in (ms), to list the newest first */
+  added?: number
 }
 
 /** One agent's items at three scopes; the narrowest scope with items for a moment wins. */
@@ -199,7 +201,7 @@ export function mergeItems(target: Item[], source: Item[], makeId: () => string)
   let added = 0
   for (const item of source) {
     if (list.some(i => sameItem(i, item))) continue
-    list.push({ ...item, id: makeId() })
+    list.push({ ...item, id: makeId(), added: Date.now() })
     added += 1
   }
   return { list, added }

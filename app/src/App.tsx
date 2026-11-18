@@ -41,7 +41,6 @@ import {
   type Activity,
   type Agent,
   type Config,
-  type Fired,
   type Item,
   type Place,
   type Places,
@@ -105,6 +104,7 @@ function newItem(event: string, agent: Agent): Item {
     tools: '',
     enabled: true,
     once: false,
+    added: Date.now(),
   }
 }
 
@@ -218,6 +218,13 @@ export default function App() {
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
   const [done, setDone] = useState<{ message: string; before: Config } | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  useEffect(() => {
+    if (!showAll) return
+    const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowAll(false)
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [showAll])
   const t = UI[lang]
 
   const setFollow = (on: boolean) => {
@@ -525,24 +532,95 @@ export default function App() {
       .map(([path]) => ({ value: path, label: folderName(path), description: `${t.closed} · ${path}` })),
   ]
 
-  // A record of something put in earlier; it says so when that item has since been deleted.
-  const label60 = (i: Item) => {
-    const raw = i.kind === 'text' ? i.text : i.kind === 'command' ? `$ ${i.command}` : `/${i.skill}`
-    const one = raw.replace(/\s+/g, ' ').trim()
-    return one.length > 60 ? `${one.slice(0, 59)}…` : one
+  // What you put in, newest first, across every place, for the list at the bottom and the popup.
+  type Mine = { item: Item; scope: Scope; key: string; at: number }
+  const mine: Mine[] = (() => {
+    const a = config[agent]
+    const all: Omit<Mine, 'at'>[] = [
+      ...a.global.map(item => ({ item, scope: 'global' as const, key: '' })),
+      ...Object.entries(a.projects).flatMap(([key, l]) =>
+        l.map(item => ({ item, scope: 'project' as const, key })),
+      ),
+      ...Object.entries(a.terminals).flatMap(([key, l]) =>
+        l.map(item => ({ item, scope: 'terminal' as const, key })),
+      ),
+    ]
+    // Items from before hookwich kept the time come after, newest in each list first.
+    return all
+      .map((m, i) => ({ ...m, at: m.item.added ?? 0, i }))
+      .sort((x, y) => y.at - x.at || y.i - x.i)
+      .map(({ i: _, ...m }) => m)
+  })()
+  const placeName = (m: Pick<Mine, 'scope' | 'key'>) =>
+    m.scope === 'global'
+      ? t.scopes.global
+      : m.scope === 'project'
+        ? t.placeProject(folderName(m.key))
+        : t.placeTerminal(
+            chatName(
+              m.key,
+              running.find(r => r.terminal === m.key)?.project ?? places.terminals[m.key]?.cwd ?? '',
+              running.find(r => r.terminal === m.key)?.agent ??
+                (places.terminals[m.key]?.agent === 'codex' ? 'codex' : 'claude'),
+            ),
+          )
+  const setMine = (m: Mine, enabled: boolean) =>
+    save(
+      withList(
+        config,
+        agent,
+        m.scope,
+        m.key,
+        listOf(config[agent], m.scope, m.key).map(i => (i.id === m.item.id ? { ...i, enabled } : i)),
+      ),
+    )
+  const goTo = (m: Mine) => {
+    setShowAll(false)
+    setScope(m.scope)
+    if (m.scope === 'project') setProjectKey(m.key)
+    if (m.scope === 'terminal') setTerminalKey(m.key)
+    // Editing somewhere other than the chat you are in: stop following, or it would jump back.
+    const here = m.scope === 'project' ? latest?.place.project : latest?.place.terminal
+    if (m.scope !== 'global' && m.key !== here) setFollow(false)
+    setSelected(m.item.event)
   }
-  const allItems = [
-    ...config[agent].global,
-    ...Object.values(config[agent].projects).flat(),
-    ...Object.values(config[agent].terminals).flat(),
-  ]
-  const stillThere = (f: Fired) =>
-    f.id
-      ? allItems.some(i => i.id === f.id)
-      : allItems.some(i => i.event === f.event && label60(i) === f.label)
+  const mineRow = (m: Mine, withPlace = true) => {
+    const label = itemLabel(m.item)
+    return (
+      <div
+        className="hw-mine-row"
+        key={`${m.scope}-${m.key}-${m.item.id}`}
+        data-off={!m.item.enabled || undefined}
+      >
+        <button type="button" className="hw-mine-go" title={t.goEdit} onClick={() => goTo(m)}>
+          <b>{eventName(m.item.event, lang, agent)}</b>
+          <span>
+            {withPlace ? `${placeName(m)} · ` : ''}
+            {t.kinds[m.item.kind]}: {label === '(empty)' ? t.emptyItem : label}
+          </span>
+        </button>
+        <Switch
+          size="sm"
+          aria-label={t.mineSwitch(eventName(m.item.event, lang, agent))}
+          checked={m.item.enabled}
+          onChange={e => setMine(m, e.currentTarget.checked)}
+        />
+      </div>
+    )
+  }
+  const groups = [
+    { name: t.scopes.global, rows: mine.filter(m => m.scope === 'global') },
+    ...[...new Set(mine.filter(m => m.scope === 'project').map(m => m.key))].map(key => ({
+      name: placeName({ scope: 'project', key }),
+      rows: mine.filter(m => m.scope === 'project' && m.key === key),
+    })),
+    ...[...new Set(mine.filter(m => m.scope === 'terminal').map(m => m.key))].map(key => ({
+      name: placeName({ scope: 'terminal', key }),
+      rows: mine.filter(m => m.scope === 'terminal' && m.key === key),
+    })),
+  ].filter(g => g.rows.length > 0)
 
   const slot = selected ? slotOf(selected, agent) : undefined
-  const recent = activity[agent].recent
 
   if (!expanded) {
     return (
@@ -839,25 +917,56 @@ export default function App() {
         )}
       </main>
 
-      {recent.length > 0 && (
-        <footer className="hw-feed" aria-label={t.recentTitle}>
-          <div className="hw-feed-title">{t.recentTitle}</div>
-          {recent
-            .slice(-3)
-            .reverse()
-            .map((f, i) => {
-              const gone = !stillThere(f)
-              return (
-                <div className="hw-feed-row" key={`${f.at}-${i}`} data-gone={gone || undefined}>
-                  <span className="hw-feed-time">{t.ago(Date.now() - f.at)}</span>
-                  <b>{eventName(f.event, lang, agent)}</b>
-                  {f.scope ? ` · ${t.scopes[f.scope]}` : ''}
-                  {f.tool ? ` · ${f.tool}` : ''} — {f.label}
-                  {gone ? ` (${t.gone})` : ''}
-                </div>
-              )
-            })}
-        </footer>
+      <footer className="hw-feed hw-mine" aria-label={t.mine}>
+        <div className="hw-mine-head">
+          <span>
+            {t.mine} · {mine.length}
+          </span>
+          {mine.length > 3 && (
+            <Button size="sm" variant="ghost" onClick={() => setShowAll(true)}>
+              {t.seeAll(mine.length)}
+            </Button>
+          )}
+        </div>
+        {mine.length === 0 ? (
+          <p className="hw-editor-hint">{t.noneYet}</p>
+        ) : (
+          mine.slice(0, 3).map(m => mineRow(m))
+        )}
+      </footer>
+
+      {showAll && (
+        <div
+          className="hw-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.mine}
+          onClick={e => e.target === e.currentTarget && setShowAll(false)}
+        >
+          <div className="hw-modal-card">
+            <div className="hw-modal-head">
+              <b>
+                {t.mine} · {mine.length}
+              </b>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                icon={HideIcon}
+                label={t.close}
+                onClick={() => setShowAll(false)}
+              />
+            </div>
+            <p className="hw-editor-hint">{t.mineHint}</p>
+            <div className="hw-modal-list">
+              {groups.map(g => (
+                <section key={g.name}>
+                  <h4>{g.name}</h4>
+                  {g.rows.map(m => mineRow(m, false))}
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
