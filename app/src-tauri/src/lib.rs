@@ -17,6 +17,7 @@ use serde_json::Value;
 pub mod codex;
 pub mod existing;
 pub mod running;
+pub mod update;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -118,6 +119,23 @@ fn context_usage(terminal: String) -> Value {
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Value::Null)
+}
+
+/// Whether a newer hookwich is out, and what the last update did.
+#[tauri::command]
+async fn check_update() -> Value {
+    update::check()
+}
+
+/// Updates the plugin and the window to `version`, then quits so the new window opens.
+#[tauri::command]
+async fn apply_update(app: AppHandle, version: String) -> Result<Value, String> {
+    let done = update::apply(&version)?;
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(700));
+        app.exit(0);
+    });
+    Ok(done)
 }
 
 /// Claude Code and Codex chats open in terminals right now.
@@ -336,7 +354,9 @@ pub fn run() {
             running_chats,
             existing_hooks,
             set_existing_hook,
-            context_usage
+            context_usage,
+            check_update,
+            apply_update
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

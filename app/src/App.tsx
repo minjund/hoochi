@@ -18,6 +18,8 @@ import {
   browserFlags,
   codexConnect,
   codexDisconnect,
+  checkUpdate,
+  applyUpdate,
   codexStatus,
   contextUsage,
   EMPTY_ACTIVITY,
@@ -33,6 +35,7 @@ import {
   writeConfig,
   type CodexStatus,
   type ContextSnapshot,
+  type UpdateState,
   type ExistingHooks,
   type Running,
   type Skill,
@@ -59,6 +62,7 @@ const POLL_MS = 800
 const SAVE_DELAY_MS = 350
 const RUNNING_MS = 4000
 const EXISTING_MS = 15000
+const UPDATE_MS = 6 * 3_600_000
 
 type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'hookwich.theme'
@@ -237,6 +241,9 @@ export default function App() {
   const [done, setDone] = useState<{ message: string; before: Config; below?: boolean } | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [context, setContext] = useState<ContextSnapshot | null>(null)
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [updating, setUpdating] = useState<'idle' | 'busy' | 'done'>('idle')
+  const [updateError, setUpdateError] = useState('')
   useEffect(() => {
     if (!showAll) return
     const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowAll(false)
@@ -338,6 +345,37 @@ export default function App() {
       setScope(isProject(latest.place.project, latest.place.terminal) ? 'project' : 'global')
     }
   }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A newer hookwich: looked for when the window opens, then every six hours while it is shown.
+  useEffect(() => {
+    if (!visible) return
+    let alive = true
+    const look = () =>
+      void checkUpdate()
+        .then(
+          u =>
+            alive && setUpdate(prev => (prev?.updated && !u.updated ? { ...u, updated: prev.updated } : u)),
+        )
+        .catch(() => undefined)
+    look()
+    const id = window.setInterval(look, UPDATE_MS)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [visible])
+  const runUpdate = async () => {
+    if (!update?.latest) return
+    setUpdating('busy')
+    setUpdateError('')
+    try {
+      await applyUpdate(update.latest)
+      setUpdating('done')
+    } catch (e) {
+      setUpdating('idle')
+      setUpdateError(String(e))
+    }
+  }
 
   // /context for the Claude Code chat you are in (or, when that is Codex, the Claude terminal in
   // view), as its chat keeps writing it. Shown whether or not the window follows you.
@@ -856,6 +894,38 @@ export default function App() {
           onClick={() => void hideWindow()}
         />
       </header>
+
+      {update?.updated && (
+        <div className="hw-update" role="status">
+          <span>
+            {t.updatedTo(update.updated.to)} {update.updated.plugin ? t.updatedPlugin : t.updatedNoPlugin}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => setUpdate({ ...update, updated: null })}>
+            {t.close}
+          </Button>
+        </div>
+      )}
+      {update?.available && !update.updated && (
+        <div className="hw-update" role="status" data-new>
+          <span>
+            {updating === 'done'
+              ? t.updateReopening
+              : updateError
+                ? t.updateFailed(updateError)
+                : t.updateReady(update.latest ?? '', update.current)}
+          </span>
+          {updating !== 'done' && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={updating === 'busy'}
+              onClick={() => void runUpdate()}
+            >
+              {updating === 'busy' ? t.updating : t.updateNow}
+            </Button>
+          )}
+        </div>
+      )}
 
       <div className="hw-controls">
         <Switch

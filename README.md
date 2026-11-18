@@ -97,7 +97,8 @@ ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 **3. Codex (optional).** In the window's Codex tab press **Connect Codex**, then type `/hooks` in
 Codex once and trust the hookwich hooks.
 
-**Update:** `claude plugin update hookwich@hookwich`, then start Claude Code again. To get new versions by
+**Update:** when a newer version is out, the window shows an **Update** button: it updates the plugin and
+the window, and reopens. Or by hand: `claude plugin update hookwich@hookwich`, then start Claude Code again. To get new versions by
 itself, turn on auto-update once: `/plugin` → **Marketplaces** → hookwich → **Enable auto-update**. The
 window follows the plugin to the same version on the next chat.
 

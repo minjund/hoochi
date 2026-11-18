@@ -507,3 +507,27 @@ input {
   font-weight: 600;
   color: var(--hw-soft);
 }
+
+/* A newer hookwich is out, or the window was just updated */
+.hw-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--hw-tint);
+  color: var(--hw-ink);
+  font-size: 12px;
+}
+.hw-update[data-new] {
+  background: var(--hw-accent);
+  font-weight: 600;
+}
+.hw-update > span {
+  min-width: 0;
+}
+.hw-update > :last-child {
+  flex: none;
+}

@@ -402,6 +402,35 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
   }
 }
 
+/** Whether a newer hookwich is out, and what the last update did (told once). */
+export type UpdateState = {
+  current: string
+  latest: string | null
+  available: boolean
+  updated: { from: string; to: string; plugin: boolean } | null
+}
+
+export async function checkUpdate(): Promise<UpdateState> {
+  if (inApp) return invoke('check_update')
+  // `?update`: the demo has a newer version out; `?updated`: the demo just updated
+  const flags = new URLSearchParams(location.search)
+  return {
+    current: '0.1.11',
+    latest: flags.has('update') ? '0.1.12' : '0.1.11',
+    available: flags.has('update'),
+    updated: flags.has('updated')
+      ? { from: '0.1.11', to: '0.1.12', plugin: flags.get('updated') !== 'noplugin' }
+      : null,
+  }
+}
+
+/** Updates the plugin and the window; the window then reopens as the new version. */
+export async function applyUpdate(version: string): Promise<{ version: string; plugin: boolean }> {
+  if (inApp) return invoke('apply_update', { version })
+  await new Promise(r => setTimeout(r, 1200))
+  return { version, plugin: true }
+}
+
 /** Switches one existing hook off or back on, and returns the fresh list. */
 export async function setExistingHook(project: string, id: string, on: boolean): Promise<ExistingHooks> {
   if (inApp) return invoke('set_existing_hook', { project, id, on })
