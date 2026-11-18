@@ -255,10 +255,7 @@ export default function App() {
   const setFollow = (on: boolean) => {
     setFollowState(on)
     saveFollow(on)
-    if (on) {
-      followed.current = 0
-      followedTerminal.current = ''
-    }
+    if (on) followed.current = 0
   }
 
   useEffect(() => {
@@ -329,22 +326,16 @@ export default function App() {
 
   // Follow the chat you typed in last: its AI's picture, its project and its terminal.
   // Not while a moment is open for editing; it catches up when you go back to the picture.
-  // On reaching a new terminal, it opens on that project's settings, or on "everywhere" when the
-  // terminal is not in a project folder. Within the same terminal, the tab you picked stays.
+  // The tab (everywhere / this project / this terminal) stays the one you picked.
   const latest = lastChatOf(activity)
   const followed = useRef(0)
-  const followedTerminal = useRef('')
   useEffect(() => {
     if (!follow || !latest || selected !== null || latest.at <= followed.current) return
     followed.current = latest.at
     setAgent(latest.agent)
     setProjectKey(latest.place.project)
     setTerminalKey(latest.place.terminal)
-    if (latest.place.terminal !== followedTerminal.current) {
-      followedTerminal.current = latest.place.terminal
-      setScope(isProject(latest.place.project, latest.place.terminal) ? 'project' : 'global')
-    }
-  }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [follow, latest, selected])
 
   // A newer hookwich: looked for when the window opens, then every six hours while it is shown.
   useEffect(() => {
