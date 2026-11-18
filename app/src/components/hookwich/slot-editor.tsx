@@ -1,7 +1,7 @@
 import type { ExistingHook, Skill } from '../../lib/backend'
 import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
 import type { Agent, Item, ItemKind, Slot } from '../../lib/lifecycle'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
@@ -23,6 +23,10 @@ type Props = {
   existing?: ExistingHook[]
   /** switch an existing hook off or back on */
   onToggleExisting?(hook: ExistingHook, on: boolean): void
+  /** when each item last ran, by its id (ms) */
+  lastRun?: Readonly<Record<string, number>>
+  /** more about this moment, shown under its explanation */
+  extra?: ReactNode
   onChange(item: Item): void
   onRemove(id: string): void
   onAdd(): void
@@ -39,6 +43,8 @@ export function SlotEditor({
   note,
   existing = [],
   onToggleExisting,
+  lastRun = {},
+  extra,
   onChange,
   onRemove,
   onAdd,
@@ -47,6 +53,8 @@ export function SlotEditor({
   const t = UI[lang]
   // A plugin hook switches the whole plugin off, so that asks first.
   const [asking, setAsking] = useState<ExistingHook | null>(null)
+  // One existing hook at a time opens to show what it does.
+  const [open, setOpen] = useState<string | null>(null)
   return (
     <div className="hw-editor">
       <div className="hw-editor-head">
@@ -61,6 +69,7 @@ export function SlotEditor({
       </div>
       <p className="hw-editor-hint">{eventHint(slot.event, lang, agent)}</p>
       {note && <p className="hw-note">{note}</p>}
+      {extra}
 
       {existing.length > 0 && (
         <section className="hw-existing" aria-label={t.existingTitle}>
@@ -69,28 +78,42 @@ export function SlotEditor({
           </div>
           <ul>
             {existing.map(h => (
-              <li key={h.id} title={h.detail} data-off={h.off || undefined}>
-                <div className="hw-existing-text">
-                  <b>{h.name}</b>
-                  <span>
-                    {h.off ? `${t.existingOff} · ` : ''}
-                    {t.existingFrom(h.from)}
-                    {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
-                  </span>
+              <li key={h.id} data-off={h.off || undefined}>
+                <div className="hw-existing-row">
+                  <button
+                    type="button"
+                    className="hw-existing-text"
+                    aria-expanded={open === h.id}
+                    title={t.whatItRuns}
+                    onClick={() => setOpen(open === h.id ? null : h.id)}
+                  >
+                    <b>
+                      <span className="hw-existing-caret" aria-hidden="true">
+                        {open === h.id ? '▾' : '▸'}
+                      </span>{' '}
+                      {h.name}
+                    </b>
+                    <span>
+                      {h.off ? `${t.existingOff} · ` : ''}
+                      {t.existingFrom(h.from)}
+                      {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                    </span>
+                  </button>
+                  {onToggleExisting && (
+                    <Switch
+                      size="sm"
+                      aria-label={t.existingSwitch(h.name)}
+                      title={h.toggle === 'plugin' ? t.pluginOnly : undefined}
+                      checked={!h.off}
+                      onChange={e => {
+                        const on = e.currentTarget.checked
+                        if (!on && h.toggle === 'plugin') setAsking(h)
+                        else onToggleExisting(h, on)
+                      }}
+                    />
+                  )}
                 </div>
-                {onToggleExisting && (
-                  <Switch
-                    size="sm"
-                    aria-label={t.existingSwitch(h.name)}
-                    title={h.toggle === 'plugin' ? t.pluginOnly : undefined}
-                    checked={!h.off}
-                    onChange={e => {
-                      const on = e.currentTarget.checked
-                      if (!on && h.toggle === 'plugin') setAsking(h)
-                      else onToggleExisting(h, on)
-                    }}
-                  />
-                )}
+                {open === h.id && <HookDetail hook={h} lang={lang} />}
               </li>
             ))}
           </ul>
@@ -132,6 +155,7 @@ export function SlotEditor({
           agent={agent}
           onChange={onChange}
           onRemove={() => onRemove(item.id)}
+          lastRun={lastRun[item.id]}
         />
       ))}
 
@@ -150,6 +174,7 @@ function ItemCard({
   agent,
   onChange,
   onRemove,
+  lastRun,
 }: {
   item: Item
   slot: Slot
@@ -158,6 +183,8 @@ function ItemCard({
   agent: Agent
   onChange(item: Item): void
   onRemove(): void
+  /** when it last ran (ms), if it has */
+  lastRun?: number
 }) {
   const t = UI[lang]
   const say = (text: string) => forAgent(text, agent)
@@ -262,7 +289,58 @@ function ItemCard({
             {t.remove}
           </Button>
         </div>
+        <p className="hw-item-ran">
+          {lastRun ? t.lastRan(t.ago(Math.max(0, Date.now() - lastRun))) : t.neverRan}
+        </p>
       </CardContent>
     </Card>
+  )
+}
+
+/** What an existing hook runs, when, for how long, and a line about it. */
+function HookDetail({ hook, lang }: { hook: ExistingHook; lang: Lang }) {
+  const t = UI[lang]
+  const [copied, setCopied] = useState(false)
+  const body = hook.body || hook.detail
+  const copy = () => {
+    const done = () => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    }
+    const fallback = () => {
+      const area = document.createElement('textarea')
+      area.value = body
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+      done()
+    }
+    if (navigator.clipboard) void navigator.clipboard.writeText(body).then(done, fallback)
+    else fallback()
+  }
+  return (
+    <dl className="hw-run">
+      <dt>{t.runKinds[hook.kind] ?? hook.kind}</dt>
+      <dd>
+        <code>{body}</code>
+        <Button size="sm" variant="ghost" onClick={copy}>
+          {copied ? t.copyDone : t.copy}
+        </Button>
+      </dd>
+      <dt>{t.runWhen}</dt>
+      <dd>
+        {hook.matcher ? t.onlyWhen(hook.matcher) : t.runAlways}
+        {hook.timeout ? ` · ${t.runLimit(hook.timeout)}` : ''}
+      </dd>
+      {hook.about && (
+        <>
+          <dt>{t.runAbout}</dt>
+          <dd className="hw-run-about" title={hook.about}>
+            {hook.about}
+          </dd>
+        </>
+      )}
+    </dl>
   )
 }

@@ -17,6 +17,7 @@ use serde_json::Value;
 pub mod codex;
 pub mod existing;
 pub mod running;
+pub mod skills;
 pub mod update;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -118,6 +119,26 @@ fn context_usage(terminal: String) -> Value {
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Value::Null)
+}
+
+/// Skills switched off with skillOverrides, and every plugin with whether it is on.
+#[tauri::command]
+fn skill_state() -> Value {
+    skills::state()
+}
+
+/// Switches one skill of your own (or a built-in one) off or back on; returns the fresh state.
+#[tauri::command]
+fn set_skill(name: String, on: bool) -> Result<Value, String> {
+    skills::set_skill(&name, on)?;
+    Ok(skills::state())
+}
+
+/// Switches a whole plugin off or back on, for its skills; returns the fresh state.
+#[tauri::command]
+fn set_plugin(key: String, on: bool) -> Result<Value, String> {
+    skills::set_plugin(&key, on)?;
+    Ok(skills::state())
 }
 
 /// Whether a newer hookwich is out, and what the last update did.
@@ -417,7 +438,10 @@ pub fn run() {
             set_existing_hook,
             context_usage,
             check_update,
-            apply_update
+            apply_update,
+            skill_state,
+            set_skill,
+            set_plugin
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

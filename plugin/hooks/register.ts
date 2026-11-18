@@ -24,7 +24,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.14'
+export const APP_VERSION = '0.1.15'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -460,6 +460,7 @@ export function contextSnapshot(b: Breakdown, place: Place, at: number): Context
   const byTokens = <T extends { tokens: number }>(list: T[]) =>
     [...list].sort((x, y) => y.tokens - x.tokens).slice(0, 8)
   const groups = new Map<string, SkillGroup>()
+  const skillList: NonNullable<ContextSnapshot['skillList']> = []
   for (const skill of b.skills?.skillFrontmatter ?? []) {
     const kind: SkillGroup['kind'] = skill.pluginName
       ? 'plugin'
@@ -478,6 +479,12 @@ export function contextSnapshot(b: Breakdown, place: Place, at: number): Context
     g.skills += 1
     g.tokens += skill.tokens
     groups.set(`${kind}:${name}`, g)
+    skillList.push({
+      name: skill.name,
+      kind,
+      ...(kind === 'plugin' ? { plugin: name } : {}),
+      tokens: Math.round(skill.tokens),
+    })
   }
   return {
     v: 1,
@@ -493,6 +500,7 @@ export function contextSnapshot(b: Breakdown, place: Place, at: number): Context
     mcp: byTokens([...servers.values()]),
     ...(b.skills ? { skills: { count: b.skills.includedSkills, tokens: b.skills.tokens } } : {}),
     ...(groups.size > 0 ? { skillGroups: byTokens([...groups.values()]) } : {}),
+    ...(skillList.length > 0 ? { skillList: skillList.sort((x, y) => y.tokens - x.tokens) } : {}),
     ...(b.agents.length > 0
       ? { agents: byTokens(b.agents.map(a => ({ name: a.agentType, source: a.source, tokens: a.tokens }))) }
       : {}),

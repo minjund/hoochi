@@ -268,11 +268,122 @@ input {
   gap: 2px;
 }
 .hw-existing li {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.hw-existing-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+button.hw-existing-text {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.hw-existing-text:hover b {
+  text-decoration: underline;
+}
+.hw-existing-caret {
+  display: inline-block;
+  width: 10px;
+  color: var(--hw-soft);
+}
+.hw-run {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 0 0 4px 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--hw-tint);
+  font-size: 11px;
+}
+.hw-run dt {
+  color: var(--hw-soft);
+  font-weight: 600;
+}
+.hw-run dd {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+.hw-run code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 11px;
+}
+.hw-run dd.hw-run-about {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.hw-item-ran {
+  margin: 0;
+  color: var(--hw-soft);
+  font-size: 11px;
+}
+.hw-skills-filter {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--hw-line-strong);
+  border-radius: 6px;
+  background: var(--hw-card);
+  color: var(--hw-ink);
+  font: inherit;
   font-size: 12px;
+}
+.hw-skills-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hw-modal-list section[data-off] .hw-skills-head span {
+  opacity: 0.6;
+}
+.hw-skills-rows {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hw-skills-rows li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 24px;
+  font-size: 12px;
+}
+.hw-skills-rows li[data-off] .hw-skills-name {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.hw-skills-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hw-skills-num {
+  color: var(--hw-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .hw-existing li[data-off] .hw-existing-text {
   opacity: 0.5;

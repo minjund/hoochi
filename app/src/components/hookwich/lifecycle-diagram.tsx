@@ -326,7 +326,8 @@ const styles = `
 .ui-lcd-wrap { position: relative; }
 .ui-lcd-card {
   position: absolute; box-sizing: border-box; z-index: 5; width: min(260px, 70%); padding: 8px 10px; border-radius: 10px;
-  transform: translate(-50%, calc(-100% - 6px)); pointer-events: none;
+  transform: translate(-50%, calc(-100% - 6px)); pointer-events: auto;
+  max-height: 60vh; overflow-y: auto;
   background: var(--hw-card, #ffffff); color: var(--hw-ink, #191b1d);
   border: 1px solid var(--hw-line-strong, rgba(0,0,0,.16)); box-shadow: 0 8px 24px rgba(0,0,0,.22);
   font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left;
@@ -413,7 +414,19 @@ export function LifecycleDiagram({
   const [hover, setHover] = useState<{ event: string; left: number; top: number; below: boolean } | null>(
     null,
   )
+  // The card stays while the pointer is on it, so what is in it can be read and pressed.
+  const closing = useRef<number | undefined>(undefined)
+  const keepCard = () => window.clearTimeout(closing.current)
+  const closeCard = (event?: string) => {
+    keepCard()
+    closing.current = window.setTimeout(
+      () => setHover(h => (event === undefined || h?.event === event ? null : h)),
+      220,
+    )
+  }
+  useEffect(() => () => window.clearTimeout(closing.current), [])
   const showCard = (event: string, el: Element) => {
+    keepCard()
     const host = wrap.current?.getBoundingClientRect()
     const box = el.getBoundingClientRect()
     if (!host || !describe) return
@@ -486,9 +499,9 @@ export function LifecycleDiagram({
         data-event={event}
         onClick={() => onSelect(event)}
         onMouseEnter={e => showCard(event, e.currentTarget)}
-        onMouseLeave={() => setHover(h => (h?.event === event ? null : h))}
+        onMouseLeave={() => closeCard(event)}
         onFocus={e => showCard(event, e.currentTarget)}
-        onBlur={() => setHover(null)}
+        onBlur={() => closeCard(event)}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
@@ -792,6 +805,10 @@ export function LifecycleDiagram({
           role="tooltip"
           data-below={hover.below || undefined}
           style={{ left: `${hover.left * 100}%`, top: `${hover.top * 100}%` }}
+          onMouseEnter={keepCard}
+          onMouseLeave={() => closeCard()}
+          onFocus={keepCard}
+          onBlur={() => closeCard()}
         >
           {describe(hover.event)}
         </div>

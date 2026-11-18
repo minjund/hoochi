@@ -98,6 +98,8 @@ export type ContextSnapshot = {
   skills?: { count: number; tokens: number }
   /** where the listed skills come from: each plugin, your own, the project's, built in */
   skillGroups?: SkillGroup[]
+  /** every listed skill, biggest first */
+  skillList?: { name: string; kind: SkillGroup['kind']; plugin?: string; tokens: number }[]
   /** the custom agents the Agent tool describes */
   agents?: { name: string; source: string; tokens: number }[]
 }

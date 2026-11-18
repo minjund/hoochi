@@ -57,6 +57,9 @@ picture, and lets you put something into any moment with a click: no code, no co
 - **Your existing hooks, in plain view** — hooks from your settings, your plugins (often a skill run by
   a hook) and Codex show as grey numbers, by name on hover, and can be switched off and back on.
   Codex keeps its trust, the same way `/hooks` does it.
+- **What each hook does, every skill** — tap an existing hook for the command it runs, when, its time
+  limit and a line about it. **See all skills** lists every skill by plugin; switch your own and built-in
+  ones one by one, a plugin's with the plugin.
 - **What you put in, at a glance** — your newest items sit at the bottom with a switch and a delete button each; the full
   list opens grouped by place, one tap away from editing.
 - **/context, live, in the picture** — the lifecycle picture carries the context of the chat you are in:

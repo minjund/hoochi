@@ -124,9 +124,121 @@ fn describe(hook: &Value, event: &str, matcher: &str, source: &str) -> (String, 
     (kind, name, short(body))
 }
 
+/// `name:` and `description:` from a SKILL.md front matter, for the skill a hook runs.
+fn skill_description(text: &str) -> String {
+    let mut lines = text.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return String::new();
+    }
+    for line in lines {
+        if line.trim() == "---" {
+            break;
+        }
+        if let Some(v) = line.strip_prefix("description:") {
+            return v.trim().trim_matches('"').to_string();
+        }
+    }
+    String::new()
+}
+
+/// The first comment of a script: a `#` block after the shebang, a Python docstring, or `//` / `/** */`.
+pub fn script_comment(text: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_doc = false;
+    for raw in text.lines().take(40) {
+        let line = raw.trim();
+        if out.is_empty() && !in_doc && (line.is_empty() || line.starts_with("#!") || line.starts_with("# -*-") || line.starts_with("'use strict'") || line.starts_with("\"use strict\"")) {
+            continue;
+        }
+        if in_doc {
+            let done = line.contains("\"\"\"") || line.contains("*/");
+            let t = line.trim_end_matches("\"\"\"").trim_end_matches("*/").trim_start_matches('*').trim();
+            if !t.is_empty() {
+                out.push(t.to_string());
+            }
+            if done || out.len() >= 3 {
+                break;
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("\"\"\"").or_else(|| line.strip_prefix("/**")).or_else(|| line.strip_prefix("/*")) {
+            let ends = rest.contains("\"\"\"") || rest.contains("*/");
+            let t = rest.trim_end_matches("\"\"\"").trim_end_matches("*/").trim();
+            if !t.is_empty() {
+                out.push(t.to_string());
+            }
+            if ends {
+                break;
+            }
+            in_doc = true;
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("//").or_else(|| line.strip_prefix('#')) {
+            let t = rest.trim();
+            if !t.is_empty() {
+                out.push(t.to_string());
+            }
+            if out.len() >= 3 {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+    let text = out.join(" ");
+    if text.chars().count() > 220 {
+        text.chars().take(219).collect::<String>() + "…"
+    } else {
+        text
+    }
+}
+
+/// What a hook runs, in full (home shortened to ~), its time limit in seconds, and a line about it:
+/// the SKILL.md description of a skill it runs, else the first comment of the script it runs.
+fn what_it_runs(hook: &Value, root: &str) -> (String, Option<f64>, String) {
+    let body = ["command", "url", "prompt", "tool", "server"]
+        .iter()
+        .find_map(|k| hook.get(*k).and_then(Value::as_str))
+        .unwrap_or_default();
+    let timeout = hook.get("timeout").and_then(Value::as_f64);
+    let home = home().to_string_lossy().to_string();
+    let resolved = body
+        .replace("${CLAUDE_PLUGIN_ROOT}", root)
+        .replace("$CLAUDE_PLUGIN_ROOT", root)
+        .replace("${HOME}", &home)
+        .replace("$HOME", &home);
+    let mut about = String::new();
+    for word in resolved.split_whitespace() {
+        let w = word.trim_matches(|c| c == '"' || c == '\'');
+        let w = w.strip_prefix("~/").map(|rest| format!("{home}/{rest}")).unwrap_or_else(|| w.to_string());
+        if let Some(i) = w.find("/skills/") {
+            let name = w[i + 8..].split('/').next().unwrap_or_default();
+            let skill = Path::new(&w[..i + 8 + name.len()]).join("SKILL.md");
+            if let Ok(text) = std::fs::read_to_string(&skill) {
+                about = skill_description(&text);
+                if !about.is_empty() {
+                    break;
+                }
+            }
+        }
+        let is_script = [".js", ".mjs", ".cjs", ".py", ".sh", ".ts", ".rb"].iter().any(|ext| w.ends_with(ext));
+        if is_script && w.starts_with('/') {
+            if let Ok(text) = std::fs::read_to_string(&w) {
+                about = script_comment(&text);
+                if !about.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+    let shown = body.replace(&home, "~");
+    (shown, timeout, about)
+}
+
 /// Every hook in one `{ Event: [{ matcher?, hooks: [...] }] }` block, with where each one lives.
 fn collect(
     hooks: &Value,
+    root: &str,
     source: &str,
     from: &str,
     scope: &str,
@@ -145,6 +257,7 @@ fn collect(
             for (h, hook) in group.get("hooks").and_then(Value::as_array).into_iter().flatten().enumerate() {
                 let Some(at) = place(event, g, h) else { continue };
                 let (kind, name, detail) = describe(hook, event, matcher, source);
+                let (body, timeout, about) = what_it_runs(hook, root);
                 let key = match &at {
                     Place::Settings { file, .. } => file.to_string_lossy().to_string(),
                     Place::Plugin { key } => key.clone(),
@@ -165,6 +278,7 @@ fn collect(
                         "id": id, "event": event, "matcher": matcher, "kind": kind, "name": name,
                         "detail": detail, "from": from, "scope": scope, "off": off(&at),
                         "toggle": toggle, "plugin": plugin,
+                        "body": body, "timeout": timeout, "about": about,
                     }),
                     place: at,
                 });
@@ -180,7 +294,7 @@ fn settings_hooks(path: &Path, from: &str, scope: &str, out: &mut Vec<Found>) {
         let place = move |event: &str, group: usize, hook: usize| {
             Some(Place::Settings { file: file.clone(), event: event.to_string(), group, hook })
         };
-        collect(h, "", from, scope, &place, &|_| false, false, out);
+        collect(h, "", "", from, scope, &place, &|_| false, false, out);
     }
 }
 
@@ -210,11 +324,12 @@ fn plugin_hooks(out: &mut Vec<Found>) {
             _ => vec![read_json(&root.join("hooks/hooks.json"))],
         };
         let key = key.clone();
+        let root_s = root.to_string_lossy().to_string();
         for block in blocks {
             if let Some(h) = block.get("hooks") {
                 let k = key.clone();
                 let place = move |_: &str, _: usize, _: usize| Some(Place::Plugin { key: k.clone() });
-                collect(h, name, &format!("plugin:{name}"), "global", &place, &|_| !on, false, out);
+                collect(h, &root_s, name, &format!("plugin:{name}"), "global", &place, &|_| !on, false, out);
             }
         }
     }
@@ -247,7 +362,7 @@ fn codex_hooks(path: &Path, from: &str, scope: &str, off: &std::collections::Has
             Some(Place::Codex { state_key: format!("{file}:{}:{group}:{hook}", snake(event)) })
         };
         let is_off = |p: &Place| matches!(p, Place::Codex { state_key } if off.contains(state_key));
-        collect(h, "", from, scope, &place, &is_off, true, out);
+        collect(h, "", "", from, scope, &place, &is_off, true, out);
     }
 }
 
@@ -324,7 +439,7 @@ fn write_text(file: &Path, text: &str) -> Result<(), String> {
     std::fs::rename(&tmp, file).map_err(|e| e.to_string())
 }
 
-fn edit_json(file: &Path, change: impl FnOnce(&mut Value) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn edit_json(file: &Path, change: impl FnOnce(&mut Value) -> Result<(), String>) -> Result<(), String> {
     let mut v = read_json(file);
     if !v.is_object() {
         return Err(format!("{} is not a settings file hookwich can read", file.display()));
@@ -456,6 +571,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reads_the_first_comment_of_a_script() {
+        assert_eq!(
+            script_comment("#!/usr/bin/env python3\n# Keeps the team's work log in step.\n# Runs at chat start.\nimport os\n"),
+            "Keeps the team's work log in step. Runs at chat start."
+        );
+        assert_eq!(script_comment("#!/bin/sh\n\"\"\"\nnot python\n"), "not python");
+        assert_eq!(
+            script_comment("'use strict'\n/**\n * Sends a note when the answer ends.\n */\nconst a = 1\n"),
+            "Sends a note when the answer ends."
+        );
+        assert_eq!(script_comment("// One line.\nfoo()\n"), "One line.");
+        assert_eq!(script_comment("import os\n# later\n"), "");
+    }
+
+    #[test]
+    fn says_what_a_plugin_hook_runs() {
+        let dir = std::env::temp_dir().join(format!("hw-what-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("skills/sync/scripts")).unwrap();
+        std::fs::write(dir.join("skills/sync/SKILL.md"), "---\nname: sync\ndescription: Keeps tickets in step\n---\nbody").unwrap();
+        std::fs::write(dir.join("skills/sync/scripts/auto.py"), "# would be second\n").unwrap();
+        std::fs::write(dir.join("notify.sh"), "#!/bin/sh\n# Says the answer is done.\necho hi\n").unwrap();
+        let root = dir.to_string_lossy().to_string();
+
+        let hook = json!({ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/auto.py\" ensure", "timeout": 30 });
+        let (body, timeout, about) = what_it_runs(&hook, &root);
+        assert_eq!(body, "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/auto.py\" ensure");
+        assert_eq!(timeout, Some(30.0));
+        assert_eq!(about, "Keeps tickets in step");
+
+        let hook = json!({ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/notify.sh" });
+        assert_eq!(what_it_runs(&hook, &root), ("${CLAUDE_PLUGIN_ROOT}/notify.sh".to_string(), None, "Says the answer is done.".to_string()));
+
+        let hook = json!({ "type": "http", "url": "http://127.0.0.1:9/x" });
+        assert_eq!(what_it_runs(&hook, "").2, "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn names_who_runs_a_hook() {
         assert_eq!(who("http://127.0.0.1:53575/termapp/attention/v1/abc"), "termapp");
         assert_eq!(who("http://127.0.0.1:23333/permission"), "127.0.0.1:23333");
@@ -480,7 +634,7 @@ mod tests {
             "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/auto.py\" ensure" }] }]
         });
         let place = |_: &str, _: usize, _: usize| Some(Place::Plugin { key: "memory@market".into() });
-        collect(&hooks, "memory", "plugin:memory", "global", &place, &|_| false, false, &mut out);
+        collect(&hooks, "", "memory", "plugin:memory", "global", &place, &|_| false, false, &mut out);
         let names: Vec<(&str, &str)> =
             out.iter().map(|h| (h.info["event"].as_str().unwrap(), h.info["name"].as_str().unwrap())).collect();
         assert!(names.contains(&("Stop", "memory")));
@@ -503,7 +657,7 @@ mod tests {
         ]});
         let place = |e: &str, g: usize, h: usize| Some(Place::Codex { state_key: format!("/h.json:{}:{g}:{h}", snake(e)) });
         let is_off = |p: &Place| matches!(p, Place::Codex { state_key } if off.contains(state_key));
-        collect(&hooks, "", "settings", "global", &place, &is_off, true, &mut out);
+        collect(&hooks, "", "", "settings", "global", &place, &is_off, true, &mut out);
         let seen: Vec<(String, bool)> = out
             .iter()
             .map(|f| match &f.place { Place::Codex { state_key } => (state_key.clone(), f.info["off"].as_bool().unwrap()), _ => unreachable!() })

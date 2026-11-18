@@ -260,6 +260,12 @@ export type ExistingHook = {
   toggle: 'park' | 'plugin' | 'codex'
   /** for plugin hooks: "name@marketplace" */
   plugin: string
+  /** what it runs in full: the command, the address or the prompt */
+  body?: string
+  /** its time limit in seconds, when it sets one */
+  timeout?: number | null
+  /** a line about it: the skill's description, or the first comment of its script */
+  about?: string
 }
 export type ExistingHooks = Record<'claude' | 'codex', ExistingHook[]>
 
@@ -276,6 +282,9 @@ export async function existingHooks(project: string): Promise<ExistingHooks> {
     kind: 'command',
     name,
     detail: `${name} hook`,
+    body: `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${name.replace('skill: ', '')}.mjs" ${event}`,
+    timeout: event === 'SessionStart' ? 30 : null,
+    about: name.startsWith('skill:') ? 'Keeps your notes in step at the start of a chat.' : '',
     from,
     scope: from === 'project' ? 'project' : 'global',
   })
@@ -330,6 +339,8 @@ export type ContextSnapshot = {
   mcp: { server: string; tools: number; tokens: number }[]
   skills?: { count: number; tokens: number }
   skillGroups: SkillGroup[]
+  /** every listed skill, biggest first */
+  skillList: { name: string; kind: SkillGroup['kind']; plugin?: string; tokens: number }[]
   agents: { name: string; source: string; tokens: number }[]
 }
 
@@ -357,6 +368,7 @@ function parseContext(v: unknown): ContextSnapshot | null {
     mcp: Array.isArray(o.mcp) ? o.mcp : [],
     skills: o.skills,
     skillGroups: Array.isArray(o.skillGroups) ? o.skillGroups : [],
+    skillList: Array.isArray(o.skillList) ? o.skillList : [],
     agents: Array.isArray(o.agents) ? o.agents : [],
   }
 }
@@ -399,7 +411,56 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
       { kind: 'builtin', name: '', skills: 3, tokens: 280 },
     ],
     agents: [{ name: 'tester', source: 'review-kit', tokens: 300 }],
+    skillList: [
+      ...Array.from({ length: 9 }, (_, i) => ({
+        name: `review-kit:step-${i + 1}`,
+        kind: 'plugin' as const,
+        plugin: 'review-kit',
+        tokens: 160 - i * 10,
+      })),
+      ...['notes', 'deploy', 'daily', 'draft', 'ideas', 'tidy'].map((name, i) => ({
+        name,
+        kind: 'user' as const,
+        tokens: 120 - i * 10,
+      })),
+      ...['simplify', 'loop', 'init'].map((name, i) => ({
+        name,
+        kind: 'builtin' as const,
+        tokens: 100 - i * 10,
+      })),
+    ],
   }
+}
+
+/** Skills switched off (skillOverrides "off"), and every plugin with whether it is on. */
+export type SkillState = { off: string[]; plugins: { name: string; key: string; on: boolean }[] }
+
+function demoSkillState(): SkillState {
+  const off = JSON.parse(localStorage.getItem('hookwich.demo.skillsOff') ?? '[]') as string[]
+  const pluginOff = localStorage.getItem('hookwich.demo.pluginOff') === '1'
+  return { off, plugins: [{ name: 'review-kit', key: 'review-kit@demo', on: !pluginOff }] }
+}
+
+export async function skillState(): Promise<SkillState> {
+  if (inApp) return invoke('skill_state')
+  return demoSkillState()
+}
+
+/** Switches one skill of your own (or a built-in one) off or back on. */
+export async function setSkill(name: string, on: boolean): Promise<SkillState> {
+  if (inApp) return invoke('set_skill', { name, on })
+  const off = new Set(demoSkillState().off)
+  if (on) off.delete(name)
+  else off.add(name)
+  localStorage.setItem('hookwich.demo.skillsOff', JSON.stringify([...off]))
+  return demoSkillState()
+}
+
+/** Switches a whole plugin off or back on, for its skills. */
+export async function setPlugin(key: string, on: boolean): Promise<SkillState> {
+  if (inApp) return invoke('set_plugin', { key, on })
+  localStorage.setItem('hookwich.demo.pluginOff', on ? '0' : '1')
+  return demoSkillState()
 }
 
 /** Whether a newer hookwich is out, and what the last update did (told once). */

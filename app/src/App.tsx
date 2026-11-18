@@ -8,6 +8,7 @@ import {
   type ContextFill,
 } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
+import { SkillsPanel } from './components/hookwich/skills-panel'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { Button } from './components/ui/button'
 import { IconButton } from './components/ui/icon-button'
@@ -29,12 +30,16 @@ import {
   existingHooks,
   readState,
   setExistingHook,
+  setPlugin,
+  setSkill,
+  skillState,
   runningChats,
   setExpanded,
   startDrag,
   writeConfig,
   type CodexStatus,
   type ContextSnapshot,
+  type SkillState,
   type UpdateState,
   type ExistingHooks,
   type Running,
@@ -62,7 +67,8 @@ const POLL_MS = 800
 const SAVE_DELAY_MS = 350
 const RUNNING_MS = 4000
 const EXISTING_MS = 15000
-const UPDATE_MS = 6 * 3_600_000
+const UPDATE_MS = 30 * 60_000
+const UPDATE_MIN_GAP_MS = 5 * 60_000
 
 type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'hookwich.theme'
@@ -242,8 +248,19 @@ export default function App() {
   const [showAll, setShowAll] = useState(false)
   const [context, setContext] = useState<ContextSnapshot | null>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [showSkills, setShowSkills] = useState(false)
+  const [skillsNow, setSkillsNow] = useState<SkillState>({ off: [], plugins: [] })
   const [updating, setUpdating] = useState<'idle' | 'busy' | 'done'>('idle')
   const [updateError, setUpdateError] = useState('')
+  useEffect(() => {
+    if (!showSkills) return
+    void skillState()
+      .then(setSkillsNow)
+      .catch(() => undefined)
+    const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowSkills(false)
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [showSkills])
   useEffect(() => {
     if (!showAll) return
     const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowAll(false)
@@ -337,24 +354,25 @@ export default function App() {
     setTerminalKey(latest.place.terminal)
   }, [follow, latest, selected])
 
-  // A newer hookwich: looked for when the window opens, then every six hours while it is shown.
+  // A newer hookwich: looked for when the window opens, each time you open the panel (at most every
+  // five minutes), and every half hour while it is shown. About two GitHub requests an hour.
+  const lastLook = useRef(0)
+  const lookForUpdate = useCallback((force = false) => {
+    if (!force && Date.now() - lastLook.current < UPDATE_MIN_GAP_MS) return
+    lastLook.current = Date.now()
+    void checkUpdate()
+      .then(u => setUpdate(prev => (prev?.updated && !u.updated ? { ...u, updated: prev.updated } : u)))
+      .catch(() => undefined)
+  }, [])
   useEffect(() => {
     if (!visible) return
-    let alive = true
-    const look = () =>
-      void checkUpdate()
-        .then(
-          u =>
-            alive && setUpdate(prev => (prev?.updated && !u.updated ? { ...u, updated: prev.updated } : u)),
-        )
-        .catch(() => undefined)
-    look()
-    const id = window.setInterval(look, UPDATE_MS)
-    return () => {
-      alive = false
-      window.clearInterval(id)
-    }
-  }, [visible])
+    lookForUpdate()
+    const id = window.setInterval(() => lookForUpdate(true), UPDATE_MS)
+    return () => window.clearInterval(id)
+  }, [visible, lookForUpdate])
+  useEffect(() => {
+    if (expanded) lookForUpdate()
+  }, [expanded, lookForUpdate])
   const runUpdate = async () => {
     if (!update?.latest) return
     setUpdating('busy')
@@ -402,6 +420,13 @@ export default function App() {
           messages: context.rows.find(r => r.name === 'Messages')?.tokens ?? 0,
         }
       : undefined
+  // When each of your items last ran, from what the agent recorded.
+  const lastRun = useMemo(() => {
+    const at: Record<string, number> = {}
+    for (const f of activity[agent].recent) if (f.id && (at[f.id] ?? 0) < f.at) at[f.id] = f.at
+    return at
+  }, [activity, agent])
+  const skillError = (e: unknown) => setDone({ message: t.toggleFailed(String(e)), before: config })
   /** What the hover card adds about the context, at the moments it fills up. */
   const contextTip = (event: string): ReactNode => {
     if (!context || !contextFill) return null
@@ -445,6 +470,11 @@ export default function App() {
                 )
                 .join(' · ')}
             </p>
+          )}
+          {context.skills && (
+            <Button size="sm" variant="secondary" onClick={() => setShowSkills(true)}>
+              {t.skillsAll(context.skills.count)}
+            </Button>
           )}
           {context.agents.length > 0 && (
             <p>
@@ -1064,6 +1094,14 @@ export default function App() {
                 .then(setExisting)
                 .catch((e: unknown) => setDone({ message: t.toggleFailed(String(e)), before: config }))
             }
+            lastRun={lastRun}
+            extra={
+              slot.event === 'SessionStart' && agent === 'claude' && context?.skills ? (
+                <Button size="sm" variant="secondary" onClick={() => setShowSkills(true)}>
+                  {t.skillsAll(context.skills.count)}
+                </Button>
+              ) : undefined
+            }
             items={list.filter(i => i.event === slot.event)}
             skills={skills}
             lang={lang}
@@ -1153,6 +1191,17 @@ export default function App() {
         {done?.below && !showAll && doneBanner}
       </footer>
 
+      {showSkills && (
+        <SkillsPanel
+          snap={context}
+          state={skillsNow}
+          local={skills}
+          t={t}
+          onSkill={(name, on) => void setSkill(name, on).then(setSkillsNow).catch(skillError)}
+          onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(skillError)}
+          onClose={() => setShowSkills(false)}
+        />
+      )}
       {showAll && (
         <div
           className="hw-modal"
