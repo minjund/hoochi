@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 pub mod codex;
+pub mod running;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -64,6 +65,12 @@ fn read_state() -> Snapshot {
         activity_codex: read_or(&dir.join("activity-codex.json"), "{}"),
         places: read_or(&dir.join("places.json"), "{}"),
     }
+}
+
+/// Claude Code and Codex chats open in terminals right now.
+#[tauri::command]
+async fn running_chats() -> Value {
+    running::running()
 }
 
 #[tauri::command]
@@ -272,7 +279,8 @@ pub fn run() {
             quit,
             codex_status,
             codex_connect,
-            codex_disconnect
+            codex_disconnect,
+            running_chats
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

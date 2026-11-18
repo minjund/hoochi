@@ -91,11 +91,18 @@ pub fn load_config() -> Value {
 
 /// The terminal by the id its app gives it; unknown terminals fall back to the chat.
 pub fn detect_terminal(session_id: &str) -> (String, String) {
-    let short = |v: &str| {
-        let tail = v.rsplit(|c| c == ':' || c == '/').next().unwrap_or(v);
-        tail.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect::<String>()
-    };
-    let probes: &[(&str, &str, &str)] = &[
+    terminal_of(|name| std::env::var(name).ok())
+        .unwrap_or_else(|| (format!("session:{session_id}"), format!("chat {}", short_id(session_id))))
+}
+
+fn short_id(v: &str) -> String {
+    let tail = v.rsplit(|c| c == ':' || c == '/').next().unwrap_or(v);
+    tail.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect::<String>()
+}
+
+/// The terminal window or tab, from its environment: the same ids and labels the Claude plugin uses.
+pub fn terminal_of(get: impl Fn(&str) -> Option<String>) -> Option<(String, String)> {
+    const PROBES: &[(&str, &str, &str)] = &[
         ("WHITEBOX_SURFACE_ID", "whitebox", "Whitebox"),
         ("ITERM_SESSION_ID", "iterm", "iTerm"),
         ("TERM_SESSION_ID", "terminal", "Terminal"),
@@ -103,14 +110,11 @@ pub fn detect_terminal(session_id: &str) -> (String, String) {
         ("WEZTERM_PANE", "wezterm", "WezTerm"),
         ("KITTY_WINDOW_ID", "kitty", "kitty"),
     ];
-    for (var, prefix, label) in probes {
-        if let Ok(v) = std::env::var(var) {
-            if !v.is_empty() {
-                return (format!("{prefix}:{v}"), format!("{label} {}", short(&v)));
-            }
-        }
-    }
-    (format!("session:{session_id}"), format!("chat {}", short(session_id)))
+    PROBES.iter().find_map(|(var, prefix, label)| {
+        get(var)
+            .filter(|v| !v.is_empty())
+            .map(|v| (format!("{prefix}:{v}"), format!("{label} {}", short_id(&v))))
+    })
 }
 
 /// The git top-level above `cwd`, else `cwd` itself.

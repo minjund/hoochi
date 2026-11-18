@@ -18,10 +18,12 @@ import {
   listSkills,
   newId,
   readState,
+  runningChats,
   setExpanded,
   startDrag,
   writeConfig,
   type CodexStatus,
+  type Running,
   type Skill,
 } from './lib/backend'
 import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
@@ -42,6 +44,7 @@ import {
 
 const POLL_MS = 800
 const SAVE_DELAY_MS = 350
+const RUNNING_MS = 4000
 
 /** Follows the system light/dark setting; affectUI reads `.dark` on <html>. */
 function useSystemTheme() {
@@ -124,12 +127,15 @@ export default function App() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [lang, setLang] = useState<Lang>(detectLang)
   const [agent, setAgent] = useState<Agent>(browserFlags.agent === 'codex' ? 'codex' : 'claude')
-  const [scope, setScope] = useState<Scope>('global')
+  const [scope, setScope] = useState<Scope>(
+    browserFlags.scope === 'project' || browserFlags.scope === 'terminal' ? browserFlags.scope : 'global',
+  )
   const [projectKey, setProjectKey] = useState('')
   const [terminalKey, setTerminalKey] = useState('')
   const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [codexNote, setCodexNote] = useState('')
   const [follow, setFollowState] = useState(loadFollow)
+  const [running, setRunning] = useState<Running[]>([])
   const t = UI[lang]
 
   const setFollow = (on: boolean) => {
@@ -179,6 +185,22 @@ export default function App() {
         .then(setSkills)
         .catch(() => undefined)
   }, [expanded, skills.length])
+
+  // Every chat open in a terminal, found from the process list, even before hookwich hears from it.
+  useEffect(() => {
+    if (!expanded) return
+    let alive = true
+    const scan = () =>
+      void runningChats()
+        .then(list => alive && setRunning(list))
+        .catch(() => undefined)
+    scan()
+    const id = window.setInterval(scan, RUNNING_MS)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [expanded])
 
   useEffect(() => {
     if (expanded)
@@ -270,12 +292,35 @@ export default function App() {
     return wider && list.some(i => i.event === event) ? t.replaces(t.scopes[wider]) : undefined
   }
 
-  const projectOptions = Object.entries(places.projects)
-    .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
-    .map(([path]) => ({ value: path, label: folderName(path), description: path }))
-  const terminalOptions = Object.entries(places.terminals)
-    .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
-    .map(([id, v]) => ({ value: id, label: v.label, description: `${folderName(v.cwd)} · ${v.agent}` }))
+  // Open chats first (newest first), then places seen before, most recent first.
+  const openProjects = [...new Set(running.map(r => r.project).filter(Boolean))]
+  const projectOptions = [
+    ...openProjects.map(path => ({
+      value: path,
+      label: folderName(path),
+      description: `${t.openChats(running.filter(r => r.project === path).length)} · ${path}`,
+    })),
+    ...Object.entries(places.projects)
+      .filter(([path]) => !openProjects.includes(path))
+      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+      .map(([path]) => ({ value: path, label: folderName(path), description: `${t.closed} · ${path}` })),
+  ]
+  const shortId = (label: string) => label.split(' ').pop() ?? label
+  const terminalOptions = [
+    ...running.map(r => ({
+      value: r.terminal,
+      label: `${folderName(r.project || r.cwd)} · ${t.agents[r.agent]} · ${shortId(r.terminalLabel)}`,
+      description: `${r.terminalLabel} · ${places.terminals[r.terminal] ? t.open : t.notHooked}`,
+    })),
+    ...Object.entries(places.terminals)
+      .filter(([id]) => !running.some(r => r.terminal === id))
+      .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+      .map(([id, v]) => ({
+        value: id,
+        label: `${folderName(v.cwd)} · ${v.agent === 'codex' ? t.agents.codex : t.agents.claude} · ${shortId(v.label)}`,
+        description: `${v.label} · ${t.closed}`,
+      })),
+  ]
 
   const slot = selected ? slotOf(selected, agent) : undefined
   const recent = activity[agent].recent

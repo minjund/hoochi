@@ -24,6 +24,8 @@ export const browserFlags = {
   agent: inApp ? null : new URLSearchParams(location.search).get('agent'),
   /** `?chat=codex`: the demo's last chat was typed in Codex, in another terminal */
   chat: inApp ? null : new URLSearchParams(location.search).get('chat'),
+  /** `?scope=project|terminal`: open on that tab */
+  scope: inApp ? null : new URLSearchParams(location.search).get('scope'),
 }
 
 if (browserFlags.demo) {
@@ -210,6 +212,35 @@ export async function listSkills(): Promise<Skill[]> {
   return [
     { name: 'code-review', description: 'Review the current diff for correctness bugs' },
     { name: 'simplify', description: 'Review changed code for reuse and simplification' },
+  ]
+}
+
+/** A Claude Code or Codex chat open in a terminal right now. */
+export type Running = {
+  agent: 'claude' | 'codex'
+  pid: number
+  terminal: string
+  terminalLabel: string
+  cwd: string
+  project: string
+}
+
+export async function runningChats(): Promise<Running[]> {
+  if (inApp) return invoke('running_chats')
+  if (!browserFlags.demo) return []
+  const chat = (agent: Running['agent'], id: string, project: string): Running => ({
+    agent,
+    pid: 1,
+    terminal: `whitebox:terminal:${id}`,
+    terminalLabel: `Whitebox ${id}`,
+    cwd: project,
+    project,
+  })
+  return [
+    chat('claude', 'a1', '/Users/me/Projects/shop'),
+    chat('codex', 'b2', '/Users/me/Projects/shop'),
+    chat('claude', 'c3', '/Users/me/Projects/notes'),
+    chat('codex', 'd4', '/Users/me/Projects/api'),
   ]
 }
 
