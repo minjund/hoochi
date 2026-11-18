@@ -1,0 +1,153 @@
+import { expect, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
+
+type On = Parameters<TestBody>[1]
+
+/** A fake machine: files in a map, commands answered by `commands`. */
+function machine(
+  on: On,
+  files: Record<string, string>,
+  commands: Record<string, { exitCode: number; stdout: string }> = {},
+) {
+  const fs = new Map(Object.entries(files))
+  const ran: string[] = []
+  on('env.get', () => ({ value: '/home/me' }))
+  on('fs.read', (_, e) => {
+    const text = fs.get(e.path)
+    if (text === undefined) throw new Error('ENOENT')
+    return { value: text }
+  })
+  on('fs.write', (_, e) => {
+    fs.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('fs.exists', (_, e) => ({ value: fs.has(e.path) }))
+  on('process.hookEnv', () => ({ value: {} }))
+  on('process.run', (_, e) => {
+    const line = e.argv[0] === '/bin/sh' ? (e.argv[2] ?? '') : e.argv.join(' ')
+    ran.push(line)
+    const r = commands[line] ?? { exitCode: 0, stdout: '' }
+    return { value: { ...r, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  let now = 1_000
+  on('clock.now', () => ({ value: (now += 10) }))
+  return { fs, ran }
+}
+
+const CONFIG = '/home/me/.hookwich/config.json'
+const ACTIVITY = '/home/me/.hookwich/activity.json'
+
+const item = (over: Record<string, unknown>) => ({
+  id: 'i1',
+  event: 'UserPromptSubmit',
+  kind: 'text',
+  text: '',
+  command: '',
+  mode: 'always',
+  skill: '',
+  tools: '',
+  enabled: true,
+  once: false,
+  ...over,
+})
+
+const config = (...items: Record<string, unknown>[]) => JSON.stringify({ version: 1, items })
+
+test('text before a prompt reaches the model, after the settings hooks', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: config(item({ text: 'Answer in English.' })) })
+  on('classic.UserPromptSubmit', () => ({ additionalContext: ['from settings'] }))
+
+  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  expect(r.additionalContext).toEqual(['from settings', 'Answer in English.'])
+
+  const seen = JSON.parse(fs.get(ACTIVITY) ?? '{}')
+  expect(seen.lastEvent).toBe('UserPromptSubmit')
+  expect(seen.counts.UserPromptSubmit).toBe(1)
+  expect(seen.recent[0].label).toBe('Answer in English.')
+})
+
+test('a disabled item and another event put nothing in', async ($, on) => {
+  machine(on, {
+    [CONFIG]: config(item({ text: 'off', enabled: false }), item({ id: 'i2', event: 'Stop', text: 'later' })),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  expect(r.additionalContext).toBeUndefined()
+})
+
+test('a skill item asks the model to use the skill', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ kind: 'skill', skill: 'code-review' })) })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  expect(r.additionalContext?.[0]).toContain('"code-review" skill')
+})
+
+test('a tool item goes only to the tools named', async ($, on) => {
+  machine(on, {
+    [CONFIG]: config(item({ event: 'PostToolUse', text: 'Summarise it.', tools: 'Bash, Edit' })),
+  })
+  on('classic.PostToolUse', () => ({}))
+  const base = { tool_input: {}, tool_response: {}, tool_use_id: 't1' }
+
+  expect((await $.classic.PostToolUse({ ...base, tool_name: 'Bash' })).additionalContext).toEqual([
+    'Summarise it.',
+  ])
+  expect((await $.classic.PostToolUse({ ...base, tool_name: 'Read' })).additionalContext).toBeUndefined()
+})
+
+test('a failing test command after the turn makes Claude keep going once', async ($, on) => {
+  const { ran } = machine(
+    on,
+    { [CONFIG]: config(item({ event: 'Stop', kind: 'command', command: 'npm test', mode: 'onFail' })) },
+    { 'npm test': { exitCode: 1, stdout: '1 failing' } },
+  )
+  on('classic.Stop', () => ({}))
+
+  const first = await $.classic.Stop({ stop_hook_active: false })
+  expect(first.block).toContain('$ npm test (exit 1)')
+  expect(first.block).toContain('1 failing')
+
+  // The second stop of the same turn is let through: no loop.
+  const second = await $.classic.Stop({ stop_hook_active: true })
+  expect(second.block).toBeUndefined()
+  expect(ran.filter(l => l === 'npm test').length).toBe(1)
+})
+
+test('a passing command set to "only on failure" puts nothing in', async ($, on) => {
+  machine(
+    on,
+    { [CONFIG]: config(item({ event: 'Stop', kind: 'command', command: 'npm test', mode: 'onFail' })) },
+    { 'npm test': { exitCode: 0, stdout: 'ok' } },
+  )
+  on('classic.Stop', () => ({}))
+
+  expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
+})
+
+test('a command at an event the model cannot hear still runs', async ($, on) => {
+  const { ran } = machine(on, {
+    [CONFIG]: config(item({ event: 'SessionEnd', kind: 'command', command: 'echo bye >> log' })),
+  })
+  on('classic.SessionEnd', () => ({}))
+
+  await $.classic.SessionEnd({ reason: 'other' })
+  expect(ran).toContain('echo bye >> log')
+})
+
+test('a "once" item switches itself off after it ran', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: config(item({ text: 'Just this once.', once: true })) })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['Just this once.'])
+  expect(JSON.parse(fs.get(CONFIG) ?? '{}').items[0].enabled).toBe(false)
+  expect((await $.classic.UserPromptSubmit({ prompt: 'b' })).additionalContext).toBeUndefined()
+})
+
+test('a broken config never breaks the hook', async ($, on) => {
+  machine(on, { [CONFIG]: '{ not json' })
+  on('classic.UserPromptSubmit', () => ({ additionalContext: ['from settings'] }))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['from settings'])
+})

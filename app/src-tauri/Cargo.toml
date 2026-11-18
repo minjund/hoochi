@@ -1,0 +1,28 @@
+[package]
+name = "hookwich"
+version = "0.1.0"
+description = "Sandwich anything around Claude Code's lifecycle"
+authors = ["minjund"]
+license = "MIT"
+repository = "https://github.com/minjund/hookwich"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "hookwich_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.5" }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.12.6", features = ["macos-private-api", "tray-icon", "image-png"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
