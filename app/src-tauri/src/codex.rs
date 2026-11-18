@@ -315,7 +315,7 @@ pub fn run_hook(event: &str) -> i32 {
                 }
                 _ => continue,
             }
-            fired.push(json!({ "event": event, "at": at, "kind": str_of(item, "kind"), "label": label_of(item), "tool": tool, "scope": scope }));
+            fired.push(json!({ "event": event, "at": at, "kind": str_of(item, "kind"), "label": label_of(item), "tool": tool, "scope": scope, "id": str_of(item, "id") }));
             ran.push(str_of(item, "id").to_string());
         }
     }

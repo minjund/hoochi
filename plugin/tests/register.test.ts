@@ -373,3 +373,12 @@ test('a failed update keeps the old window running and says so', async ($, on) =
   expect(statuses[0]).toContain('could not update the window app')
   expect(fs.has(app)).toBe(true)
 })
+
+test('each record names the item it came from, so a deleted item can be told apart', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({ global: [item({ id: 'g1', text: 'answer in English' })] }) })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  const recent = JSON.parse(fs.get(ACTIVITY) ?? '{}').recent
+  expect(recent.at(-1)).toMatchObject({ id: 'g1', label: 'answer in English', scope: 'global' })
+})

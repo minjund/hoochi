@@ -41,6 +41,7 @@ import {
   type Activity,
   type Agent,
   type Config,
+  type Fired,
   type Item,
   type Place,
   type Places,
@@ -524,6 +525,22 @@ export default function App() {
       .map(([path]) => ({ value: path, label: folderName(path), description: `${t.closed} · ${path}` })),
   ]
 
+  // A record of something put in earlier; it says so when that item has since been deleted.
+  const label60 = (i: Item) => {
+    const raw = i.kind === 'text' ? i.text : i.kind === 'command' ? `$ ${i.command}` : `/${i.skill}`
+    const one = raw.replace(/\s+/g, ' ').trim()
+    return one.length > 60 ? `${one.slice(0, 59)}…` : one
+  }
+  const allItems = [
+    ...config[agent].global,
+    ...Object.values(config[agent].projects).flat(),
+    ...Object.values(config[agent].terminals).flat(),
+  ]
+  const stillThere = (f: Fired) =>
+    f.id
+      ? allItems.some(i => i.id === f.id)
+      : allItems.some(i => i.event === f.event && label60(i) === f.label)
+
   const slot = selected ? slotOf(selected, agent) : undefined
   const recent = activity[agent].recent
 
@@ -823,17 +840,23 @@ export default function App() {
       </main>
 
       {recent.length > 0 && (
-        <footer className="hw-feed" aria-label={t.recent}>
+        <footer className="hw-feed" aria-label={t.recentTitle}>
+          <div className="hw-feed-title">{t.recentTitle}</div>
           {recent
             .slice(-3)
             .reverse()
-            .map((f, i) => (
-              <div className="hw-feed-row" key={`${f.at}-${i}`}>
-                <b>{eventName(f.event, lang, agent)}</b>
-                {f.scope ? ` · ${t.scopes[f.scope]}` : ''}
-                {f.tool ? ` · ${f.tool}` : ''} — {f.label}
-              </div>
-            ))}
+            .map((f, i) => {
+              const gone = !stillThere(f)
+              return (
+                <div className="hw-feed-row" key={`${f.at}-${i}`} data-gone={gone || undefined}>
+                  <span className="hw-feed-time">{t.ago(Date.now() - f.at)}</span>
+                  <b>{eventName(f.event, lang, agent)}</b>
+                  {f.scope ? ` · ${t.scopes[f.scope]}` : ''}
+                  {f.tool ? ` · ${f.tool}` : ''} — {f.label}
+                  {gone ? ` (${t.gone})` : ''}
+                </div>
+              )
+            })}
         </footer>
       )}
     </div>

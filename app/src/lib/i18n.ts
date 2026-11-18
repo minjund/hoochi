@@ -387,6 +387,16 @@ export const UI = {
     switchedTo: (where: string) => `You moved to another terminal → ${where}`,
     themeLabel: 'Look',
     themes: { system: 'like my computer', light: 'light', dark: 'dark' },
+    recentTitle: 'Recently put in (a record, not your settings)',
+    gone: 'no longer in your settings',
+    ago: (ms: number) =>
+      ms < 60_000
+        ? 'just now'
+        : ms < 3_600_000
+          ? `${Math.floor(ms / 60_000)} min ago`
+          : ms < 86_400_000
+            ? `${Math.floor(ms / 3_600_000)} h ago`
+            : `${Math.floor(ms / 86_400_000)} d ago`,
     follow: 'Follow where I chat',
     followNow: (agent: string, where: string) => `Now: ${agent} · ${where}`,
     followHint: 'Switches by itself to the AI and terminal you last typed in.',
@@ -481,6 +491,16 @@ export const UI = {
     switchedTo: (where: string) => `채팅하는 터미널이 바뀌었어요 → ${where}`,
     themeLabel: '화면',
     themes: { system: '컴퓨터 설정 따라가기', light: '밝게', dark: '어둡게' },
+    recentTitle: '최근에 실제로 들어간 것 (지금 설정이 아니라 기록이에요)',
+    gone: '지금 설정에는 없음',
+    ago: (ms: number) =>
+      ms < 60_000
+        ? '방금'
+        : ms < 3_600_000
+          ? `${Math.floor(ms / 60_000)}분 전`
+          : ms < 86_400_000
+            ? `${Math.floor(ms / 3_600_000)}시간 전`
+            : `${Math.floor(ms / 86_400_000)}일 전`,
     follow: '내가 채팅하는 곳 따라가기',
     followNow: (agent: string, where: string) => `지금: ${agent} · ${where}`,
     followHint: '마지막으로 채팅을 친 AI와 터미널로 저절로 바뀌어요.',
@@ -578,6 +598,16 @@ export const UI = {
     switchedTo: (where: string) => `チャットしているターミナルが変わりました → ${where}`,
     themeLabel: '表示',
     themes: { system: 'パソコンの設定に合わせる', light: 'ライト', dark: 'ダーク' },
+    recentTitle: '最近実際に入ったもの（いまの設定ではなく記録です）',
+    gone: 'いまの設定にはありません',
+    ago: (ms: number) =>
+      ms < 60_000
+        ? 'たった今'
+        : ms < 3_600_000
+          ? `${Math.floor(ms / 60_000)}分前`
+          : ms < 86_400_000
+            ? `${Math.floor(ms / 3_600_000)}時間前`
+            : `${Math.floor(ms / 86_400_000)}日前`,
     follow: 'チャットしている場所に合わせる',
     followNow: (agent: string, where: string) => `いま：${agent} · ${where}`,
     followHint: '最後に入力した AI とターミナルに自動で切り替わります。',
@@ -671,6 +701,16 @@ export const UI = {
     switchedTo: (where: string) => `聊天的终端换了 → ${where}`,
     themeLabel: '外观',
     themes: { system: '跟随电脑设置', light: '浅色', dark: '深色' },
+    recentTitle: '最近实际加入的（这是记录，不是当前设置）',
+    gone: '当前设置里已没有',
+    ago: (ms: number) =>
+      ms < 60_000
+        ? '刚刚'
+        : ms < 3_600_000
+          ? `${Math.floor(ms / 60_000)} 分钟前`
+          : ms < 86_400_000
+            ? `${Math.floor(ms / 3_600_000)} 小时前`
+            : `${Math.floor(ms / 86_400_000)} 天前`,
     follow: '跟随我正在聊天的地方',
     followNow: (agent: string, where: string) => `现在：${agent} · ${where}`,
     followHint: '会自动切换到你最后输入的 AI 和终端。',

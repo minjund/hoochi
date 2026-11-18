@@ -48,7 +48,16 @@ export type Place = {
 }
 
 /** One time hookwich put something in, for the window's feed. */
-export type Fired = { event: string; at: number; kind: ItemKind; label: string; tool: string; scope: Scope }
+export type Fired = {
+  event: string
+  at: number
+  kind: ItemKind
+  label: string
+  tool: string
+  scope: Scope
+  /** the item that was put in, so the window can tell when it has since been deleted */
+  id?: string
+}
 
 /** What the window reads to light up the lifecycle: ~/.hookwich/activity-<agent>.json */
 export type Activity = {

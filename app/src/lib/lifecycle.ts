@@ -40,7 +40,16 @@ export type Places = {
   terminals: Record<string, { label: string; cwd: string; agent: string; lastSeen: number }>
 }
 
-export type Fired = { event: string; at: number; kind: ItemKind; label: string; tool: string; scope?: Scope }
+export type Fired = {
+  event: string
+  at: number
+  kind: ItemKind
+  label: string
+  tool: string
+  scope?: Scope
+  /** the item that was put in (older records have none) */
+  id?: string
+}
 
 export type Activity = {
   lastEvent: string

@@ -398,3 +398,16 @@ input {
     animation: none;
   }
 }
+
+.hw-feed-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-feed-time {
+  margin-right: 6px;
+  color: var(--hw-soft);
+}
+.hw-feed-row[data-gone] {
+  opacity: 0.6;
+}

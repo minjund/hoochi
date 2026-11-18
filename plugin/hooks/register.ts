@@ -412,14 +412,14 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     if (isSecondPass) break
     if (item.kind === 'command') {
       const out = await runCommand($, item, cwd)
-      fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope })
+      fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope, id: item.id })
       ranIds.add(item.id)
       if (out !== undefined && canInject) parts.push(out)
     } else if (canInject) {
       const words = item.kind === 'skill' ? skillText(item.skill) : item.text
       if (words.trim() === '') continue
       parts.push(words)
-      fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope })
+      fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope, id: item.id })
       ranIds.add(item.id)
     }
   }
