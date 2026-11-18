@@ -1,6 +1,6 @@
 import type { Skill } from '../../lib/backend'
-import { eventHint, eventName, UI, type Lang } from '../../lib/i18n'
-import type { Item, ItemKind, Slot } from '../../lib/lifecycle'
+import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
+import type { Agent, Item, ItemKind, Slot } from '../../lib/lifecycle'
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
 import { SegmentedControl } from '../ui/segmented-control'
@@ -14,6 +14,9 @@ type Props = {
   items: Item[]
   skills: Skill[]
   lang: Lang
+  agent: Agent
+  /** how this scope relates to the others for this moment */
+  note?: string
   onChange(item: Item): void
   onRemove(id: string): void
   onAdd(): void
@@ -21,7 +24,18 @@ type Props = {
 }
 
 /** Everything put into one moment, each item editable in place. */
-export function SlotEditor({ slot, items, skills, lang, onChange, onRemove, onAdd, onBack }: Props) {
+export function SlotEditor({
+  slot,
+  items,
+  skills,
+  lang,
+  agent,
+  note,
+  onChange,
+  onRemove,
+  onAdd,
+  onBack,
+}: Props) {
   const t = UI[lang]
   return (
     <div className="hw-editor">
@@ -31,11 +45,12 @@ export function SlotEditor({ slot, items, skills, lang, onChange, onRemove, onAd
         </Button>
       </div>
       <div className="hw-editor-title">
-        <strong>{eventName(slot.event, lang)}</strong>
+        <strong>{eventName(slot.event, lang, agent)}</strong>
         <code>{slot.event}</code>
         {!slot.canInject && <span className="hw-tag">{t.onlyCommandsTag}</span>}
       </div>
-      <p className="hw-editor-hint">{eventHint(slot.event, lang)}</p>
+      <p className="hw-editor-hint">{eventHint(slot.event, lang, agent)}</p>
+      {note && <p className="hw-note">{note}</p>}
 
       {items.length === 0 && <p className="hw-editor-empty">{t.empty}</p>}
 
@@ -46,6 +61,7 @@ export function SlotEditor({ slot, items, skills, lang, onChange, onRemove, onAd
           slot={slot}
           skills={skills}
           lang={lang}
+          agent={agent}
           onChange={onChange}
           onRemove={() => onRemove(item.id)}
         />
@@ -63,6 +79,7 @@ function ItemCard({
   slot,
   skills,
   lang,
+  agent,
   onChange,
   onRemove,
 }: {
@@ -70,10 +87,12 @@ function ItemCard({
   slot: Slot
   skills: Skill[]
   lang: Lang
+  agent: Agent
   onChange(item: Item): void
   onRemove(): void
 }) {
   const t = UI[lang]
+  const say = (text: string) => forAgent(text, agent)
   const set = (patch: Partial<Item>) => onChange({ ...item, ...patch })
   const kinds: { value: ItemKind; label: string; disabled?: boolean }[] = [
     { value: 'text', label: t.kinds.text, disabled: !slot.canInject },
@@ -124,10 +143,10 @@ function ItemCard({
             />
             {slot.canInject ? (
               <div className="hw-field">
-                <span className="hw-field-label">{t.modeLabel}</span>
+                <span className="hw-field-label">{say(t.modeLabel)}</span>
                 <SegmentedControl
                   size="sm"
-                  aria-label={t.modeLabel}
+                  aria-label={say(t.modeLabel)}
                   options={[
                     { value: 'always', label: t.modes.always },
                     { value: 'onFail', label: t.modes.onFail },
@@ -137,7 +156,7 @@ function ItemCard({
                 />
               </div>
             ) : (
-              <p className="hw-editor-hint">{t.sideEffect}</p>
+              <p className="hw-editor-hint">{say(t.sideEffect)}</p>
             )}
           </>
         )}

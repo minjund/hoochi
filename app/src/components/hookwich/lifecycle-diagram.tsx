@@ -3,6 +3,9 @@ import { eventHint, eventName, subtitleOf, UI, type Lang } from '../../lib/i18n'
 import { type Activity, type Item } from '../../lib/lifecycle'
 
 export type LifecycleDiagramProps = {
+  /** whose picture it is; wording says Codex on the Codex picture */
+  agent?: 'claude' | 'codex'
+  layout: DiagramLayout
   items: Item[]
   activity: Activity
   selectedEvent: string | null
@@ -19,85 +22,188 @@ type Box = {
   height?: number
   events: readonly string[]
   tone: Tone
-  label?: string
-  subtitle?: string
-  lines?: readonly string[]
+  /** Non-event boxes display a localized UI label and have no click target. */
+  labelKey?: 'toolRuns' | 'modelThinks'
 }
 
-// Coordinates are in the reference figure's 520 × 1336 drawing space.
-// The drawing is built from boxes and connectors, independently of its SVG source.
-const boxes: readonly Box[] = [
-  { x: 15, y: 25, width: 115, events: ['Setup'], tone: 'side', subtitle: '(Opt-in)' },
-  { x: 160, y: 25, width: 190, events: ['SessionStart'], label: 'Session Start', tone: 'green' },
-  { x: 160, y: 98, width: 190, events: ['UserPromptSubmit'], tone: 'neutral' },
-  {
-    x: 15,
-    y: 98,
-    width: 127,
-    events: ['UserPromptExpansion'],
-    lines: ['UserPrompt', 'Expansion'],
-    subtitle: '(slash commands)',
-    tone: 'side',
-  },
-  { x: 160, y: 210, width: 190, events: ['PreToolUse'], tone: 'yellow' },
-  { x: 160, y: 283, width: 190, events: ['PermissionRequest'], tone: 'yellow' },
-  {
-    x: 15,
-    y: 283,
-    width: 115,
-    events: ['PermissionDenied'],
-    lines: ['Permission', 'Denied'],
-    subtitle: '(auto-mode deny)',
-    tone: 'side',
-  },
-  { x: 15, y: 332, width: 115, events: ['Elicitation'], subtitle: '(MCP input)', tone: 'side' },
-  { x: 15, y: 380, width: 115, events: ['ElicitationResult'], subtitle: '(MCP input)', tone: 'side' },
-  { x: 160, y: 356, width: 190, events: [], label: '[tool executes]', tone: 'tool' },
-  { x: 110, y: 429, width: 290, events: ['PostToolUse', 'PostToolUseFailure'], tone: 'yellow' },
-  { x: 160, y: 502, width: 190, events: ['PostToolBatch'], tone: 'yellow' },
-  { x: 115, y: 575, width: 280, events: ['SubagentStart', 'SubagentStop'], tone: 'yellow' },
-  { x: 160, y: 648, width: 190, events: ['TaskCreated'], tone: 'yellow' },
-  { x: 160, y: 721, width: 190, events: ['TaskCompleted'], tone: 'yellow' },
-  { x: 160, y: 810, width: 190, events: ['Stop', 'StopFailure'], tone: 'pink' },
-  { x: 160, y: 883, width: 190, events: ['TeammateIdle'], tone: 'neutral' },
-  { x: 160, y: 956, width: 190, events: ['PreCompact'], tone: 'neutral' },
-  { x: 160, y: 1029, width: 190, events: ['PostCompact'], tone: 'neutral' },
-  { x: 160, y: 1102, width: 190, events: ['SessionEnd'], tone: 'neutral' },
-  { x: 15, y: 818, width: 115, events: ['Notification'], subtitle: '(Async)', tone: 'side' },
-  { x: 15, y: 872, width: 115, events: ['ConfigChange'], subtitle: '(Async)', tone: 'side' },
-  { x: 15, y: 926, width: 115, events: ['PreModelSwitch'], subtitle: '(Sequential)', tone: 'neutral' },
-  { x: 15, y: 980, width: 115, events: ['PostModelSwitch'], subtitle: '(Async)', tone: 'side' },
-  { x: 15, y: 1034, width: 115, events: ['WorktreeCreate'], subtitle: '(Isolation)', tone: 'side' },
-  { x: 15, y: 1088, width: 115, events: ['WorktreeRemove'], subtitle: '(Teardown)', tone: 'side' },
-  {
-    x: 15,
-    y: 1142,
-    width: 115,
-    height: 54,
-    events: ['CwdChanged', 'FileChanged', 'DirectoryAdded'],
-    subtitle: '(Env reactive)',
-    tone: 'side',
-  },
-  { x: 15, y: 1215, width: 115, events: ['InstructionsLoaded'], subtitle: '(Async)', tone: 'side' },
-  { x: 15, y: 1269, width: 115, events: ['MessageDisplay'], subtitle: '(Display)', tone: 'side' },
-]
+type DiagramLabel = {
+  key: 'turn' | 'loop' | 'resumed'
+  tone: 'turn' | 'agent' | 'resume'
+  x: number
+  y: number
+  lineHeight?: number
+  rotation?: number
+  textAnchor?: 'start' | 'middle' | 'end'
+}
 
-const downward = [
-  [67, 96],
-  [140, 182],
-  [252, 281],
-  [325, 354],
-  [398, 427],
-  [471, 500],
-  [544, 573],
-  [617, 646],
-  [690, 719],
-  [763, 808],
-  [852, 881],
-  [925, 954],
-  [998, 1027],
-  [1071, 1100],
-] as const
+/** All figure-specific geometry; coordinates are SVG drawing units. */
+export type DiagramLayout = {
+  viewBox: readonly [x: number, y: number, width: number, height: number]
+  title: string
+  boxes: readonly Box[]
+  downward: readonly { x: number; start: number; tip: number }[]
+  /** Optional toY/bendX route a dashed side arrow into a nearby row. */
+  sideArrows: readonly { from: number; to: number; y: number; toY?: number; bendX?: number }[]
+  loops: readonly { tone: 'orange' | 'blue' | 'resume'; path: string; head: string }[]
+  containers: readonly {
+    tone: 'turn' | 'agent'
+    x: number
+    y: number
+    width: number
+    height: number
+  }[]
+  /** Label keys reference UI[lang], including the rotated resumed label. */
+  labels: readonly DiagramLabel[]
+}
+
+// Preserve the original Claude figure's 520 × 1336 geometry exactly.
+export const CLAUDE_LAYOUT: DiagramLayout = {
+  viewBox: [0, 0, 520, 1336],
+  title: 'Claude Code hooks lifecycle',
+  boxes: [
+    { x: 15, y: 25, width: 115, events: ['Setup'], tone: 'side' },
+    { x: 160, y: 25, width: 190, events: ['SessionStart'], tone: 'green' },
+    { x: 160, y: 98, width: 190, events: ['UserPromptSubmit'], tone: 'neutral' },
+    {
+      x: 15,
+      y: 98,
+      width: 127,
+      events: ['UserPromptExpansion'],
+      tone: 'side',
+    },
+    { x: 160, y: 210, width: 190, events: ['PreToolUse'], tone: 'yellow' },
+    { x: 160, y: 283, width: 190, events: ['PermissionRequest'], tone: 'yellow' },
+    {
+      x: 15,
+      y: 283,
+      width: 115,
+      events: ['PermissionDenied'],
+      tone: 'side',
+    },
+    { x: 15, y: 332, width: 115, events: ['Elicitation'], tone: 'side' },
+    { x: 15, y: 380, width: 115, events: ['ElicitationResult'], tone: 'side' },
+    { x: 160, y: 356, width: 190, events: [], labelKey: 'toolRuns', tone: 'tool' },
+    { x: 110, y: 429, width: 290, events: ['PostToolUse', 'PostToolUseFailure'], tone: 'yellow' },
+    { x: 160, y: 502, width: 190, events: ['PostToolBatch'], tone: 'yellow' },
+    { x: 115, y: 575, width: 280, events: ['SubagentStart', 'SubagentStop'], tone: 'yellow' },
+    { x: 160, y: 648, width: 190, events: ['TaskCreated'], tone: 'yellow' },
+    { x: 160, y: 721, width: 190, events: ['TaskCompleted'], tone: 'yellow' },
+    { x: 160, y: 810, width: 190, events: ['Stop', 'StopFailure'], tone: 'pink' },
+    { x: 160, y: 883, width: 190, events: ['TeammateIdle'], tone: 'neutral' },
+    { x: 160, y: 956, width: 190, events: ['PreCompact'], tone: 'neutral' },
+    { x: 160, y: 1029, width: 190, events: ['PostCompact'], tone: 'neutral' },
+    { x: 160, y: 1102, width: 190, events: ['SessionEnd'], tone: 'neutral' },
+    { x: 15, y: 818, width: 115, events: ['Notification'], tone: 'side' },
+    { x: 15, y: 872, width: 115, events: ['ConfigChange'], tone: 'side' },
+    { x: 15, y: 926, width: 115, events: ['PreModelSwitch'], tone: 'neutral' },
+    { x: 15, y: 980, width: 115, events: ['PostModelSwitch'], tone: 'side' },
+    { x: 15, y: 1034, width: 115, events: ['WorktreeCreate'], tone: 'side' },
+    { x: 15, y: 1088, width: 115, events: ['WorktreeRemove'], tone: 'side' },
+    {
+      x: 15,
+      y: 1142,
+      width: 115,
+      height: 54,
+      events: ['CwdChanged', 'FileChanged', 'DirectoryAdded'],
+      tone: 'side',
+    },
+    { x: 15, y: 1215, width: 115, events: ['InstructionsLoaded'], tone: 'side' },
+    { x: 15, y: 1269, width: 115, events: ['MessageDisplay'], tone: 'side' },
+  ],
+  downward: [
+    [67, 96],
+    [140, 182],
+    [252, 281],
+    [325, 354],
+    [398, 427],
+    [471, 500],
+    [544, 573],
+    [617, 646],
+    [690, 719],
+    [763, 808],
+    [852, 881],
+    [925, 954],
+    [998, 1027],
+    [1071, 1100],
+  ].map(([start, tip]) => ({ x: 255, start, tip })),
+  sideArrows: [
+    { from: 130, to: 160, y: 46 },
+    { from: 160, to: 138, y: 119 },
+    { from: 160, to: 126, y: 304 },
+    { from: 130, to: 160, y: 377 },
+  ],
+  loops: [
+    { tone: 'orange', path: 'M350 742H410V231H362', head: 'M350 231l12-7v14Z' },
+    { tone: 'blue', path: 'M350 831H450V119H362', head: 'M350 119l12-7v14Z' },
+    { tone: 'resume', path: 'M350 1123H475V46H362', head: 'M350 46l12-8v16Z' },
+  ],
+  containers: [
+    { tone: 'turn', x: 44, y: 88, width: 420, height: 775 },
+    { tone: 'agent', x: 60, y: 158, width: 380, height: 610 },
+  ],
+  labels: [
+    { key: 'loop', tone: 'agent', x: 85, y: 185, lineHeight: 17 },
+    { key: 'turn', tone: 'turn', x: 69, y: 785, lineHeight: 17 },
+    { key: 'resumed', tone: 'resume', x: 483, y: 564, rotation: -90, textAnchor: 'middle' },
+  ],
+}
+
+/** Codex flow: https://learn.chatgpt.com/docs/hooks (no official figure). */
+export const CODEX_LAYOUT: DiagramLayout = {
+  viewBox: [0, 0, 520, 1065],
+  title: 'Codex CLI hooks lifecycle',
+  boxes: [
+    { x: 160, y: 25, width: 190, events: ['SessionStart'], tone: 'green' },
+    { x: 160, y: 98, width: 190, events: ['UserPromptSubmit'], tone: 'yellow' },
+    { x: 160, y: 210, width: 190, events: ['PreModelRequest'], tone: 'neutral' },
+    { x: 160, y: 283, width: 190, events: [], labelKey: 'modelThinks', tone: 'tool' },
+    { x: 160, y: 356, width: 190, events: ['PostModelRequest'], tone: 'neutral' },
+    { x: 160, y: 429, width: 190, events: ['PreToolUse'], tone: 'yellow' },
+    { x: 160, y: 502, width: 190, events: ['PermissionRequest'], tone: 'neutral' },
+    { x: 160, y: 575, width: 190, events: [], labelKey: 'toolRuns', tone: 'tool' },
+    { x: 160, y: 648, width: 190, events: ['PostToolUse'], tone: 'yellow' },
+    { x: 15, y: 393, width: 115, events: ['SubagentStart'], tone: 'side' },
+    { x: 15, y: 447, width: 115, events: ['SubagentStop'], tone: 'side' },
+    { x: 160, y: 766, width: 190, events: ['Stop'], tone: 'pink' },
+    { x: 15, y: 766, width: 115, events: ['Interrupt'], tone: 'side' },
+    { x: 160, y: 852, width: 190, events: ['PreCompact'], tone: 'neutral' },
+    { x: 160, y: 925, width: 190, events: ['PostCompact'], tone: 'neutral' },
+    { x: 160, y: 998, width: 190, events: ['SessionEnd'], tone: 'neutral' },
+  ],
+  downward: [
+    [67, 96],
+    [140, 208],
+    [252, 281],
+    [325, 354],
+    [398, 427],
+    [471, 500],
+    [544, 573],
+    [617, 646],
+    [690, 764],
+    [808, 850],
+    [894, 923],
+    [967, 996],
+  ].map(([start, tip]) => ({ x: 255, start, tip })),
+  sideArrows: [
+    { from: 130, to: 160, y: 414, toY: 440, bendX: 145 },
+    { from: 130, to: 160, y: 468, toY: 460, bendX: 145 },
+    { from: 130, to: 160, y: 787 },
+  ],
+  loops: [
+    { tone: 'orange', path: 'M350 669H410V231H362', head: 'M350 231l12-7v14Z' },
+    { tone: 'blue', path: 'M350 787H450V119H362', head: 'M350 119l12-7v14Z' },
+    { tone: 'resume', path: 'M350 1019H475V46H362', head: 'M350 46l12-8v16Z' },
+  ],
+  containers: [
+    { tone: 'turn', x: 2, y: 88, width: 462, height: 731 },
+    { tone: 'agent', x: 8, y: 158, width: 432, height: 537 },
+  ],
+  labels: [
+    { key: 'loop', tone: 'agent', x: 30, y: 185, lineHeight: 17 },
+    { key: 'turn', tone: 'turn', x: 30, y: 719, lineHeight: 17 },
+    { key: 'resumed', tone: 'resume', x: 483, y: 532, rotation: -90, textAnchor: 'middle' },
+  ],
+}
 
 const styles = `
 .ui-lcd-diagram {
@@ -225,7 +331,15 @@ export function wrapLabel(text: string, width: number, size: number, max = 2): s
   return kept
 }
 
-export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lang }: LifecycleDiagramProps) {
+export function LifecycleDiagram({
+  layout,
+  items,
+  activity,
+  selectedEvent,
+  onSelect,
+  lang,
+  agent = 'claude',
+}: LifecycleDiagramProps) {
   const t = UI[lang]
   const id = `ui-lcd-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [, redraw] = useReducer((value: number) => value + 1, 0)
@@ -254,8 +368,8 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
     const count = itemCounts.get(event)
     const note = subtitleOf(event, lang)
     const title = [
-      `${eventName(event, lang)} (${event})${note ? ` · ${note}` : ''}`,
-      eventHint(event, lang),
+      `${eventName(event, lang, agent)} (${event})${note ? ` · ${note}` : ''}`,
+      eventHint(event, lang, agent),
       t.fired(activity.counts[event] ?? 0),
     ]
       .filter(Boolean)
@@ -361,7 +475,7 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
     const threeLines = events.length === 3
     const offsets = [0, 15, 28, 54]
     return (
-      <g key={events[0] ?? 'tool'} className={`ui-lcd-${box.tone}`}>
+      <g key={events[0] ?? box.labelKey} className={`ui-lcd-${box.tone}`}>
         <rect className="ui-lcd-box" x={x} y={y} width={width} height={height} rx={6} />
         {events.map((event, index) =>
           threeLines
@@ -379,17 +493,24 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
                   y={y + 11 + index * 12.5}
                   textAnchor="middle"
                 >
-                  {wrapLabel(eventName(event, lang), width - 8, 9.5, 1)[0]}
+                  {wrapLabel(eventName(event, lang, agent), width - 8, 9.5, 1)[0]}
                 </text>
               ))
             : events.length === 0
-              ? labelLines(t.toolRuns, center, y, height, width, false)
+              ? labelLines(
+                  box.labelKey === 'modelThinks' ? t.modelThinks : t.toolRuns,
+                  center,
+                  y,
+                  height,
+                  width,
+                  false,
+                )
               : events.map((event, index) => {
                   const w = width / events.length
                   return (
                     <g key={event}>
                       {labelLines(
-                        eventName(event, lang),
+                        eventName(event, lang, agent),
                         x + w * index + w / 2,
                         y,
                         height,
@@ -407,6 +528,28 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
     )
   }
 
+  function renderLabel({ key, tone, x, y, lineHeight = 17, rotation, textAnchor }: DiagramLabel) {
+    const value = t[key]
+    const lines = typeof value === 'string' ? [value] : value
+    return (
+      <text
+        key={key}
+        className={tone === 'resume' ? 'ui-lcd-resume-label' : `ui-lcd-container-label ui-lcd-${tone}-label`}
+        x={x}
+        y={y}
+        textAnchor={textAnchor}
+        transform={rotation === undefined ? undefined : `rotate(${rotation} ${x} ${y})`}
+      >
+        {lines[0]}
+        {lines.slice(1).map((line, index) => (
+          <tspan key={index} x={x} dy={lineHeight}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    )
+  }
+
   return (
     <>
       <style href="ui-lcd-lifecycle-diagram" precedence="default">
@@ -414,15 +557,15 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
       </style>
       <svg
         className="ui-lcd-diagram"
-        viewBox="0 0 520 1336"
-        width="520"
-        height="1336"
+        viewBox={layout.viewBox.join(' ')}
+        width={layout.viewBox[2]}
+        height={layout.viewBox[3]}
         xmlns="http://www.w3.org/2000/svg"
         role="group"
         aria-labelledby={`${id}-title`}
         aria-describedby={`${id}-description`}
       >
-        <title id={`${id}-title`}>Claude Code hooks lifecycle</title>
+        <title id={`${id}-title`}>{layout.title}</title>
         <desc id={`${id}-description`}>
           Select a hook event to edit its items. Tab moves between events; Enter or Space selects one. Badges
           count enabled items. A hollow badge means all items are disabled.
@@ -439,59 +582,47 @@ export function LifecycleDiagram({ items, activity, selectedEvent, onSelect, lan
             <feGaussianBlur stdDeviation="4" />
           </filter>
         </defs>
-        <rect className="ui-lcd-backdrop" width={520} height={1336} rx={8} />
+        <rect
+          className="ui-lcd-backdrop"
+          x={layout.viewBox[0]}
+          y={layout.viewBox[1]}
+          width={layout.viewBox[2]}
+          height={layout.viewBox[3]}
+          rx={8}
+        />
         <g aria-hidden="true" pointerEvents="none">
-          <rect className="ui-lcd-container ui-lcd-turn" x={44} y={88} width={420} height={775} rx={8} />
-          <rect className="ui-lcd-container ui-lcd-agent" x={60} y={158} width={380} height={610} rx={8} />
-          <text className="ui-lcd-container-label ui-lcd-agent-label" x={85} y={185}>
-            {t.loop[0]}
-            <tspan x={85} dy={17}>
-              {t.loop[1]}
-            </tspan>
-          </text>
-          <text className="ui-lcd-container-label ui-lcd-turn-label" x={69} y={785}>
-            {t.turn[0]}
-            <tspan x={69} dy={17}>
-              {t.turn[1]}
-            </tspan>
-          </text>
-          {downward.map(([start, tip]) => (
-            <g key={start}>
-              <path className="ui-lcd-arrow" d={`M255 ${start}V${tip - 8}`} />
-              <path className="ui-lcd-arrow-head" d={`M248 ${tip - 12}l7 12 7-12Z`} />
+          {layout.containers.map(({ tone, ...rect }) => (
+            <rect key={tone} className={`ui-lcd-container ui-lcd-${tone}`} {...rect} rx={8} />
+          ))}
+          {layout.labels.filter(label => label.tone !== 'resume').map(renderLabel)}
+          {layout.downward.map(({ x, start, tip }) => (
+            <g key={`${x}-${start}`}>
+              <path className="ui-lcd-arrow" d={`M${x} ${start}V${tip - 8}`} />
+              <path className="ui-lcd-arrow-head" d={`M${x - 7} ${tip - 12}l7 12 7-12Z`} />
             </g>
           ))}
-          {[
-            { from: 130, to: 160, y: 46 },
-            { from: 160, to: 138, y: 119 },
-            { from: 160, to: 126, y: 304 },
-            { from: 130, to: 160, y: 377 },
-          ].map(({ from, to, y }) => {
+          {layout.sideArrows.map(({ from, to, y, toY = y, bendX = (from + to) / 2 }) => {
             const direction = to > from ? 1 : -1
+            const bend = toY === y ? '' : `H${bendX}V${toY}`
             return (
-              <g key={y}>
-                <path className="ui-lcd-arrow ui-lcd-side-arrow" d={`M${from} ${y}H${to - direction * 4}`} />
-                <path className="ui-lcd-side-head" d={`M${to} ${y}l${-direction * 10}-5v10Z`} />
+              <g key={`${from}-${y}-${to}-${toY}`}>
+                <path
+                  className="ui-lcd-arrow ui-lcd-side-arrow"
+                  d={`M${from} ${y}${bend}H${to - direction * 4}`}
+                />
+                <path className="ui-lcd-side-head" d={`M${to} ${toY}l${-direction * 10}-5v10Z`} />
               </g>
             )
           })}
-          <path className="ui-lcd-loop-arrow ui-lcd-loop-orange" d="M350 742H410V231H362" />
-          <path className="ui-lcd-head-orange" d="M350 231l12-7v14Z" />
-          <path className="ui-lcd-loop-arrow ui-lcd-loop-blue" d="M350 831H450V119H362" />
-          <path className="ui-lcd-head-blue" d="M350 119l12-7v14Z" />
-          <path className="ui-lcd-loop-arrow ui-lcd-loop-resume" d="M350 1123H475V46H362" />
-          <path className="ui-lcd-head-resume" d="M350 46l12-8v16Z" />
-          <text
-            className="ui-lcd-resume-label"
-            x={483}
-            y={564}
-            textAnchor="middle"
-            transform="rotate(-90 483 564)"
-          >
-            {t.resumed}
-          </text>
+          {layout.loops.map(({ tone, path, head }) => (
+            <g key={tone}>
+              <path className={`ui-lcd-loop-arrow ui-lcd-loop-${tone}`} d={path} />
+              <path className={`ui-lcd-head-${tone}`} d={head} />
+            </g>
+          ))}
+          {layout.labels.filter(label => label.tone === 'resume').map(renderLabel)}
         </g>
-        {boxes.map(renderBox)}
+        {layout.boxes.map(renderBox)}
       </svg>
     </>
   )

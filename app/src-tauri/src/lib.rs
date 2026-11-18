@@ -12,6 +12,9 @@ use std::{
 };
 
 use serde::Serialize;
+use serde_json::Value;
+
+pub mod codex;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -22,7 +25,7 @@ const BUBBLE: (f64, f64) = (76.0, 76.0);
 const PANEL: (f64, f64) = (440.0, 760.0);
 const MARGIN: f64 = 24.0;
 const DOCK_ROOM: f64 = 90.0;
-const EMPTY_CONFIG: &str = "{\n  \"version\": 1,\n  \"items\": []\n}\n";
+const EMPTY_CONFIG: &str = "{\n  \"version\": 2,\n  \"claude\": { \"global\": [], \"projects\": {}, \"terminals\": {} },\n  \"codex\": { \"global\": [], \"projects\": {}, \"terminals\": {} }\n}\n";
 
 fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default())
@@ -39,17 +42,44 @@ fn read_or(path: &Path, fallback: &str) -> String {
 #[derive(Serialize)]
 struct Snapshot {
     config: String,
-    activity: String,
+    #[serde(rename = "activityClaude")]
+    activity_claude: String,
+    #[serde(rename = "activityCodex")]
+    activity_codex: String,
+    places: String,
 }
 
-/// The config the user edits and the activity the plugin writes, as text.
+/// The config the user edits, what each agent just did, and the known projects and terminals.
 #[tauri::command]
 fn read_state() -> Snapshot {
     let dir = data_dir();
+    let config = if dir.join("config.json").exists() {
+        read_or(&dir.join("config.json"), EMPTY_CONFIG)
+    } else {
+        EMPTY_CONFIG.to_string()
+    };
     Snapshot {
-        config: read_or(&dir.join("config.json"), EMPTY_CONFIG),
-        activity: read_or(&dir.join("activity.json"), "{}"),
+        config: serde_json::to_string(&codex::load_config()).unwrap_or(config),
+        activity_claude: read_or(&dir.join("activity-claude.json"), "{}"),
+        activity_codex: read_or(&dir.join("activity-codex.json"), "{}"),
+        places: read_or(&dir.join("places.json"), "{}"),
     }
+}
+
+#[tauri::command]
+fn codex_status() -> Value {
+    codex::status()
+}
+
+#[tauri::command]
+fn codex_connect() -> Result<Value, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    codex::connect(&exe)
+}
+
+#[tauri::command]
+fn codex_disconnect() -> Result<Value, String> {
+    codex::disconnect()
 }
 
 /// Writes the config whole, through a temp file so the plugin never reads half.
@@ -239,7 +269,10 @@ pub fn run() {
             set_expanded,
             start_drag,
             hide_window,
-            quit
+            quit,
+            codex_status,
+            codex_connect,
+            codex_disconnect
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

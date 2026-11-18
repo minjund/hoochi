@@ -258,6 +258,24 @@ export const EVENTS: Record<string, PerLang<EventText>> = {
     ['メッセージ表示', 'メッセージが画面に表示されたとき。' + ONLY_CMD.ja],
     ['显示消息时', '消息显示在屏幕上时。' + ONLY_CMD.zh],
   ),
+  PreModelRequest: e(
+    ['Before asking the model', 'Right before the agent sends a request to the AI model.' + ONLY_CMD.en],
+    ['모델에 묻기 전', '에이전트가 AI 모델에게 요청을 보내기 직전이에요.' + ONLY_CMD.ko],
+    ['モデルに聞く前', 'エージェントが AI モデルに依頼を送る直前。' + ONLY_CMD.ja],
+    ['请求模型前', '代理向 AI 模型发送请求之前。' + ONLY_CMD.zh],
+  ),
+  PostModelRequest: e(
+    ['Model answered', 'Right after the AI model replied (or failed).' + ONLY_CMD.en],
+    ['모델이 답한 뒤', 'AI 모델이 답했거나 실패한 직후예요.' + ONLY_CMD.ko],
+    ['モデルの返答後', 'AI モデルが返答した（または失敗した）直後。' + ONLY_CMD.ja],
+    ['模型回复后', 'AI 模型回复（或失败）之后。' + ONLY_CMD.zh],
+  ),
+  Interrupt: e(
+    ['You stop it', 'When you interrupt the work (Esc / Ctrl+C).' + ONLY_CMD.en],
+    ['내가 멈출 때', '내가 작업을 중간에 멈출 때예요(Esc·Ctrl+C).' + ONLY_CMD.ko],
+    ['途中で止めたとき', '作業を途中で止めたとき（Esc・Ctrl+C）。' + ONLY_CMD.ja],
+    ['你中断时', '你中途停止工作时（Esc / Ctrl+C）。' + ONLY_CMD.zh],
+  ),
 }
 
 /** Small grey notes under some boxes in the diagram. */
@@ -309,6 +327,20 @@ export const UI = {
     loop: ['WORK', 'LOOP'] as [string, string],
     toolRuns: 'the tool runs',
     resumed: 'reopened chats',
+    modelThinks: 'the model thinks',
+    agents: { claude: 'Claude Code', codex: 'Codex' },
+    scopeLabel: 'Applies to',
+    scopes: { global: 'Everywhere', project: 'This project', terminal: 'This terminal' },
+    pickProject: 'Choose a project',
+    pickTerminal: 'Choose a terminal',
+    noPlaces: 'Open Claude Code or Codex once and it will show up here.',
+    overriddenBy: (scope: string) => `Not used right now: "${scope}" has its own setting for this moment.`,
+    replaces: (scope: string) => `Used instead of "${scope}" for this moment.`,
+    codexOff: 'Codex is not connected yet.',
+    codexConnect: 'Connect Codex',
+    codexDisconnect: 'Disconnect',
+    codexTrust: 'Connected. In Codex, type /hooks once and trust the hookwich hooks.',
+    codexMissing: 'Codex is not installed on this computer.',
   },
   ko: {
     on: (n: number) => `${n}개 켜짐`,
@@ -340,6 +372,20 @@ export const UI = {
     loop: ['일하는', '반복'] as [string, string],
     toolRuns: '도구 실행',
     resumed: '대화를 다시 열 때',
+    modelThinks: '모델이 생각해요',
+    agents: { claude: 'Claude Code', codex: 'Codex' },
+    scopeLabel: '적용 범위',
+    scopes: { global: '모든 곳', project: '이 프로젝트', terminal: '이 터미널' },
+    pickProject: '프로젝트 고르기',
+    pickTerminal: '터미널 고르기',
+    noPlaces: 'Claude Code나 Codex를 한 번 열면 여기에 나타나요.',
+    overriddenBy: (scope: string) => `지금은 쓰이지 않아요. 이 순간은 '${scope}' 설정이 따로 있어요.`,
+    replaces: (scope: string) => `이 순간은 '${scope}' 설정 대신 이걸 써요.`,
+    codexOff: 'Codex가 아직 연결되지 않았어요.',
+    codexConnect: 'Codex 연결하기',
+    codexDisconnect: '연결 끊기',
+    codexTrust: '연결됐어요. Codex에서 /hooks를 한 번 입력하고 hookwich 훅을 신뢰해 주세요.',
+    codexMissing: '이 컴퓨터에 Codex가 없어요.',
   },
   ja: {
     on: (n: number) => `${n}件オン`,
@@ -371,6 +417,21 @@ export const UI = {
     loop: ['作業', 'ループ'] as [string, string],
     toolRuns: 'ツール実行',
     resumed: '会話の再開',
+    modelThinks: 'モデルが考える',
+    agents: { claude: 'Claude Code', codex: 'Codex' },
+    scopeLabel: '適用範囲',
+    scopes: { global: 'すべて', project: 'このプロジェクト', terminal: 'このターミナル' },
+    pickProject: 'プロジェクトを選ぶ',
+    pickTerminal: 'ターミナルを選ぶ',
+    noPlaces: 'Claude Code か Codex を一度開くと、ここに表示されます。',
+    overriddenBy: (scope: string) =>
+      `いまは使われていません。このタイミングは「${scope}」に別の設定があります。`,
+    replaces: (scope: string) => `このタイミングでは「${scope}」の代わりにこれを使います。`,
+    codexOff: 'Codex はまだ接続されていません。',
+    codexConnect: 'Codex を接続',
+    codexDisconnect: '接続を解除',
+    codexTrust: '接続しました。Codex で /hooks を一度入力し、hookwich のフックを信頼してください。',
+    codexMissing: 'このパソコンに Codex がありません。',
   },
   zh: {
     on: (n: number) => `已开启 ${n} 项`,
@@ -402,11 +463,31 @@ export const UI = {
     loop: ['工作', '循环'] as [string, string],
     toolRuns: '工具运行',
     resumed: '重新打开对话',
+    modelThinks: '模型思考',
+    agents: { claude: 'Claude Code', codex: 'Codex' },
+    scopeLabel: '适用范围',
+    scopes: { global: '所有地方', project: '这个项目', terminal: '这个终端' },
+    pickProject: '选择项目',
+    pickTerminal: '选择终端',
+    noPlaces: '打开一次 Claude Code 或 Codex，它就会出现在这里。',
+    overriddenBy: (scope: string) => `现在不生效：这个时刻在“${scope}”里有单独的设置。`,
+    replaces: (scope: string) => `这个时刻会用它代替“${scope}”的设置。`,
+    codexOff: 'Codex 还没有连接。',
+    codexConnect: '连接 Codex',
+    codexDisconnect: '断开连接',
+    codexTrust: '已连接。请在 Codex 中输入一次 /hooks，并信任 hookwich 的钩子。',
+    codexMissing: '这台电脑上没有 Codex。',
   },
 } satisfies Record<Lang, unknown>
 
 export type UiText = (typeof UI)['en']
 
-export const eventName = (event: string, lang: Lang) => EVENTS[event]?.[lang].name ?? event
-export const eventHint = (event: string, lang: Lang) => EVENTS[event]?.[lang].hint ?? ''
+/** Shared wording says "Claude"; on the Codex picture it says "Codex". */
+export const forAgent = (text: string, agent: 'claude' | 'codex') =>
+  agent === 'codex' ? text.replace(/Claude Code|Claude/g, 'Codex') : text
+
+export const eventName = (event: string, lang: Lang, agent: 'claude' | 'codex' = 'claude') =>
+  forAgent(EVENTS[event]?.[lang].name ?? event, agent)
+export const eventHint = (event: string, lang: Lang, agent: 'claude' | 'codex' = 'claude') =>
+  forAgent(EVENTS[event]?.[lang].hint ?? '', agent)
 export const subtitleOf = (event: string, lang: Lang) => SUBTITLES[event]?.[lang]

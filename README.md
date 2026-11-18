@@ -2,7 +2,7 @@
 
 <h1 align="center">hookwich</h1>
 
-<p align="center"><b>Tell Claude Code what to do at the exact moment you want.</b><br>
+<p align="center"><b>Tell Claude Code or Codex what to do at the exact moment you want.</b><br>
 A little window in the corner of your screen shows every moment of Claude's work as a picture.<br>
 Tap a moment, and add a sentence, a command or a skill there.</p>
 
@@ -27,6 +27,26 @@ You can turn each one on or off, pick **Just once** so it switches itself off af
 tool moments choose which tools it applies to.
 
 <p align="center"><img src="assets/screenshot.png" alt="The hookwich window in four languages"></p>
+
+## Where it applies
+
+Each thing you add lives in one of three places:
+
+- **Everywhere** — every chat.
+- **This project** — only chats opened in that project folder.
+- **This terminal** — only that terminal window or tab, even after you restart Claude Code or Codex in it.
+
+For each moment, the closest one wins: this terminal, otherwise this project, otherwise everywhere.
+A switched-off item still counts, so you can quiet an "everywhere" item in one project.
+Project and terminal settings are kept on your computer only, never inside the project.
+
+## Claude Code and Codex
+
+The window has a tab for each. Codex has its own picture of its moments (before asking the model,
+before a tool, when the answer ends…). To use the Codex tab, press **Connect Codex** once: hookwich
+adds itself to the end of `~/.codex/hooks.json` (your other hooks stay as they are, and a backup is
+saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks.
+**Disconnect** takes them out again.
 
 ## The window
 

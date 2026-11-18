@@ -189,3 +189,33 @@ input {
 .hw-editor-title {
   flex-wrap: wrap;
 }
+
+.hw-controls {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hw-line);
+}
+
+.hw-codex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--hw-soft);
+}
+
+.hw-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(212, 162, 127, 0.16);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--aui-ink, #0f172a);
+}
+
+.dark .hw-note {
+  color: var(--aui-ink, #e5e7eb);
+}

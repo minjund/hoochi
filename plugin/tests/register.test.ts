@@ -8,10 +8,13 @@ function machine(
   on: On,
   files: Record<string, string>,
   commands: Record<string, { exitCode: number; stdout: string }> = {},
+  env: Record<string, string> = { WHITEBOX_SURFACE_ID: 'terminal:t1' },
 ) {
   const fs = new Map(Object.entries(files))
   const ran: string[] = []
-  on('env.get', () => ({ value: '/home/me' }))
+  const vars: Record<string, string> = { HOME: '/home/me', ...env }
+  on('env.get', (_, e) => ({ value: vars[e.name] }))
+  on('session.root', () => ({ value: '/work/app/sub' }))
   on('fs.read', (_, e) => {
     const text = fs.get(e.path)
     if (text === undefined) throw new Error('ENOENT')
@@ -26,7 +29,11 @@ function machine(
   on('process.run', (_, e) => {
     const line = e.argv[0] === '/bin/sh' ? (e.argv[2] ?? '') : e.argv.join(' ')
     ran.push(line)
-    const r = commands[line] ?? { exitCode: 0, stdout: '' }
+    const r =
+      commands[line] ??
+      (line === 'git rev-parse --show-toplevel'
+        ? { exitCode: 0, stdout: '/work/app\n' }
+        : { exitCode: 0, stdout: '' })
     return { value: { ...r, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   let now = 1_000
@@ -35,7 +42,7 @@ function machine(
 }
 
 const CONFIG = '/home/me/.hookwich/config.json'
-const ACTIVITY = '/home/me/.hookwich/activity.json'
+const ACTIVITY = '/home/me/.hookwich/activity-claude.json'
 
 const item = (over: Record<string, unknown>) => ({
   id: 'i1',
@@ -141,7 +148,7 @@ test('a "once" item switches itself off after it ran', async ($, on) => {
   on('classic.UserPromptSubmit', () => ({}))
 
   expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['Just this once.'])
-  expect(JSON.parse(fs.get(CONFIG) ?? '{}').items[0].enabled).toBe(false)
+  expect(JSON.parse(fs.get(CONFIG) ?? '{}').claude.global[0].enabled).toBe(false)
   expect((await $.classic.UserPromptSubmit({ prompt: 'b' })).additionalContext).toBeUndefined()
 })
 
@@ -161,4 +168,65 @@ test('a command on a frequent event still runs, and only then is it logged', asy
   await $.classic.FileChanged({ file_path: '/p/README.md', event: 'change' })
   expect(ran).toContain('make docs')
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastEvent).toBe('FileChanged')
+})
+
+const v2 = (claude: Record<string, unknown>) =>
+  JSON.stringify({ version: 2, claude: { global: [], projects: {}, terminals: {}, ...claude }, codex: {} })
+
+test('this terminal beats this project, which beats everywhere', async ($, on) => {
+  machine(on, {
+    [CONFIG]: v2({
+      global: [item({ text: 'global' })],
+      projects: { '/work/app': [item({ id: 'p', text: 'project' })] },
+      terminals: { 'whitebox:terminal:t1': [item({ id: 't', text: 'terminal' })] },
+    }),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toEqual(['terminal'])
+})
+
+test('another terminal of the same project gets the project items', async ($, on) => {
+  machine(
+    on,
+    {
+      [CONFIG]: v2({
+        global: [item({ text: 'global' })],
+        projects: { '/work/app': [item({ id: 'p', text: 'project' })] },
+        terminals: { 'whitebox:terminal:t1': [item({ id: 't', text: 'terminal' })] },
+      }),
+    },
+    {},
+    { WHITEBOX_SURFACE_ID: 'terminal:t2' },
+  )
+  on('classic.UserPromptSubmit', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toEqual(['project'])
+})
+
+test('a switched-off item in the project silences the global one there', async ($, on) => {
+  machine(on, {
+    [CONFIG]: v2({
+      global: [item({ text: 'global' })],
+      projects: { '/work/app': [item({ id: 'p', text: 'quiet here', enabled: false })] },
+    }),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toBeUndefined()
+})
+
+test('the window learns this project and terminal, and where the last event was', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({}) })
+  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('classic.UserPromptSubmit', () => ({}))
+
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+
+  const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
+  expect(Object.keys(places.projects)).toEqual(['/work/app'])
+  expect(places.terminals['whitebox:terminal:t1'].label).toBe('Whitebox t1')
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').place.project).toBe('/work/app')
 })

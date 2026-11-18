@@ -19,15 +19,34 @@ export type Item = {
   once: boolean
 }
 
-export type Config = { version: 1; items: Item[] }
+/** One agent's items at three scopes; the narrowest scope with items for a moment wins. */
+export type AgentConfig = {
+  global: Item[]
+  projects: Record<string, Item[]>
+  terminals: Record<string, Item[]>
+}
 
-export type Fired = { event: string; at: number; kind: ItemKind; label: string; tool: string }
+export type Config = { version: 2; claude: AgentConfig; codex: AgentConfig }
+
+export type Scope = 'global' | 'project' | 'terminal'
+
+/** Where a session runs. */
+export type Place = { project: string; terminal: string; terminalLabel: string }
+
+/** Projects and terminals hookwich has seen, from ~/.hookwich/places.json. */
+export type Places = {
+  projects: Record<string, { lastSeen: number }>
+  terminals: Record<string, { label: string; cwd: string; agent: string; lastSeen: number }>
+}
+
+export type Fired = { event: string; at: number; kind: ItemKind; label: string; tool: string; scope?: Scope }
 
 export type Activity = {
   lastEvent: string
   lastAt: number
   counts: Record<string, number>
   recent: Fired[]
+  place?: Place
 }
 
 export type Slot = {
@@ -46,8 +65,11 @@ const slot = (event: string, canInject: boolean, _hint: string, hasTools = false
   hasTools,
 })
 
-/** Every hook event, in the order of the official lifecycle figure. */
-export const ALL_SLOTS: Slot[] = [
+/** Which coding agent a moment belongs to. */
+export type Agent = 'claude' | 'codex'
+
+/** Every Claude Code hook event, in the order of the official lifecycle figure. */
+export const CLAUDE_SLOTS: Slot[] = [
   slot('Setup', true, 'During first-run setup (opt-in).'),
   slot('SessionStart', true, 'Given to the model when a session starts, resumes, clears or compacts.'),
   slot('UserPromptSubmit', true, 'Sent with every prompt you submit, before the model sees it.'),
@@ -83,7 +105,31 @@ export const ALL_SLOTS: Slot[] = [
   slot('MessageDisplay', false, 'When a message is shown. Commands only.'),
 ]
 
-export const slotOf = (event: string): Slot | undefined => ALL_SLOTS.find(s => s.event === event)
+/** Every Codex hook event (https://learn.chatgpt.com/docs/hooks), in lifecycle order. */
+export const CODEX_SLOTS: Slot[] = [
+  slot('SessionStart', true, ''),
+  slot('UserPromptSubmit', true, ''),
+  slot('PreModelRequest', false, ''),
+  slot('PostModelRequest', false, ''),
+  slot('PreToolUse', true, '', true),
+  slot('PermissionRequest', false, '', true),
+  slot('PostToolUse', true, '', true),
+  slot('SubagentStart', true, ''),
+  slot('SubagentStop', true, ''),
+  slot('Stop', true, ''),
+  slot('PreCompact', false, ''),
+  slot('PostCompact', false, ''),
+  slot('Interrupt', false, ''),
+  slot('SessionEnd', false, ''),
+]
+
+export const SLOTS: Record<Agent, Slot[]> = { claude: CLAUDE_SLOTS, codex: CODEX_SLOTS }
+
+/** Kept for code that only knows Claude's moments. */
+export const ALL_SLOTS = CLAUDE_SLOTS
+
+export const slotOf = (event: string, agent: Agent = 'claude'): Slot | undefined =>
+  SLOTS[agent].find(s => s.event === event)
 
 /** A short label for an item, for chips and the feed. */
 export function itemLabel(item: Item): string {
@@ -91,4 +137,33 @@ export function itemLabel(item: Item): string {
     item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
   const one = raw.replace(/\s+/g, ' ').trim()
   return one.length > 40 ? `${one.slice(0, 39)}…` : one || '(empty)'
+}
+
+export const emptyAgent = (): AgentConfig => ({ global: [], projects: {}, terminals: {} })
+
+/** The list a scope holds (empty when it has none yet). */
+export function listOf(agent: AgentConfig, scope: Scope, key: string): Item[] {
+  if (scope === 'global') return agent.global
+  if (scope === 'project') return agent.projects[key] ?? []
+  return agent.terminals[key] ?? []
+}
+
+/** The same config with one scope's list replaced. */
+export function withList(config: Config, who: Agent, scope: Scope, key: string, list: Item[]): Config {
+  const a = config[who]
+  const next: AgentConfig =
+    scope === 'global'
+      ? { ...a, global: list }
+      : scope === 'project'
+        ? { ...a, projects: { ...a.projects, [key]: list } }
+        : { ...a, terminals: { ...a.terminals, [key]: list } }
+  return { ...config, [who]: next }
+}
+
+/** Which scope decides a moment at a place: the narrowest one that has any item for it. */
+export function decidingScope(agent: AgentConfig, event: string, place: Place): Scope | undefined {
+  if ((agent.terminals[place.terminal] ?? []).some(i => i.event === event)) return 'terminal'
+  if ((agent.projects[place.project] ?? []).some(i => i.event === event)) return 'project'
+  if (agent.global.some(i => i.event === event)) return 'global'
+  return undefined
 }
