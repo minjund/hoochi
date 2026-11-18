@@ -330,3 +330,58 @@ input {
   opacity: 0.5;
   text-decoration: line-through;
 }
+
+.hw-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(100, 116, 139, 0.08);
+  font-size: 12px;
+  animation: hw-now-in 1200ms ease-out;
+}
+.hw-now[data-moved] {
+  animation: hw-now-moved 1600ms ease-out;
+}
+.hw-now-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+.hw-now-label {
+  color: var(--hw-soft);
+  font-size: 11px;
+}
+.hw-now b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hw-switched {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+}
+@keyframes hw-now-in {
+  from {
+    opacity: 0.4;
+  }
+}
+@keyframes hw-now-moved {
+  0%,
+  40% {
+    background: rgba(59, 130, 246, 0.28);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hw-now,
+  .hw-now[data-moved] {
+    animation: none;
+  }
+}

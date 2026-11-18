@@ -46,7 +46,9 @@ skipped, and **Undo** takes the last copy back): **Set from "Everywhere"**, **Se
 do something there are shown.
 
 **This terminal** always means the terminal you are chatting in right now: hookwich notices where you
-type and switches by itself, so you never pick a terminal from a list.
+type and switches by itself, so you never pick a terminal from a list. The top of the window says
+where you are chatting (folder, AI, and a number when one folder has several chats), each terminal has
+its own color — also shown as a dot on the bubble — and a note tells you when you move to another one.
 
 Rest the pointer on a moment to see what it holds: what you added and the hooks you already have.
 
@@ -104,7 +106,8 @@ Then start a new Claude Code chat.
 **2. The window (macOS 11 or later, Apple silicon or Intel).** The first time a Claude Code chat
 starts, the plugin downloads the window from the
 [latest release](https://github.com/minjund/hookwich/releases/latest), checks its SHA-256, and opens
-it. Type `/hookwich` to show or hide it.
+it. Type `/hookwich` to show or hide it. The window always matches the plugin's version: after the
+plugin updates, the next chat replaces the window with the new one (checked the same way).
 
 To install the window by hand instead:
 

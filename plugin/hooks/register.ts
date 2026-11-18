@@ -11,7 +11,9 @@ import type { Activity, AgentConfig, Config, Fired, Item, Place, Scope } from '.
 // control.json to show or hide the window.
 
 const APP_NAME = 'Hookwich.app'
-const RELEASE = 'https://github.com/minjund/hookwich/releases/latest/download'
+/** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
+export const APP_VERSION = '0.1.2'
+const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
 
@@ -268,41 +270,96 @@ async function appPath($: EngineInterface, dir: string): Promise<string | undefi
   return undefined
 }
 
-/** Why the window app could not be opened, for the status line. */
-type AppTrouble = 'not-mac' | 'download' | 'checksum' | 'unzip'
+/** Why the window app could not be opened or updated, for the status line. */
+type AppTrouble = 'not-mac' | 'download' | 'checksum' | 'unzip' | 'update'
 
 const TROUBLE: Record<AppTrouble, string> = {
   'not-mac': 'hookwich: the window app is macOS only',
   download: 'hookwich: could not download the window app (offline, or no release yet) — see the README',
   checksum: 'hookwich: the downloaded window app did not match its checksum, so it was not opened',
   unzip: 'hookwich: could not unpack the window app',
+  update: `hookwich: could not update the window app to ${APP_VERSION}; the one you have is still running`,
 }
 
-/** Fetches the app from the latest release, checking its SHA-256. */
-async function installApp($: EngineInterface, dir: string): Promise<string | AppTrouble> {
-  const arch = (await $.process.run(['/usr/bin/uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
-  const zip = `${dir}/Hookwich-macos-${arch}.zip`
-  const url = `${RELEASE}/Hookwich-macos-${arch}.zip`
-  const got = await $.process.run(['/usr/bin/curl', '-fsSL', '-o', zip, url], { timeoutMs: 120_000 })
-  const sums = await $.process.run(['/usr/bin/curl', '-fsSL', `${url}.sha256`], { timeoutMs: 30_000 })
+const isTrouble = (v: string): v is AppTrouble => v in TROUBLE
+
+/** "0.1.10" > "0.1.9" */
+export function newer(a: string, b: string): boolean {
+  const pa = a.split('.').map(n => Number.parseInt(n, 10) || 0)
+  const pb = b.split('.').map(n => Number.parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0)
+  }
+  return false
+}
+
+async function appVersion($: EngineInterface, path: string): Promise<string | undefined> {
+  const plist = `${path}/Contents/Info.plist`
+  const r = await $.process
+    .run(['/usr/bin/plutil', '-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', plist])
+    .catch(() => undefined)
+  const version = r?.exitCode === 0 ? r.stdout.trim() : ''
+  return /^\d+(\.\d+)*$/.test(version) ? version : undefined
+}
+
+/**
+ * Downloads this plugin's version of the app, checks its SHA-256 and signature, and puts it at
+ * ~/.hookwich/Hookwich.app, stopping a running older copy first. Returns its path, or why not.
+ */
+async function installApp($: EngineInterface, dir: string, old?: string): Promise<string | AppTrouble> {
+  const run = (argv: string[], timeoutMs?: number) =>
+    $.process.run(argv, timeoutMs ? { timeoutMs } : undefined)
+  const arch = (await run(['/usr/bin/uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
+  const name = `Hookwich-macos-${arch}.zip`
+  const zip = `${dir}/${name}`
+  const got = await run(['/usr/bin/curl', '-fsSL', '-o', zip, `${RELEASE}/${name}`], 120_000)
+  const sums = await run(['/usr/bin/curl', '-fsSL', `${RELEASE}/${name}.sha256`], 30_000)
   if (got.exitCode !== 0 || sums.exitCode !== 0) return 'download'
   const want = sums.stdout.trim().split(/\s+/)[0] ?? ''
-  const have = (await $.process.run(['/usr/bin/shasum', '-a', '256', zip])).stdout.trim().split(/\s+/)[0]
+  const have = (await run(['/usr/bin/shasum', '-a', '256', zip])).stdout.trim().split(/\s+/)[0]
   if (want === '' || want !== have) return 'checksum'
-  const unzip = await $.process.run(['/usr/bin/ditto', '-x', '-k', zip, dir])
-  if (unzip.exitCode !== 0) return 'unzip'
-  return (await appPath($, dir)) ?? 'unzip'
+
+  // Unpack beside, check, then swap: a failed update leaves the old app as it was.
+  const fresh = `${dir}/.update`
+  await run(['/bin/rm', '-rf', fresh])
+  if ((await run(['/usr/bin/ditto', '-x', '-k', zip, fresh])).exitCode !== 0) return 'unzip'
+  const verified = await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `${fresh}/${APP_NAME}`])
+  if (verified.exitCode !== 0) return 'unzip'
+  if (old !== undefined) await run(['/usr/bin/pkill', '-f', `${old}/Contents/MacOS/hookwich`])
+  const target = `${dir}/${APP_NAME}`
+  await run(['/bin/rm', '-rf', `${dir}/.old-${APP_NAME}`])
+  if (await $.fs.exists(target).catch(() => false)) await run(['/bin/mv', target, `${dir}/.old-${APP_NAME}`])
+  if ((await run(['/bin/mv', `${fresh}/${APP_NAME}`, target])).exitCode !== 0) return 'unzip'
+  await run(['/bin/rm', '-rf', fresh, `${dir}/.old-${APP_NAME}`, zip])
+  return target
 }
 
-/** Opens the window app if it is not up; installs it the first time. One at a time per session. */
+/**
+ * Opens the window app if it is not up: installs it the first time, and updates it when it is
+ * older than this plugin. One at a time per session.
+ */
 let opening: Promise<AppTrouble | undefined> | undefined
 function ensureApp($: EngineInterface, dir: string): Promise<AppTrouble | undefined> {
   opening ??= (async () => {
     try {
       const os = (await $.process.run(['/usr/bin/uname', '-s']).catch(() => undefined))?.stdout.trim()
       if (os !== 'Darwin') return 'not-mac' as const
-      const path = (await appPath($, dir)) ?? (await installApp($, dir).catch(() => 'download' as const))
-      if (path === 'download' || path === 'checksum' || path === 'unzip') return path
+      const found = await appPath($, dir)
+      let path: string | AppTrouble
+      if (found === undefined) {
+        path = await installApp($, dir).catch(() => 'download' as const)
+      } else {
+        const version = await appVersion($, found)
+        // An unreadable version is left alone, so a quirk can't redownload on every chat.
+        const outdated = version !== undefined && newer(APP_VERSION, version)
+        path = outdated ? await installApp($, dir, found).catch(() => 'update' as const) : found
+        if (outdated && isTrouble(path)) {
+          // Keep using the old one rather than leave the person without a window.
+          await $.process.run(['/usr/bin/open', '-g', found]).catch(() => undefined)
+          return 'update'
+        }
+      }
+      if (isTrouble(path)) return path
       await $.process.run(['/usr/bin/open', '-g', path]).catch(() => undefined)
       return undefined
     } finally {

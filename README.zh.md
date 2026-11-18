@@ -45,6 +45,8 @@ Claude 回答完毕……
 只显示在当前位置能用的按钮。
 
 **这个终端** 始终指你现在正在聊天的终端：hookwich 会看你在哪里输入并自动切换，不需要从列表里选终端。
+窗口顶部会显示你正在聊天的地方（文件夹、AI，同一文件夹有多个对话时还有编号），每个终端颜色不同（气泡上也有圆点）。
+换到另一个终端时会提示你。
 
 把鼠标停在某个时刻上，就能看到里面有什么（你加入的、已有的钩子）。
 
@@ -95,7 +97,7 @@ claude plugin install hookwich --marketplace minjund/hookwich
 
 **2. 窗口（macOS 11 及以上，Apple 芯片和 Intel 都可以）**：第一次开始 Claude Code 对话时，插件会从
 [最新发布](https://github.com/minjund/hookwich/releases/latest)下载窗口，用 SHA-256 确认文件可信后打开。
-输入 `/hookwich` 即可显示或隐藏窗口。
+输入 `/hookwich` 即可显示或隐藏窗口。窗口始终与插件版本一致：插件更新后，下一次对话时窗口也会换成新版（同样会校验）。
 
 要手动安装窗口：
 

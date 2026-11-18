@@ -122,6 +122,13 @@ function saveFollow(on: boolean) {
   }
 }
 
+/** A steady color per terminal, so moving to another terminal is visible at a glance. */
+function colorOf(terminal: string): string {
+  let h = 0
+  for (const c of terminal) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return `hsl(${h % 360} 70% 50%)`
+}
+
 /** The chat you opened or typed in last, across Claude Code and Codex. */
 function lastChatOf(activity: Record<Agent, Activity>) {
   const all = (['claude', 'codex'] as const).flatMap(agent => {
@@ -252,6 +259,21 @@ export default function App() {
     }
   }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Moving to another terminal shows a short notice, and the "chatting now" chip flashes.
+  const [switched, setSwitched] = useState<{ terminal: string; at: number } | null>(null)
+  const lastTerminal = useRef('')
+  useEffect(() => {
+    const now = latest?.place.terminal ?? ''
+    if (!now || now === lastTerminal.current) return
+    if (lastTerminal.current) setSwitched({ terminal: now, at: Date.now() })
+    lastTerminal.current = now
+  }, [latest])
+  useEffect(() => {
+    if (!switched) return
+    const id = window.setTimeout(() => setSwitched(null), 5000)
+    return () => window.clearTimeout(id)
+  }, [switched])
+
   // Without a chat seen yet, open on the project and terminal that were active last.
   // (Once a chat is known, following decides; this must not overwrite it.)
   const last = activity[agent].place
@@ -298,6 +320,14 @@ export default function App() {
   const terminalProject =
     running.find(r => r.terminal === terminalKey)?.project ?? places.terminals[terminalKey]?.cwd ?? ''
   const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
+  // Terminals are told apart by folder, AI and a number in the order they were opened
+  // (among the chats open now), never by their raw ids.
+  const order = [...running].sort((a, b) => a.pid - b.pid).map(r => r.terminal)
+  const chatName = (terminal: string, project: string, who: Agent) => {
+    const n = order.indexOf(terminal) + 1
+    const sameFolder = running.filter(r => r.project === project).length > 1
+    return [folderName(project), t.agents[who], ...(n > 0 && sameFolder ? [t.terminalNo(n)] : [])].join(' · ')
+  }
   const terminalAgent: Agent =
     running.find(r => r.terminal === terminalKey)?.agent ??
     (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
@@ -449,6 +479,8 @@ export default function App() {
         <SandwichBubble
           activeCount={activeCount}
           pulseKey={Math.max(activity.claude.lastAt, activity.codex.lastAt)}
+          chatColor={latest ? colorOf(latest.place.terminal) : undefined}
+          chatName={latest ? chatName(latest.place.terminal, latest.place.project, latest.agent) : undefined}
           onOpen={() => void open()}
           onDragStart={() => void startDrag()}
         />
@@ -506,16 +538,30 @@ export default function App() {
           placement="end"
           label={t.follow}
           description={
-            follow && latest
-              ? t.followNow(t.agents[latest.agent], folderName(latest.place.project)) +
-                (latest.agent === 'claude' && codex?.installed && !codex.connected
-                  ? ` — ${t.followCodex}`
-                  : '')
-              : t.followHint
+            t.followHint +
+            (follow && latest?.agent === 'claude' && codex?.installed && !codex.connected
+              ? ` ${t.followCodex}`
+              : '')
           }
           checked={follow}
           onChange={e => setFollow(e.currentTarget.checked)}
         />
+        {latest && (
+          <div className="hw-now" key={latest.place.terminal} data-moved={switched ? true : undefined}>
+            <span
+              className="hw-now-dot"
+              style={{ background: colorOf(latest.place.terminal) }}
+              aria-hidden="true"
+            />
+            <span className="hw-now-label">{t.nowChatting}</span>
+            <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
+          </div>
+        )}
+        {switched && latest && (
+          <p className="hw-switched" role="status">
+            {t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent))}
+          </p>
+        )}
         <SegmentedControl
           fullWidth
           size="sm"
@@ -561,7 +607,7 @@ export default function App() {
           ))}
         {scope === 'terminal' && (
           <p className="hw-editor-hint">
-            {terminalKey ? t.terminalNow(folderName(terminalProject), t.agents[terminalAgent]) : t.noPlaces}
+            {terminalKey ? t.terminalNow(chatName(terminalKey, terminalProject, terminalAgent)) : t.noPlaces}
           </p>
         )}
         {scopeReady && actions.length > 0 && (

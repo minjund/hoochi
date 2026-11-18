@@ -274,7 +274,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.2/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -288,4 +288,88 @@ test('without the app and no release to download, it says so plainly', async ($,
   expect((out as { text: string }).text).toContain('could not download the window app')
   expect(statuses[0]).toContain('could not download the window app')
   expect(ran.some(l => l.startsWith('/usr/bin/open'))).toBe(false)
+})
+
+const PLIST = (app: string) =>
+  `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.2'
+
+test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
+  const app = '/home/me/.hookwich/Hookwich.app'
+  const zip = '/home/me/.hookwich/Hookwich-macos-arm64.zip'
+  const { ran } = machine(
+    on,
+    { [CONFIG]: v2({}), [app]: '' },
+    {
+      '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
+      '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
+      [PLIST(app)]: { exitCode: 0, stdout: '0.1.1\n' },
+      [`/usr/bin/curl -fsSL ${V}/Hookwich-macos-arm64.zip.sha256`]: {
+        exitCode: 0,
+        stdout: 'abc123  Hookwich-macos-arm64.zip\n',
+      },
+      [`/usr/bin/shasum -a 256 ${zip}`]: { exitCode: 0, stdout: `abc123  ${zip}\n` },
+    },
+  )
+  on('ui.status', () => ({ value: undefined }))
+
+  const out = await $.command.run({ command: 'hookwich', args: 'show', origin: 'composer' } as never)
+  expect((out as { text: string }).text).toBe('hookwich: show')
+  const order = [
+    `/usr/bin/curl -fsSL -o ${zip} ${V}/Hookwich-macos-arm64.zip`,
+    `/usr/bin/ditto -x -k ${zip} /home/me/.hookwich/.update`,
+    '/usr/bin/codesign --verify --deep --strict /home/me/.hookwich/.update/Hookwich.app',
+    `/usr/bin/pkill -f ${app}/Contents/MacOS/hookwich`,
+    `/bin/mv ${app} /home/me/.hookwich/.old-Hookwich.app`,
+    `/bin/mv /home/me/.hookwich/.update/Hookwich.app ${app}`,
+    `/usr/bin/open -g ${app}`,
+  ]
+  const at = order.map(line => ran.indexOf(line))
+  expect(at.every(i => i >= 0)).toBe(true)
+  expect([...at].sort((a, b) => a - b)).toEqual(at)
+})
+
+test('the same or a newer window app is left alone', async ($, on) => {
+  const app = '/home/me/.hookwich/Hookwich.app'
+  const { ran } = machine(
+    on,
+    { [CONFIG]: v2({}), [app]: '' },
+    {
+      '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
+      [PLIST(app)]: { exitCode: 0, stdout: '0.1.10\n' },
+    },
+  )
+  on('ui.status', () => ({ value: undefined }))
+
+  await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
+  expect(ran.some(l => l.includes('curl'))).toBe(false)
+  expect(ran).toContain(`/usr/bin/open -g ${app}`)
+})
+
+test('a failed update keeps the old window running and says so', async ($, on) => {
+  const app = '/home/me/.hookwich/Hookwich.app'
+  const { ran, fs } = machine(
+    on,
+    { [CONFIG]: v2({}), [app]: '' },
+    {
+      '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
+      '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
+      [PLIST(app)]: { exitCode: 0, stdout: '0.1.1\n' },
+      [`/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip ${V}/Hookwich-macos-arm64.zip`]: {
+        exitCode: 22,
+        stdout: '',
+      },
+    },
+  )
+  const statuses: (string | undefined)[] = []
+  on('ui.status', (_, e) => {
+    statuses.push(e.text)
+    return { value: undefined }
+  })
+
+  await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
+  expect(ran.some(l => l.startsWith('/usr/bin/pkill') || l.startsWith('/bin/mv'))).toBe(false)
+  expect(ran).toContain(`/usr/bin/open -g ${app}`)
+  expect(statuses[0]).toContain('could not update the window app')
+  expect(fs.has(app)).toBe(true)
 })

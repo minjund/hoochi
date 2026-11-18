@@ -5,12 +5,23 @@ import { useEffect, useRef, useState } from 'react'
 export type SandwichBubbleProps = {
   activeCount: number
   pulseKey: number
+  /** the color of the terminal you are chatting in; changes when you move to another one */
+  chatColor?: string
+  /** a short name for that terminal, for the tooltip */
+  chatName?: string
   onOpen(): void
   onDragStart(): void
 }
 
 /** The floating, collapsed hookwich window. The host supplies the native window drag. */
-export function SandwichBubble({ activeCount, pulseKey, onOpen, onDragStart }: SandwichBubbleProps) {
+export function SandwichBubble({
+  activeCount,
+  pulseKey,
+  chatColor,
+  chatName,
+  onOpen,
+  onDragStart,
+}: SandwichBubbleProps) {
   const pointer = useRef<{ id: number; x: number; y: number } | null>(null)
   const suppressClick = useRef(false)
   const previousPulse = useRef(pulseKey)
@@ -126,6 +137,15 @@ export function SandwichBubble({ activeCount, pulseKey, onOpen, onDragStart }: S
             </g>
           </g>
         </svg>
+        {chatColor && (
+          <span
+            key={chatColor}
+            className="ui-swb__chat"
+            style={{ background: chatColor }}
+            title={chatName}
+            aria-hidden="true"
+          />
+        )}
         {count > 0 && (
           <span className="ui-swb__count" aria-hidden="true">
             {count > 99 ? '99+' : count}
@@ -174,6 +194,24 @@ const css = /* css */ `
 .ui-swb:hover { border-color: var(--ui-swb-crust); }
 .ui-swb:focus-visible { outline: 2px solid var(--ui-swb-focus); outline-offset: 3px; }
 .ui-swb__sandwich { display: block; width: 38px; height: 38px; pointer-events: none; }
+.ui-swb__chat {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--ui-swb-surface);
+  border-radius: 999px;
+  animation: ui-swb-chat 900ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+@keyframes ui-swb-chat {
+  0% { transform: scale(0.2); }
+  45% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-swb__chat { animation: none; }
+}
 .ui-swb__count {
   position: absolute;
   top: -3px;
