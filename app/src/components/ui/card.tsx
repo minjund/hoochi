@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { Children, isValidElement, type ComponentPropsWithRef, type ElementType, type ReactNode } from "react";
+import { Children, isValidElement, type ComponentPropsWithRef, type ElementType, type ReactNode } from 'react'
 
 /*
  * Card – a single self-contained file.
@@ -10,27 +10,27 @@ import { Children, isValidElement, type ComponentPropsWithRef, type ElementType,
  * The styles are injected below, so no extra files are needed.
  */
 
-type CardElement = "div" | "section" | "article" | "li";
+type CardElement = 'div' | 'section' | 'article' | 'li'
 
-export type CardProps = ComponentPropsWithRef<"div"> & {
+export type CardProps = ComponentPropsWithRef<'div'> & {
   /** The element it renders as – section or article for a landmark-like card, li inside a list of cards */
-  as?: CardElement;
+  as?: CardElement
   /**
    * The whole card is a click target: it lifts on hover, and a link or button in its title (CardHeader's title)
    * covers the card – other buttons inside stay clickable on their own
    */
-  interactive?: boolean;
+  interactive?: boolean
   /** Shown as picked: a darker tray and a firmer edge. Put aria-pressed or aria-current on the title's button or link */
-  selected?: boolean;
-};
+  selected?: boolean
+}
 
-export function Card({ as = "div", interactive, selected, className, children, ...rest }: CardProps) {
-  const Tag = (["div", "section", "article", "li"].includes(as) ? as : "div") as ElementType;
+export function Card({ as = 'div', interactive, selected, className, children, ...rest }: CardProps) {
+  const Tag = (['div', 'section', 'article', 'li'].includes(as) ? as : 'div') as ElementType
   // The footer sits on the gray tray under the white card – everything else goes inside the card
-  const items = Children.toArray(children);
-  const isFoot = (c: unknown) => isValidElement(c) && c.type === CardFooter;
-  const main = items.filter((c) => !isFoot(c));
-  const foot = items.filter(isFoot);
+  const items = Children.toArray(children)
+  const isFoot = (c: unknown) => isValidElement(c) && c.type === CardFooter
+  const main = items.filter(c => !isFoot(c))
+  const foot = items.filter(isFoot)
   return (
     <>
       {/* React 19 hoists this into <head> once, no matter how many cards render */}
@@ -38,36 +38,45 @@ export function Card({ as = "div", interactive, selected, className, children, .
         {css}
       </style>
       <Tag
-        className={["ui-crd", className].filter(Boolean).join(" ")}
-        data-interactive={interactive ? "" : undefined}
-        data-selected={selected ? "" : undefined}
+        className={['ui-crd', className].filter(Boolean).join(' ')}
+        data-interactive={interactive ? '' : undefined}
+        data-selected={selected ? '' : undefined}
         {...rest}
       >
         {main.length > 0 && <div className="ui-crd__card">{main}</div>}
         {foot}
       </Tag>
     </>
-  );
+  )
 }
 
-export type CardHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
+export type CardHeaderProps = Omit<ComponentPropsWithRef<'div'>, 'title'> & {
   /** The title – text, or a link / button that makes the whole card clickable when the Card is interactive */
-  title?: ReactNode;
+  title?: ReactNode
   /** A quiet line or two under the title */
-  description?: ReactNode;
+  description?: ReactNode
   /** Something small at the start: an icon, a logo, an agent's mark */
-  icon?: ReactNode;
+  icon?: ReactNode
   /** Something at the end of the title line: an icon button, a menu, a badge */
-  action?: ReactNode;
+  action?: ReactNode
   /** The title's element – h3 by default; pick the level that fits the page's outline */
-  titleAs?: "h2" | "h3" | "h4" | "p";
-};
+  titleAs?: 'h2' | 'h3' | 'h4' | 'p'
+}
 
-export function CardHeader({ title, description, icon, action, titleAs = "h3", className, children, ...rest }: CardHeaderProps) {
-  const Title = (["h2", "h3", "h4", "p"].includes(titleAs) ? titleAs : "h3") as ElementType;
-  const has = (n: ReactNode) => n != null && n !== false && n !== "";
+export function CardHeader({
+  title,
+  description,
+  icon,
+  action,
+  titleAs = 'h3',
+  className,
+  children,
+  ...rest
+}: CardHeaderProps) {
+  const Title = (['h2', 'h3', 'h4', 'p'].includes(titleAs) ? titleAs : 'h3') as ElementType
+  const has = (n: ReactNode) => n != null && n !== false && n !== ''
   return (
-    <div className={["ui-crd__head", className].filter(Boolean).join(" ")} {...rest}>
+    <div className={['ui-crd__head', className].filter(Boolean).join(' ')} {...rest}>
       {has(icon) && <span className="ui-crd__icon">{icon}</span>}
       <div className="ui-crd__titles">
         {has(title) && <Title className="ui-crd__title">{title}</Title>}
@@ -76,20 +85,20 @@ export function CardHeader({ title, description, icon, action, titleAs = "h3", c
       </div>
       {has(action) && <div className="ui-crd__action">{action}</div>}
     </div>
-  );
+  )
 }
 
-export type CardContentProps = ComponentPropsWithRef<"div">;
+export type CardContentProps = ComponentPropsWithRef<'div'>
 
 export function CardContent({ className, ...rest }: CardContentProps) {
-  return <div className={["ui-crd__body", className].filter(Boolean).join(" ")} {...rest} />;
+  return <div className={['ui-crd__body', className].filter(Boolean).join(' ')} {...rest} />
 }
 
-export type CardFooterProps = ComponentPropsWithRef<"div">;
+export type CardFooterProps = ComponentPropsWithRef<'div'>
 
 /** A row on the tray under the card: a status or meta on the start, buttons on the end (give the first button margin-inline-start: auto). Put it directly inside Card */
 export function CardFooter({ className, ...rest }: CardFooterProps) {
-  return <div className={["ui-crd__foot", className].filter(Boolean).join(" ")} {...rest} />;
+  return <div className={['ui-crd__foot', className].filter(Boolean).join(' ')} {...rest} />
 }
 
 /* ---------- Styles ---------- */
@@ -242,4 +251,4 @@ const css = /* css */ `
   --ui-crd-shadow-hover: 0 0 0 1px var(--ui-crd-line-strong), 0 2px 6px rgba(0, 0, 0, 0.4);
   --ui-crd-focus: var(--aui-focus, rgba(77, 141, 255, 0.8));
 }
-`;
+`

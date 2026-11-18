@@ -40,6 +40,17 @@ For each moment, the closest one wins: this terminal, otherwise this project, ot
 A switched-off item still counts, so you can quiet an "everywhere" item in one project.
 Project and terminal settings are kept on your computer only, never inside the project.
 
+Buttons under the tabs copy between places without overwriting anything (what is already there is
+skipped, and **Undo** takes the last copy back): **Load "Everywhere"**, **Load this project** (in a
+terminal), **Apply to all projects** and **Apply to "Everywhere"**.
+
+When the window follows where you chat, a terminal in a project folder opens on **This project**, and
+one outside any project opens on **Everywhere**.
+
+Hooks you already have — in Claude Code's settings, in plugins (often a skill run by a hook) or in
+Codex's `hooks.json` — show as a **grey number** at the top left of each moment, and by name when
+you open it. Black numbers are what you added with hookwich.
+
 ## Claude Code and Codex
 
 The window has a tab for each. Codex has its own picture of its moments (before asking the model,

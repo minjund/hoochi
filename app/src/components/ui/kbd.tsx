@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { useSyncExternalStore, type ComponentPropsWithRef } from "react";
+import { useSyncExternalStore, type ComponentPropsWithRef } from 'react'
 
 /*
  * Kbd – a single self-contained file.
@@ -9,28 +9,31 @@ import { useSyncExternalStore, type ComponentPropsWithRef } from "react";
  * The styles are injected below, so no extra files are needed.
  */
 
-export type KbdPlatform = "mac" | "other";
+export type KbdPlatform = 'mac' | 'other'
 
-export type KbdProps = ComponentPropsWithRef<"kbd"> & {
+export type KbdProps = ComponentPropsWithRef<'kbd'> & {
   /**
    * One key or a combo, e.g. "esc" or ["mod", "K"]. Named keys: mod, cmd, ctrl, alt (option), shift, enter, esc, tab,
    * space, backspace, delete, up, down, left, right, pageup, pagedown, home, end – anything else is shown as it is.
    * Leave it out to show the children as one plain key.
    */
-  keys?: string | readonly string[];
+  keys?: string | readonly string[]
   /** sm: 18px high, 11px text – in menus and hints · md: 22px high, 12px text – in lists and help */
-  size?: "sm" | "md";
+  size?: 'sm' | 'md'
   /** Draw the keys for a Mac (⌘ ⌥ ⇧) or for Windows and Linux (Ctrl, Alt, Shift) – found out on its own when left out */
-  platform?: KbdPlatform;
-};
+  platform?: KbdPlatform
+}
 
-export function Kbd({ keys, size = "sm", platform, className, children, ...rest }: KbdProps) {
-  const detected = usePlatform();
-  const os = platform === "mac" || platform === "other" ? platform : detected;
-  const list = keys == null ? [] : (typeof keys === "string" ? [keys] : [...keys]).filter((k) => typeof k === "string" && k.trim() !== "");
-  const parts = list.map((k) => describe(k, os));
+export function Kbd({ keys, size = 'sm', platform, className, children, ...rest }: KbdProps) {
+  const detected = usePlatform()
+  const os = platform === 'mac' || platform === 'other' ? platform : detected
+  const list =
+    keys == null
+      ? []
+      : (typeof keys === 'string' ? [keys] : [...keys]).filter(k => typeof k === 'string' && k.trim() !== '')
+  const parts = list.map(k => describe(k, os))
   // Nothing to show – no keys, no children: no empty chip either
-  if (!parts.length && (children == null || children === false || children === "")) return null;
+  if (!parts.length && (children == null || children === false || children === '')) return null
 
   return (
     <>
@@ -39,8 +42,8 @@ export function Kbd({ keys, size = "sm", platform, className, children, ...rest 
         {css}
       </style>
       <kbd
-        className={["ui-kbd", className].filter(Boolean).join(" ")}
-        data-size={size === "md" ? "md" : "sm"}
+        className={['ui-kbd', className].filter(Boolean).join(' ')}
+        data-size={size === 'md' ? 'md' : 'sm'}
         data-os={os}
         {...rest}
       >
@@ -49,83 +52,107 @@ export function Kbd({ keys, size = "sm", platform, className, children, ...rest 
             {/* The glyphs are for the eye; the spelled-out names for screen readers ("Command Shift P") */}
             <span className="ui-kbd__keys" aria-hidden="true">
               {parts.map((p, i) => (
-                <span key={i} className="ui-kbd__key" data-glyph={p.glyph ? "" : undefined}>
+                <span key={i} className="ui-kbd__key" data-glyph={p.glyph ? '' : undefined}>
                   {p.label}
                 </span>
               ))}
             </span>
-            <span className="ui-kbd__sr">{parts.map((p) => p.spoken).join(" ")}</span>
+            <span className="ui-kbd__sr">{parts.map(p => p.spoken).join(' ')}</span>
           </>
         ) : (
           children
         )}
       </kbd>
     </>
-  );
+  )
 }
 
 /* ---------- Keys ---------- */
 
-type Named = { mac: string; other: string; spoken: [mac: string, other: string]; glyph?: boolean };
+type Named = { mac: string; other: string; spoken: [mac: string, other: string]; glyph?: boolean }
 
 const NAMED: Record<string, Named> = {
-  mod: { mac: "⌘", other: "Ctrl", spoken: ["Command", "Control"], glyph: true },
-  cmd: { mac: "⌘", other: "⌘", spoken: ["Command", "Command"], glyph: true },
-  ctrl: { mac: "⌃", other: "Ctrl", spoken: ["Control", "Control"], glyph: true },
-  alt: { mac: "⌥", other: "Alt", spoken: ["Option", "Alt"], glyph: true },
-  shift: { mac: "⇧", other: "Shift", spoken: ["Shift", "Shift"], glyph: true },
-  enter: { mac: "↵", other: "Enter", spoken: ["Return", "Enter"], glyph: true },
-  esc: { mac: "Esc", other: "Esc", spoken: ["Escape", "Escape"] },
-  tab: { mac: "Tab", other: "Tab", spoken: ["Tab", "Tab"] },
-  space: { mac: "Space", other: "Space", spoken: ["Space", "Space"] },
-  backspace: { mac: "⌫", other: "Backspace", spoken: ["Delete", "Backspace"], glyph: true },
-  delete: { mac: "⌦", other: "Del", spoken: ["Forward delete", "Delete"], glyph: true },
-  up: { mac: "↑", other: "↑", spoken: ["Up arrow", "Up arrow"], glyph: true },
-  down: { mac: "↓", other: "↓", spoken: ["Down arrow", "Down arrow"], glyph: true },
-  left: { mac: "←", other: "←", spoken: ["Left arrow", "Left arrow"], glyph: true },
-  right: { mac: "→", other: "→", spoken: ["Right arrow", "Right arrow"], glyph: true },
-  pageup: { mac: "PgUp", other: "PgUp", spoken: ["Page up", "Page up"] },
-  pagedown: { mac: "PgDn", other: "PgDn", spoken: ["Page down", "Page down"] },
-  home: { mac: "Home", other: "Home", spoken: ["Home", "Home"] },
-  end: { mac: "End", other: "End", spoken: ["End", "End"] },
-};
+  mod: { mac: '⌘', other: 'Ctrl', spoken: ['Command', 'Control'], glyph: true },
+  cmd: { mac: '⌘', other: '⌘', spoken: ['Command', 'Command'], glyph: true },
+  ctrl: { mac: '⌃', other: 'Ctrl', spoken: ['Control', 'Control'], glyph: true },
+  alt: { mac: '⌥', other: 'Alt', spoken: ['Option', 'Alt'], glyph: true },
+  shift: { mac: '⇧', other: 'Shift', spoken: ['Shift', 'Shift'], glyph: true },
+  enter: { mac: '↵', other: 'Enter', spoken: ['Return', 'Enter'], glyph: true },
+  esc: { mac: 'Esc', other: 'Esc', spoken: ['Escape', 'Escape'] },
+  tab: { mac: 'Tab', other: 'Tab', spoken: ['Tab', 'Tab'] },
+  space: { mac: 'Space', other: 'Space', spoken: ['Space', 'Space'] },
+  backspace: { mac: '⌫', other: 'Backspace', spoken: ['Delete', 'Backspace'], glyph: true },
+  delete: { mac: '⌦', other: 'Del', spoken: ['Forward delete', 'Delete'], glyph: true },
+  up: { mac: '↑', other: '↑', spoken: ['Up arrow', 'Up arrow'], glyph: true },
+  down: { mac: '↓', other: '↓', spoken: ['Down arrow', 'Down arrow'], glyph: true },
+  left: { mac: '←', other: '←', spoken: ['Left arrow', 'Left arrow'], glyph: true },
+  right: { mac: '→', other: '→', spoken: ['Right arrow', 'Right arrow'], glyph: true },
+  pageup: { mac: 'PgUp', other: 'PgUp', spoken: ['Page up', 'Page up'] },
+  pagedown: { mac: 'PgDn', other: 'PgDn', spoken: ['Page down', 'Page down'] },
+  home: { mac: 'Home', other: 'Home', spoken: ['Home', 'Home'] },
+  end: { mac: 'End', other: 'End', spoken: ['End', 'End'] },
+}
 
 /** Other spellings people use for the same key */
 const ALIAS: Record<string, string> = {
-  command: "cmd", meta: "cmd", "⌘": "cmd", control: "ctrl", option: "alt", opt: "alt", return: "enter", escape: "esc",
-  del: "delete", arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", pgup: "pageup", pgdn: "pagedown",
-};
+  command: 'cmd',
+  meta: 'cmd',
+  '⌘': 'cmd',
+  control: 'ctrl',
+  option: 'alt',
+  opt: 'alt',
+  return: 'enter',
+  escape: 'esc',
+  del: 'delete',
+  arrowup: 'up',
+  arrowdown: 'down',
+  arrowleft: 'left',
+  arrowright: 'right',
+  pgup: 'pageup',
+  pgdn: 'pagedown',
+}
 
 /** Spoken names for punctuation a screen reader might skip */
 const SPOKEN: Record<string, string> = {
-  ".": "Period", ",": "Comma", "/": "Slash", "\\": "Backslash", "?": "Question mark", "[": "Left bracket",
-  "]": "Right bracket", "-": "Minus", "+": "Plus", "=": "Equals", ";": "Semicolon", "'": "Quote", "`": "Backtick",
-};
+  '.': 'Period',
+  ',': 'Comma',
+  '/': 'Slash',
+  '\\': 'Backslash',
+  '?': 'Question mark',
+  '[': 'Left bracket',
+  ']': 'Right bracket',
+  '-': 'Minus',
+  '+': 'Plus',
+  '=': 'Equals',
+  ';': 'Semicolon',
+  "'": 'Quote',
+  '`': 'Backtick',
+}
 
 const describe = (raw: string, os: KbdPlatform) => {
-  const key = raw.trim();
-  const id = ALIAS[key.toLowerCase()] ?? key.toLowerCase();
-  const named = NAMED[id];
+  const key = raw.trim()
+  const id = ALIAS[key.toLowerCase()] ?? key.toLowerCase()
+  const named = NAMED[id]
   if (named) {
-    const mac = os === "mac";
-    const label = mac ? named.mac : named.other;
-    return { label, spoken: named.spoken[mac ? 0 : 1], glyph: !!named.glyph && label.length === 1 };
+    const mac = os === 'mac'
+    const label = mac ? named.mac : named.other
+    return { label, spoken: named.spoken[mac ? 0 : 1], glyph: !!named.glyph && label.length === 1 }
   }
   // A single letter reads as a capital, like on the key itself
-  const label = key.length === 1 ? key.toUpperCase() : key;
-  return { label, spoken: SPOKEN[key] ?? label, glyph: false };
-};
+  const label = key.length === 1 ? key.toUpperCase() : key
+  return { label, spoken: SPOKEN[key] ?? label, glyph: false }
+}
 
 /* ---------- Platform ---------- */
 
-const noop = () => () => {};
+const noop = () => () => {}
 const isMac = () => {
-  if (typeof navigator === "undefined") return false;
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  return /mac|iphone|ipad|ipod/i.test(nav.userAgentData?.platform || nav.platform || nav.userAgent || "");
-};
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
+  return /mac|iphone|ipad|ipod/i.test(nav.userAgentData?.platform || nav.platform || nav.userAgent || '')
+}
 /** "other" on the server and during hydration, then the real platform – no hydration mismatch */
-const usePlatform = (): KbdPlatform => (useSyncExternalStore(noop, isMac, () => false) ? "mac" : "other");
+const usePlatform = (): KbdPlatform => (useSyncExternalStore(noop, isMac, () => false) ? 'mac' : 'other')
 
 /* ---------- Styles ---------- */
 
@@ -213,4 +240,4 @@ const css = /* css */ `
   --ui-kbd-line: var(--aui-border, #34343a);
   --ui-kbd-depth: #1a1a1d;
 }
-`;
+`

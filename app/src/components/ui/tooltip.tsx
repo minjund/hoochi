@@ -1,4 +1,4 @@
-"use client";
+'use client'
 
 import {
   cloneElement,
@@ -14,7 +14,7 @@ import {
   type SyntheticEvent,
   type PointerEvent as ReactPointerEvent,
   type FocusEvent as ReactFocusEvent,
-} from "react";
+} from 'react'
 
 /*
  * Tooltip – a single self-contained file, classic style.
@@ -27,42 +27,42 @@ import {
 
 export type TooltipProps = {
   /** The label – a few words; it wraps at about 240px. Empty or null: only the child is rendered */
-  content: ReactNode;
+  content: ReactNode
   /** A keyboard shortcut shown after the label, e.g. "⌘K" */
-  shortcut?: string;
+  shortcut?: string
   /** Exactly one element that takes a ref and focus – a button, a link, an Icon Button */
-  children: ReactElement;
+  children: ReactElement
   /** Where it shows; it flips to the other side when there is no room */
-  side?: "top" | "bottom" | "left" | "right";
+  side?: 'top' | 'bottom' | 'left' | 'right'
   /** Which edges line up: start · center · end (start is the left, or the right in RTL) */
-  align?: "start" | "center" | "end";
+  align?: 'start' | 'center' | 'end'
   /** Gap to the trigger in px */
-  offset?: number;
+  offset?: number
   /** How long the pointer rests on the trigger before it shows, in ms – keyboard focus shows it at once */
-  delay?: number;
+  delay?: number
   /** Never shows it, e.g. when a label is not cut off */
-  disabled?: boolean;
+  disabled?: boolean
   /** Controls it from outside (with onOpenChange); leave it out and it opens on its own */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   /** A class for the label */
-  className?: string;
-};
+  className?: string
+}
 
 /** A neighbour that opens within this many ms of the last one closing shows at once */
-const SKIP = 300;
+const SKIP = 300
 /** The pointer may cross the gap onto the label without it closing (so it can be read under a magnifier) */
-const GRACE = 120;
+const GRACE = 120
 
 /** Only one label at a time on the page – and the skip-delay window that makes neighbours show at once */
-const group: { current: { close: () => void } | null; warmUntil: number } = { current: null, warmUntil: 0 };
+const group: { current: { close: () => void } | null; warmUntil: number } = { current: null, warmUntil: 0 }
 
 export function Tooltip({
   content,
   shortcut,
   children,
-  side = "top",
-  align = "center",
+  side = 'top',
+  align = 'center',
   offset = 6,
   delay = 500,
   disabled,
@@ -70,156 +70,163 @@ export function Tooltip({
   onOpenChange,
   className,
 }: TooltipProps) {
-  const uid = useId();
-  const tipId = `${uid}-tip`;
-  const keysId = `${uid}-keys`;
-  const trigger = useRef<HTMLElement | null>(null);
-  const tip = useRef<HTMLSpanElement | null>(null);
-  const timer = useRef(0);
+  const uid = useId()
+  const tipId = `${uid}-tip`
+  const keysId = `${uid}-keys`
+  const trigger = useRef<HTMLElement | null>(null)
+  const tip = useRef<HTMLSpanElement | null>(null)
+  const timer = useRef(0)
   // After a click or Escape it stays closed until the pointer leaves or the focus goes
-  const blocked = useRef(false);
-  const [shown, setShown] = useState(false);
-  const [instant, setInstant] = useState(false);
-  const [quiet, setQuiet] = useState(false);
-  const empty = content == null || typeof content === "boolean" || content === "";
-  const open = !disabled && !empty && (openProp ?? shown);
+  const blocked = useRef(false)
+  const [shown, setShown] = useState(false)
+  const [instant, setInstant] = useState(false)
+  const [quiet, setQuiet] = useState(false)
+  const empty = content == null || typeof content === 'boolean' || content === ''
+  const open = !disabled && !empty && (openProp ?? shown)
 
-  const change = useRef<(v: boolean) => void>(() => {});
+  const change = useRef<(v: boolean) => void>(() => {})
   change.current = (v: boolean) => {
-    window.clearTimeout(timer.current);
-    if (openProp === undefined) setShown(v);
-    if (v !== open) onOpenChange?.(v);
-  };
-  const me = useRef({ close: () => change.current(false) });
+    window.clearTimeout(timer.current)
+    if (openProp === undefined) setShown(v)
+    if (v !== open) onOpenChange?.(v)
+  }
+  const me = useRef({ close: () => change.current(false) })
 
   const show = (now: boolean) => {
-    window.clearTimeout(timer.current);
-    const el = trigger.current;
-    if (disabled || empty || blocked.current || !el || el.getAttribute("aria-expanded") === "true") return;
+    window.clearTimeout(timer.current)
+    const el = trigger.current
+    if (disabled || empty || blocked.current || !el || el.getAttribute('aria-expanded') === 'true') return
     // A neighbour is open, or one just closed: no wait and no fade
-    const warm = (group.current && group.current !== me.current) || Date.now() < group.warmUntil;
+    const warm = (group.current && group.current !== me.current) || Date.now() < group.warmUntil
     if (now || warm) {
-      setInstant(!!warm);
-      change.current(true);
+      setInstant(!!warm)
+      change.current(true)
     } else {
-      timer.current = window.setTimeout(() => {
-        setInstant(false);
-        change.current(true);
-      }, Math.max(0, delay));
+      timer.current = window.setTimeout(
+        () => {
+          setInstant(false)
+          change.current(true)
+        },
+        Math.max(0, delay),
+      )
     }
-  };
+  }
   const hide = (later = false) => {
-    window.clearTimeout(timer.current);
-    if (later) timer.current = window.setTimeout(() => change.current(false), GRACE);
-    else change.current(false);
-  };
+    window.clearTimeout(timer.current)
+    if (later) timer.current = window.setTimeout(() => change.current(false), GRACE)
+    else change.current(false)
+  }
 
   // One at a time: opening this one closes the other; closing opens the skip-delay window
   useEffect(() => {
-    if (!open) return;
-    const self = me.current;
-    if (group.current && group.current !== self) group.current.close();
-    group.current = self;
+    if (!open) return
+    const self = me.current
+    if (group.current && group.current !== self) group.current.close()
+    group.current = self
     // When the label just repeats the trigger's own name, screen readers only get the shortcut from it
-    const el = trigger.current;
-    const name = (el?.getAttribute("aria-label") || el?.textContent || "").trim();
-    setQuiet(typeof content === "string" && content.trim() === name);
+    const el = trigger.current
+    const name = (el?.getAttribute('aria-label') || el?.textContent || '').trim()
+    setQuiet(typeof content === 'string' && content.trim() === name)
     return () => {
       if (group.current === self) {
-        group.current = null;
-        group.warmUntil = Date.now() + SKIP;
+        group.current = null
+        group.warmUntil = Date.now() + SKIP
       }
-    };
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => window.clearTimeout(timer.current), [])
 
   // Into the top layer next to the trigger before paint; it follows on scroll and resize
   useLayoutEffect(() => {
-    const el = tip.current;
-    if (!open || !el) return;
-    showLayer(el);
+    const el = tip.current
+    if (!open || !el) return
+    showLayer(el)
     const update = () => {
-      const a = trigger.current;
-      if (a) place(el, a, side, align, offset);
-    };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
-    ro?.observe(el);
+      const a = trigger.current
+      if (a) place(el, a, side, align, offset)
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    ro?.observe(el)
     return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-      ro?.disconnect();
-      hideLayer(el);
-    };
-  }, [open, side, align, offset]);
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+      ro?.disconnect()
+      hideLayer(el)
+    }
+  }, [open, side, align, offset])
 
   // Escape closes it first – caught early, so a dialog around it stays open
   useEffect(() => {
-    if (!open) return;
+    if (!open) return
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      e.preventDefault();
-      e.stopPropagation();
-      blocked.current = true;
-      change.current(false);
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [open]);
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      e.stopPropagation()
+      blocked.current = true
+      change.current(false)
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [open])
 
-  if (!isValidElement(children)) return <>{children}</>;
-  const own = children.props as Record<string, unknown> & { ref?: Ref<HTMLElement> };
-  const call = (name: string, e: SyntheticEvent) => (own[name] as ((e: SyntheticEvent) => void) | undefined)?.(e);
+  if (!isValidElement(children)) return <>{children}</>
+  const own = children.props as Record<string, unknown> & { ref?: Ref<HTMLElement> }
+  const call = (name: string, e: SyntheticEvent) =>
+    (own[name] as ((e: SyntheticEvent) => void) | undefined)?.(e)
   // The child's handler runs first; when it calls preventDefault, the tooltip leaves the event alone
   const wrap =
     <E extends SyntheticEvent>(name: string, mine: (e: E) => void) =>
     (e: E) => {
-      call(name, e);
-      if (!e.defaultPrevented) mine(e);
-    };
+      call(name, e)
+      if (!e.defaultPrevented) mine(e)
+    }
 
-  const describedBy = [own["aria-describedby"], open && (quiet ? (shortcut ? keysId : null) : tipId)].filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    [own['aria-describedby'], open && (quiet ? (shortcut ? keysId : null) : tipId)]
+      .filter(Boolean)
+      .join(' ') || undefined
 
   const trig = cloneElement(children as ReactElement<Record<string, unknown>>, {
     ref: (el: HTMLElement | null) => {
-      trigger.current = el;
-      const r = own.ref;
-      if (typeof r === "function") r(el);
-      else if (r) (r as { current: HTMLElement | null }).current = el;
+      trigger.current = el
+      const r = own.ref
+      if (typeof r === 'function') r(el)
+      else if (r) (r as { current: HTMLElement | null }).current = el
     },
-    "aria-describedby": describedBy,
+    'aria-describedby': describedBy,
     // Touch has no hover: a tap never opens it (the label must not live only in a tooltip)
-    onPointerEnter: wrap("onPointerEnter", (e: ReactPointerEvent) => {
-      if (e.pointerType !== "touch") show(false);
+    onPointerEnter: wrap('onPointerEnter', (e: ReactPointerEvent) => {
+      if (e.pointerType !== 'touch') show(false)
     }),
-    onPointerLeave: wrap("onPointerLeave", (e: ReactPointerEvent) => {
-      blocked.current = false;
-      if (e.pointerType !== "touch") hide(true);
+    onPointerLeave: wrap('onPointerLeave', (e: ReactPointerEvent) => {
+      blocked.current = false
+      if (e.pointerType !== 'touch') hide(true)
     }),
-    onPointerDown: wrap("onPointerDown", () => {
-      blocked.current = true;
-      hide();
+    onPointerDown: wrap('onPointerDown', () => {
+      blocked.current = true
+      hide()
     }),
-    onClick: wrap("onClick", () => {
-      blocked.current = true;
-      hide();
+    onClick: wrap('onClick', () => {
+      blocked.current = true
+      hide()
     }),
     // Keyboard focus shows it at once; a click's focus does not
-    onFocus: wrap("onFocus", (e: ReactFocusEvent) => {
-      let visible = true;
+    onFocus: wrap('onFocus', (e: ReactFocusEvent) => {
+      let visible = true
       try {
-        visible = (e.currentTarget as HTMLElement).matches(":focus-visible");
+        visible = (e.currentTarget as HTMLElement).matches(':focus-visible')
       } catch {}
-      if (visible) show(true);
+      if (visible) show(true)
     }),
-    onBlur: wrap("onBlur", () => {
-      blocked.current = false;
-      hide();
+    onBlur: wrap('onBlur', () => {
+      blocked.current = false
+      hide()
     }),
-  });
+  })
 
   return (
     <>
@@ -229,7 +236,7 @@ export function Tooltip({
           ref={tip}
           id={tipId}
           role="tooltip"
-          className={["ui-tip", className].filter(Boolean).join(" ")}
+          className={['ui-tip', className].filter(Boolean).join(' ')}
           popover="manual"
           data-side={side}
           data-instant={instant || undefined}
@@ -252,17 +259,17 @@ export function Tooltip({
         </span>
       )}
     </>
-  );
+  )
 }
 
 /* ---------- Helpers ---------- */
 
 /** The top layer, so no overflow cuts it and no z-index fights it */
 function showLayer(el: HTMLElement) {
-  if ("showPopover" in el && !el.matches(":popover-open")) el.showPopover();
+  if ('showPopover' in el && !el.matches(':popover-open')) el.showPopover()
 }
 function hideLayer(el: HTMLElement) {
-  if ("hidePopover" in el && el.isConnected && el.matches(":popover-open")) el.hidePopover();
+  if ('hidePopover' in el && el.isConnected && el.matches(':popover-open')) el.hidePopover()
 }
 
 /**
@@ -270,35 +277,52 @@ function hideLayer(el: HTMLElement) {
  * with no room either way: above or under it); the edge it lines up with switches when it would stick out, and it is
  * pushed inside the window as a last resort
  */
-function place(el: HTMLElement, trigger: HTMLElement, side: "top" | "bottom" | "left" | "right", align: "start" | "center" | "end", gap: number) {
-  const pad = 8;
-  const r = trigger.getBoundingClientRect();
-  const vw = document.documentElement.clientWidth || window.innerWidth;
-  const vh = window.innerHeight;
-  const w = el.offsetWidth;
-  const h = el.offsetHeight;
-  const room = { bottom: vh - r.bottom - gap - pad, top: r.top - gap - pad, right: vw - r.right - gap - pad, left: r.left - gap - pad };
-  const flip = { top: "bottom", bottom: "top", left: "right", right: "left" } as const;
-  let s: keyof typeof room = side;
-  if (room[s] < (s === "top" || s === "bottom" ? h : w) && room[flip[s]] > room[s]) s = flip[s];
-  if ((s === "left" || s === "right") && room[s] < w) s = room.top >= h || room.top >= room.bottom ? "top" : "bottom";
-  // start and end follow the reading direction above and below
-  const rtl = getComputedStyle(trigger).direction === "rtl";
-  const a = (s === "top" || s === "bottom") && rtl && align !== "center" ? (align === "start" ? "end" : "start") : align;
-  let top: number;
-  let left: number;
-  if (s === "top" || s === "bottom") {
-    top = s === "bottom" ? r.bottom + gap : r.top - gap - h;
-    left = a === "start" ? r.left : a === "end" ? r.right - w : r.left + r.width / 2 - w / 2;
-    left = Math.min(Math.max(pad, left), vw - pad - w);
-  } else {
-    left = s === "right" ? r.right + gap : r.left - gap - w;
-    top = a === "start" ? r.top : a === "end" ? r.bottom - h : r.top + r.height / 2 - h / 2;
-    top = Math.min(Math.max(pad, top), Math.max(pad, vh - pad - h));
+function place(
+  el: HTMLElement,
+  trigger: HTMLElement,
+  side: 'top' | 'bottom' | 'left' | 'right',
+  align: 'start' | 'center' | 'end',
+  gap: number,
+) {
+  const pad = 8
+  const r = trigger.getBoundingClientRect()
+  const vw = document.documentElement.clientWidth || window.innerWidth
+  const vh = window.innerHeight
+  const w = el.offsetWidth
+  const h = el.offsetHeight
+  const room = {
+    bottom: vh - r.bottom - gap - pad,
+    top: r.top - gap - pad,
+    right: vw - r.right - gap - pad,
+    left: r.left - gap - pad,
   }
-  el.style.top = `${Math.round(top)}px`;
-  el.style.left = `${Math.round(left)}px`;
-  el.dataset.side = s;
+  const flip = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const
+  let s: keyof typeof room = side
+  if (room[s] < (s === 'top' || s === 'bottom' ? h : w) && room[flip[s]] > room[s]) s = flip[s]
+  if ((s === 'left' || s === 'right') && room[s] < w)
+    s = room.top >= h || room.top >= room.bottom ? 'top' : 'bottom'
+  // start and end follow the reading direction above and below
+  const rtl = getComputedStyle(trigger).direction === 'rtl'
+  const a =
+    (s === 'top' || s === 'bottom') && rtl && align !== 'center'
+      ? align === 'start'
+        ? 'end'
+        : 'start'
+      : align
+  let top: number
+  let left: number
+  if (s === 'top' || s === 'bottom') {
+    top = s === 'bottom' ? r.bottom + gap : r.top - gap - h
+    left = a === 'start' ? r.left : a === 'end' ? r.right - w : r.left + r.width / 2 - w / 2
+    left = Math.min(Math.max(pad, left), vw - pad - w)
+  } else {
+    left = s === 'right' ? r.right + gap : r.left - gap - w
+    top = a === 'start' ? r.top : a === 'end' ? r.bottom - h : r.top + r.height / 2 - h / 2
+    top = Math.min(Math.max(pad, top), Math.max(pad, vh - pad - h))
+  }
+  el.style.top = `${Math.round(top)}px`
+  el.style.left = `${Math.round(left)}px`
+  el.dataset.side = s
 }
 
 /* ---------- Styles ---------- */
@@ -388,4 +412,4 @@ const css = /* css */ `
   --ui-tip-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
   color-scheme: dark;
 }
-`;
+`

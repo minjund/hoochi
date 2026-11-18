@@ -89,7 +89,10 @@ pub fn running() -> Value {
             .map(|(pid, agent, terminal, label)| {
                 let cwd = dirs.get(&pid).cloned().unwrap_or_default();
                 let project = if cwd.is_empty() { String::new() } else { detect_project(&cwd) };
-                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project })
+                {
+                    let has_project = !project.is_empty() && std::path::Path::new(&project).join(".git").exists();
+                    json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project })
+                }
             })
             .collect(),
     )

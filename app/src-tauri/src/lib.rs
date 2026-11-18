@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 pub mod codex;
+pub mod existing;
 pub mod running;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -51,6 +52,23 @@ struct Snapshot {
 }
 
 /// The config the user edits, what each agent just did, and the known projects and terminals.
+/// Marks each known project folder that is a git project, so the window can tell real projects apart.
+fn with_git(places: &str) -> String {
+    let mut v: Value = serde_json::from_str(places).unwrap_or(Value::Null);
+    if let Some(projects) = v.get_mut("projects").and_then(Value::as_object_mut) {
+        for (path, entry) in projects.iter_mut() {
+            if let Some(o) = entry.as_object_mut() {
+                o.insert("git".into(), Value::Bool(std::path::Path::new(path).join(".git").exists()));
+            }
+        }
+    }
+    if v.is_null() {
+        places.to_string()
+    } else {
+        v.to_string()
+    }
+}
+
 #[tauri::command]
 fn read_state() -> Snapshot {
     let dir = data_dir();
@@ -63,8 +81,14 @@ fn read_state() -> Snapshot {
         config: serde_json::to_string(&codex::load_config()).unwrap_or(config),
         activity_claude: read_or(&dir.join("activity-claude.json"), "{}"),
         activity_codex: read_or(&dir.join("activity-codex.json"), "{}"),
-        places: read_or(&dir.join("places.json"), "{}"),
+        places: with_git(&read_or(&dir.join("places.json"), "{}")),
     }
+}
+
+/// Hooks already set up outside hookwich, for one project folder.
+#[tauri::command]
+async fn existing_hooks(project: String) -> Value {
+    existing::existing(&project)
 }
 
 /// Claude Code and Codex chats open in terminals right now.
@@ -280,7 +304,8 @@ pub fn run() {
             codex_status,
             codex_connect,
             codex_disconnect,
-            running_chats
+            running_chats,
+            existing_hooks
         ])
         .setup(|app| {
             // A menu-bar app: no Dock icon, no app switcher entry.

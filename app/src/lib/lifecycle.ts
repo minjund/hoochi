@@ -35,7 +35,8 @@ export type Place = { project: string; terminal: string; terminalLabel: string }
 
 /** Projects and terminals hookwich has seen, from ~/.hookwich/places.json. */
 export type Places = {
-  projects: Record<string, { lastSeen: number }>
+  /** `git` is set by the app: whether the folder is a git project */
+  projects: Record<string, { lastSeen: number; git?: boolean }>
   terminals: Record<string, { label: string; cwd: string; agent: string; lastSeen: number }>
 }
 
@@ -168,4 +169,29 @@ export function decidingScope(agent: AgentConfig, event: string, place: Place): 
   if ((agent.projects[place.project] ?? []).some(i => i.event === event)) return 'project'
   if (agent.global.some(i => i.event === event)) return 'global'
   return undefined
+}
+
+/** Two items that do the same thing at the same moment, whatever their ids or on/off state. */
+export const sameItem = (a: Item, b: Item) =>
+  a.event === b.event &&
+  a.kind === b.kind &&
+  a.text.trim() === b.text.trim() &&
+  a.command.trim() === b.command.trim() &&
+  a.skill === b.skill &&
+  a.mode === b.mode &&
+  a.tools.trim() === b.tools.trim()
+
+/**
+ * Copies `source` into `target` without overwriting: items already there are skipped, the rest
+ * are added as new copies. Returns the new list and how many were added.
+ */
+export function mergeItems(target: Item[], source: Item[], makeId: () => string) {
+  const list = [...target]
+  let added = 0
+  for (const item of source) {
+    if (list.some(i => sameItem(i, item))) continue
+    list.push({ ...item, id: makeId() })
+    added += 1
+  }
+  return { list, added }
 }

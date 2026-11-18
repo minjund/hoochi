@@ -61,7 +61,7 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-fn read_json(path: &Path) -> Value {
+pub fn read_json(path: &Path) -> Value {
     fs::read_to_string(path)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
@@ -382,7 +382,7 @@ fn codex_hooks_path() -> PathBuf {
     base.join("hooks.json")
 }
 
-fn is_ours(group: &Value) -> bool {
+pub fn is_ours(group: &Value) -> bool {
     group
         .get("hooks")
         .and_then(Value::as_array)

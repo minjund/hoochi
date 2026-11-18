@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { createElement, type ComponentPropsWithRef, type ReactNode } from "react";
+import { createElement, type ComponentPropsWithRef, type ReactNode } from 'react'
 
 /*
  * Icon Button – a single self-contained file.
@@ -10,35 +10,35 @@ import { createElement, type ComponentPropsWithRef, type ReactNode } from "react
  */
 
 /** An icon from Hugeicons (e.g. `import { Search01Icon } from "@hugeicons/core-free-icons"`) – drawn inline */
-export type HugeIcon = readonly (readonly [string, { readonly [key: string]: string | number }])[];
+export type HugeIcon = readonly (readonly [string, { readonly [key: string]: string | number }])[]
 
-export type IconButtonProps = Omit<ComponentPropsWithRef<"button">, "children"> & {
+export type IconButtonProps = Omit<ComponentPropsWithRef<'button'>, 'children'> & {
   /** The glyph: any element (an inline SVG) or a Hugeicons icon object */
-  icon: ReactNode | HugeIcon;
+  icon: ReactNode | HugeIcon
   /** What the button does – read out by screen readers and shown as the tooltip */
-  label: string;
+  label: string
   /** ghost: just the icon, a soft wash on hover · secondary: white with a 1px edge · primary: a dark gradient */
-  variant?: "ghost" | "secondary" | "primary";
+  variant?: 'ghost' | 'secondary' | 'primary'
   /** sm: 32 × 32 · md: 40 × 40 – the same heights as the Button – the hit area grows on touch screens */
-  size?: "sm" | "md";
+  size?: 'sm' | 'md'
   /** Makes it a toggle: true or false sets aria-pressed and keeps it looking pressed while true */
-  pressed?: boolean;
-};
+  pressed?: boolean
+}
 
 export function IconButton({
   icon,
   label,
-  variant = "ghost",
-  size = "md",
+  variant = 'ghost',
+  size = 'md',
   pressed,
   title,
   className,
-  type = "button",
+  type = 'button',
   ...rest
 }: IconButtonProps) {
   // Unknown values fall back to the defaults instead of an unstyled button
-  const tone = VARIANTS.includes(variant) ? variant : "ghost";
-  const scale = size === "sm" ? "sm" : "md";
+  const tone = VARIANTS.includes(variant) ? variant : 'ghost'
+  const scale = size === 'sm' ? 'sm' : 'md'
 
   return (
     <>
@@ -48,7 +48,7 @@ export function IconButton({
       </style>
       <button
         type={type}
-        className={["ui-icb", className].filter(Boolean).join(" ")}
+        className={['ui-icb', className].filter(Boolean).join(' ')}
         data-variant={tone}
         data-size={scale}
         aria-label={label}
@@ -62,26 +62,32 @@ export function IconButton({
         </span>
       </button>
     </>
-  );
+  )
 }
 
-const VARIANTS = ["ghost", "secondary", "primary"];
+const VARIANTS = ['ghost', 'secondary', 'primary']
 
 const isHugeIcon = (icon: unknown): icon is HugeIcon =>
-  Array.isArray(icon) && icon.length > 0 && icon.every((part) => Array.isArray(part) && typeof part[0] === "string");
+  Array.isArray(icon) &&
+  icon.length > 0 &&
+  icon.every(part => Array.isArray(part) && typeof part[0] === 'string')
 
 /** Draws a Hugeicons icon object as an inline SVG at the button's stroke; anything else is shown as it is */
 function Glyph({ icon }: { icon: ReactNode | HugeIcon }) {
-  if (!isHugeIcon(icon)) return <>{icon}</>;
+  if (!isHugeIcon(icon)) return <>{icon}</>
   return (
     <svg viewBox="0 0 24 24" fill="none" focusable="false">
       {icon.map(([tag, { key, ...attrs }], i) =>
-        createElement(tag, { ...attrs, key: String(key ?? i), ...("strokeWidth" in attrs ? { strokeWidth: STROKE } : null) }),
+        createElement(tag, {
+          ...attrs,
+          key: String(key ?? i),
+          ...('strokeWidth' in attrs ? { strokeWidth: STROKE } : null),
+        }),
       )}
     </svg>
-  );
+  )
 }
-const STROKE = 1.75;
+const STROKE = 1.75
 
 /* ---------- Styles ---------- */
 
@@ -256,4 +262,4 @@ const css = /* css */ `
   --ui-icb-dark-shadow: rgba(0, 0, 0, 0.4);
   --ui-icb-focus: var(--aui-focus, rgba(77, 141, 255, 0.8));
 }
-`;
+`

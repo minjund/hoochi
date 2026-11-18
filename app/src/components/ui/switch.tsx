@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { useId, type ComponentPropsWithRef, type ReactNode } from "react";
+import { useId, type ComponentPropsWithRef, type ReactNode } from 'react'
 
 /*
  * Switch – a single self-contained file.
@@ -10,27 +10,38 @@ import { useId, type ComponentPropsWithRef, type ReactNode } from "react";
  * The styles are injected below, so no extra files are needed.
  */
 
-export type SwitchProps = Omit<ComponentPropsWithRef<"input">, "type" | "size" | "role"> & {
+export type SwitchProps = Omit<ComponentPropsWithRef<'input'>, 'type' | 'size' | 'role'> & {
   /** Shown next to the switch; clicking it toggles */
-  label?: ReactNode;
+  label?: ReactNode
   /** A quiet second line under the label */
-  description?: ReactNode;
+  description?: ReactNode
   /** start: the switch before the text · end: after it, across the row – the settings look */
-  placement?: "start" | "end";
+  placement?: 'start' | 'end'
   /** sm 16 · md 20 high */
-  size?: "sm" | "md";
-};
+  size?: 'sm' | 'md'
+}
 
-export function Switch({ label, description, placement = "start", size = "md", className, id, disabled, ref, "aria-describedby": describedBy, ...rest }: SwitchProps) {
-  const autoId = useId();
-  const inputId = id ?? `${autoId}-input`;
-  const descId = `${autoId}-desc`;
+export function Switch({
+  label,
+  description,
+  placement = 'start',
+  size = 'md',
+  className,
+  id,
+  disabled,
+  ref,
+  'aria-describedby': describedBy,
+  ...rest
+}: SwitchProps) {
+  const autoId = useId()
+  const inputId = id ?? `${autoId}-input`
+  const descId = `${autoId}-desc`
 
   return (
     <div
-      className={["ui-sw", className].filter(Boolean).join(" ")}
-      data-placement={placement === "end" ? "end" : "start"}
-      data-size={size === "sm" ? "sm" : "md"}
+      className={['ui-sw', className].filter(Boolean).join(' ')}
+      data-placement={placement === 'end' ? 'end' : 'start'}
+      data-size={size === 'sm' ? 'sm' : 'md'}
       data-disabled={disabled || undefined}
     >
       {/* React 19 hoists this into <head> once, no matter how many switches render */}
@@ -47,7 +58,9 @@ export function Switch({ label, description, placement = "start", size = "md", c
             role="switch"
             className="ui-sw__input"
             disabled={disabled}
-            aria-describedby={[describedBy, description ? descId : null].filter(Boolean).join(" ") || undefined}
+            aria-describedby={
+              [describedBy, description ? descId : null].filter(Boolean).join(' ') || undefined
+            }
           />
           <span className="ui-sw__track" aria-hidden="true">
             <span className="ui-sw__thumb" />
@@ -65,7 +78,7 @@ export function Switch({ label, description, placement = "start", size = "md", c
         )}
       </label>
     </div>
-  );
+  )
 }
 
 const css = /* css */ `
@@ -160,4 +173,4 @@ const css = /* css */ `
   --ui-sw-focus: var(--aui-focus, rgba(77, 141, 255, 0.8));
 }
 :where(.dark, [data-theme="dark"]) .ui-sw__input:checked + .ui-sw__track .ui-sw__thumb { background: #161618; box-shadow: none; }
-`;
+`

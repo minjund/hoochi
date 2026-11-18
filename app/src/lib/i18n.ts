@@ -346,6 +346,29 @@ export const UI = {
     openChats: (n: number) => `${n} open now`,
     closed: 'closed',
     notHooked: 'open now · hookwich not on yet',
+    legend: 'Black number: added with hookwich · grey number: hooks you already have',
+    existingTitle: 'Already here (set up outside hookwich)',
+    existingNote: 'These run first; then hookwich adds yours.',
+    existingFrom: (from: string) =>
+      from === 'settings'
+        ? 'your settings'
+        : from === 'project'
+          ? 'project settings'
+          : from === 'managed'
+            ? 'managed by your company'
+            : `plugin ${from.replace('plugin:', '')}`,
+    onlyWhen: (m: string) => `only for ${m}`,
+    loadGlobal: 'Load "Everywhere"',
+    loadProject: 'Load this project',
+    applyAllProjects: 'Apply to all projects',
+    applyGlobal: 'Apply to "Everywhere"',
+    undo: 'Undo',
+    copied: (n: number) =>
+      n ? `Added ${n}. Ones already here were skipped.` : 'Everything is already here.',
+    copiedProjects: (n: number, p: number) =>
+      `Added ${n} across ${p} projects. Ones already there were skipped.`,
+    noProjectHere: 'This terminal is not in a project folder.',
+    noProjects: 'No projects yet: open Claude Code or Codex in a project folder once.',
     follow: 'Follow where I chat',
     followNow: (agent: string, where: string) => `Now: ${agent} · ${where}`,
     followHint: 'Switches by itself to the AI and terminal you last typed in.',
@@ -400,6 +423,28 @@ export const UI = {
     openChats: (n: number) => `지금 ${n}개 열려 있음`,
     closed: '지금은 닫혀 있음',
     notHooked: '열려 있음 · hookwich 아직 안 붙음',
+    legend: '검은 숫자: hookwich로 넣은 것 · 회색 숫자: 이미 있는 훅',
+    existingTitle: '이미 있는 훅 (hookwich 밖에서 설정됨)',
+    existingNote: '이 훅들이 먼저 돌고, 그다음 hookwich가 넣은 것이 들어가요.',
+    existingFrom: (from: string) =>
+      from === 'settings'
+        ? '내 설정'
+        : from === 'project'
+          ? '프로젝트 설정'
+          : from === 'managed'
+            ? '회사 관리 설정'
+            : `플러그인 ${from.replace('plugin:', '')}`,
+    onlyWhen: (m: string) => `${m}일 때만`,
+    loadGlobal: '모든 곳(전역) 값 불러오기',
+    loadProject: '프로젝트 값 불러오기',
+    applyAllProjects: '모든 프로젝트에 적용',
+    applyGlobal: '모든 곳(전역)에 적용',
+    undo: '되돌리기',
+    copied: (n: number) => (n ? `${n}개를 넣었어요. 이미 있던 건 건너뛰었어요.` : '이미 다 들어 있어요.'),
+    copiedProjects: (n: number, p: number) =>
+      `프로젝트 ${p}곳에 모두 ${n}개를 넣었어요. 이미 있던 건 건너뛰었어요.`,
+    noProjectHere: '이 터미널은 프로젝트 폴더가 아니에요.',
+    noProjects: '아직 프로젝트가 없어요. 프로젝트 폴더에서 Claude Code나 Codex를 한 번 열어 주세요.',
     follow: '내가 채팅하는 곳 따라가기',
     followNow: (agent: string, where: string) => `지금: ${agent} · ${where}`,
     followHint: '마지막으로 채팅을 친 AI와 터미널로 저절로 바뀌어요.',
@@ -455,6 +500,30 @@ export const UI = {
     openChats: (n: number) => `いま ${n} 件開いている`,
     closed: 'いまは閉じている',
     notHooked: '開いている · hookwich まだ未接続',
+    legend: '黒い数字：hookwich で入れたもの · 灰色の数字：すでにあるフック',
+    existingTitle: 'すでにあるフック（hookwich の外で設定）',
+    existingNote: 'これらが先に動き、そのあと hookwich で入れたものが入ります。',
+    existingFrom: (from: string) =>
+      from === 'settings'
+        ? '自分の設定'
+        : from === 'project'
+          ? 'プロジェクトの設定'
+          : from === 'managed'
+            ? '会社の管理設定'
+            : `プラグイン ${from.replace('plugin:', '')}`,
+    onlyWhen: (m: string) => `${m} のときだけ`,
+    loadGlobal: '「すべて」の値を読み込む',
+    loadProject: 'プロジェクトの値を読み込む',
+    applyAllProjects: 'すべてのプロジェクトに適用',
+    applyGlobal: '「すべて」に適用',
+    undo: '元に戻す',
+    copied: (n: number) =>
+      n ? `${n} 件入れました。すでにあるものは飛ばしました。` : 'すでに全部入っています。',
+    copiedProjects: (n: number, p: number) =>
+      `${p} 件のプロジェクトに合計 ${n} 件入れました。すでにあるものは飛ばしました。`,
+    noProjectHere: 'このターミナルはプロジェクトのフォルダではありません。',
+    noProjects:
+      'まだプロジェクトがありません。プロジェクトのフォルダで Claude Code か Codex を一度開いてください。',
     follow: 'チャットしている場所に合わせる',
     followNow: (agent: string, where: string) => `いま：${agent} · ${where}`,
     followHint: '最後に入力した AI とターミナルに自動で切り替わります。',
@@ -509,6 +578,27 @@ export const UI = {
     openChats: (n: number) => `现在打开 ${n} 个`,
     closed: '现在已关闭',
     notHooked: '打开着 · 还没接上 hookwich',
+    legend: '黑色数字：用 hookwich 加入的 · 灰色数字：已有的钩子',
+    existingTitle: '已有的钩子（在 hookwich 之外设置）',
+    existingNote: '这些会先运行，然后才加入 hookwich 里的内容。',
+    existingFrom: (from: string) =>
+      from === 'settings'
+        ? '我的设置'
+        : from === 'project'
+          ? '项目设置'
+          : from === 'managed'
+            ? '公司管理的设置'
+            : `插件 ${from.replace('plugin:', '')}`,
+    onlyWhen: (m: string) => `仅限 ${m}`,
+    loadGlobal: '载入“所有地方”的设置',
+    loadProject: '载入项目的设置',
+    applyAllProjects: '应用到所有项目',
+    applyGlobal: '应用到“所有地方”',
+    undo: '撤销',
+    copied: (n: number) => (n ? `加入了 ${n} 项，已有的已跳过。` : '已经全部都有了。'),
+    copiedProjects: (n: number, p: number) => `在 ${p} 个项目中共加入 ${n} 项，已有的已跳过。`,
+    noProjectHere: '这个终端不在项目文件夹里。',
+    noProjects: '还没有项目。请在项目文件夹中打开一次 Claude Code 或 Codex。',
     follow: '跟随我正在聊天的地方',
     followNow: (agent: string, where: string) => `现在：${agent} · ${where}`,
     followHint: '会自动切换到你最后输入的 AI 和终端。',

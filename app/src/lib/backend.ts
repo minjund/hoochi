@@ -84,6 +84,9 @@ if (browserFlags.demo) {
     terminalLabel: 'iTerm w0t1p0',
   }
   const codexLast = browserFlags.chat === 'codex'
+  // `?chat=home`: the last chat was typed in a terminal outside any project folder
+  const home = { project: '/Users/me', terminal: 'whitebox:terminal:e5', terminalLabel: 'Whitebox e5' }
+  const homeLast = browserFlags.chat === 'home'
   const activity = (lastEvent: string, lastChat: object) =>
     JSON.stringify({
       lastEvent,
@@ -105,7 +108,10 @@ if (browserFlags.demo) {
     })
   localStorage.setItem(
     'hookwich.activity.claude',
-    activity('PreToolUse', { at: codexLast ? now - 60_000 : now - 9000, place }),
+    activity(
+      'PreToolUse',
+      homeLast ? { at: now - 1000, place: home } : { at: codexLast ? now - 60_000 : now - 9000, place },
+    ),
   )
   localStorage.setItem(
     'hookwich.activity.codex',
@@ -115,8 +121,9 @@ if (browserFlags.demo) {
     'hookwich.places',
     JSON.stringify({
       projects: {
-        [place.project]: { lastSeen: now },
-        '/Users/me/Projects/blog': { lastSeen: now - 3600_000 },
+        [place.project]: { lastSeen: now, git: true },
+        '/Users/me/Projects/blog': { lastSeen: now - 3600_000, git: true },
+        '/Users/me': { lastSeen: now - 1000, git: false },
       },
       terminals: {
         [place.terminal]: { label: 'Whitebox a1', cwd: place.project, agent: 'claude', lastSeen: now },
@@ -223,6 +230,48 @@ export type Running = {
   terminalLabel: string
   cwd: string
   project: string
+  /** the folder is in a git project */
+  hasProject: boolean
+}
+
+/** A hook set up outside hookwich: in Claude Code's settings, a plugin, or Codex's hooks.json. */
+export type ExistingHook = {
+  event: string
+  matcher: string
+  kind: string
+  /** who runs it: an app, "skill: <name>", a plugin, a script */
+  name: string
+  detail: string
+  /** "settings" | "project" | "managed" | "plugin:<name>" */
+  from: string
+  scope: 'global' | 'project'
+}
+export type ExistingHooks = Record<'claude' | 'codex', ExistingHook[]>
+
+export async function existingHooks(project: string): Promise<ExistingHooks> {
+  if (inApp) return invoke('existing_hooks', { project })
+  if (!browserFlags.demo) return { claude: [], codex: [] }
+  const hook = (event: string, name: string, from: string, matcher = ''): ExistingHook => ({
+    event,
+    matcher,
+    kind: 'command',
+    name,
+    detail: `${name} hook`,
+    from,
+    scope: from === 'project' ? 'project' : 'global',
+  })
+  const inProject = (list: ExistingHook[]) => list.filter(h => project !== '' || h.scope === 'global')
+  return {
+    claude: inProject([
+      hook('SessionStart', 'skill: notes', 'plugin:team-tools', 'startup'),
+      hook('UserPromptSubmit', 'skill: helper', 'plugin:helper'),
+      hook('PreToolUse', 'Desk Pet', 'settings'),
+      hook('PreToolUse', 'termapp', 'settings', 'AskUserQuestion'),
+      hook('Stop', 'memory', 'plugin:memory'),
+      hook('Stop', 'lint', 'project'),
+    ]),
+    codex: [hook('Stop', 'ChatBridge', 'settings'), hook('PreToolUse', 'termapp', 'settings')],
+  }
 }
 
 export async function runningChats(): Promise<Running[]> {
@@ -235,12 +284,14 @@ export async function runningChats(): Promise<Running[]> {
     terminalLabel: `Whitebox ${id}`,
     cwd: project,
     project,
+    hasProject: project !== '/Users/me',
   })
   return [
     chat('claude', 'a1', '/Users/me/Projects/shop'),
     chat('codex', 'b2', '/Users/me/Projects/shop'),
     chat('claude', 'c3', '/Users/me/Projects/notes'),
     chat('codex', 'd4', '/Users/me/Projects/api'),
+    chat('claude', 'e5', '/Users/me'),
   ]
 }
 

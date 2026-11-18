@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import { createElement, type ComponentPropsWithRef, type ReactNode } from "react";
+import { createElement, type ComponentPropsWithRef, type ReactNode } from 'react'
 
 /*
  * Badge – a single self-contained file.
@@ -10,36 +10,47 @@ import { createElement, type ComponentPropsWithRef, type ReactNode } from "react
  */
 
 /** An icon from Hugeicons (e.g. `import { Clock01Icon } from "@hugeicons/core-free-icons"`) – drawn inline */
-export type HugeIcon = readonly (readonly [string, { readonly [key: string]: string | number }])[];
+export type HugeIcon = readonly (readonly [string, { readonly [key: string]: string | number }])[]
 
-export type BadgeTone = "neutral" | "info" | "success" | "warning" | "danger" | "purple";
+export type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'purple'
 
-export type BadgeProps = ComponentPropsWithRef<"span"> & {
+export type BadgeProps = ComponentPropsWithRef<'span'> & {
   /** neutral: gray, the default · info: blue, running · success: green, done · warning: orange, needs you · danger: red, failed · purple: a kind, like Beta */
-  tone?: BadgeTone;
+  tone?: BadgeTone
   /** sm: 20px high, 11px text · md: 22px high, 12px text */
-  size?: "sm" | "md";
+  size?: 'sm' | 'md'
   /** A small dot in the tone's color before the text */
-  dot?: boolean;
+  dot?: boolean
   /** The dot pulses softly – for running, live and recording states */
-  live?: boolean;
+  live?: boolean
   /** An icon before the text: any element (an inline SVG) or a Hugeicons icon object */
-  icon?: ReactNode | HugeIcon;
+  icon?: ReactNode | HugeIcon
   /** Makes it a round count: the number in place of the text, "99+" above max */
-  count?: number;
+  count?: number
   /** The highest count shown in full – above it the badge reads max+ */
-  max?: number;
-};
+  max?: number
+}
 
-export function Badge({ tone = "neutral", size = "sm", dot, live, icon, count, max = 99, className, children, ...rest }: BadgeProps) {
+export function Badge({
+  tone = 'neutral',
+  size = 'sm',
+  dot,
+  live,
+  icon,
+  count,
+  max = 99,
+  className,
+  children,
+  ...rest
+}: BadgeProps) {
   // Unknown values fall back to the defaults instead of an unstyled badge
-  const hue = TONES.includes(tone) ? tone : "neutral";
-  const scale = size === "md" ? "md" : "sm";
-  const isCount = typeof count === "number" && Number.isFinite(count);
-  const lead = isCount ? null : live || dot ? "dot" : icon != null && icon !== false ? "icon" : null;
+  const hue = TONES.includes(tone) ? tone : 'neutral'
+  const scale = size === 'md' ? 'md' : 'sm'
+  const isCount = typeof count === 'number' && Number.isFinite(count)
+  const lead = isCount ? null : live || dot ? 'dot' : icon != null && icon !== false ? 'icon' : null
   // Nothing to say – no text, no count, no mark: no empty pill either (e.g. count={NaN} from missing data)
-  const empty = !isCount && !lead && (children == null || children === false || children === "");
-  if (empty) return null;
+  const empty = !isCount && !lead && (children == null || children === false || children === '')
+  if (empty) return null
 
   return (
     <>
@@ -48,15 +59,17 @@ export function Badge({ tone = "neutral", size = "sm", dot, live, icon, count, m
         {css}
       </style>
       <span
-        className={["ui-bdg", className].filter(Boolean).join(" ")}
+        className={['ui-bdg', className].filter(Boolean).join(' ')}
         data-tone={hue}
         data-size={scale}
-        data-count={isCount ? "" : undefined}
+        data-count={isCount ? '' : undefined}
         data-lead={lead ?? undefined}
         {...rest}
       >
-        {lead === "dot" && <span className="ui-bdg__dot" data-live={live ? "" : undefined} aria-hidden="true" />}
-        {lead === "icon" && (
+        {lead === 'dot' && (
+          <span className="ui-bdg__dot" data-live={live ? '' : undefined} aria-hidden="true" />
+        )}
+        {lead === 'icon' && (
           <span className="ui-bdg__icon" aria-hidden="true">
             <Glyph icon={icon} />
           </span>
@@ -64,34 +77,40 @@ export function Badge({ tone = "neutral", size = "sm", dot, live, icon, count, m
         {isCount ? formatCount(count, max) : <span className="ui-bdg__label">{children}</span>}
       </span>
     </>
-  );
+  )
 }
 
-const TONES: BadgeTone[] = ["neutral", "info", "success", "warning", "danger", "purple"];
+const TONES: BadgeTone[] = ['neutral', 'info', 'success', 'warning', 'danger', 'purple']
 
 /** 7 · 1,234 · 99+ – whole numbers, never below zero, in the reader's own digits */
 const formatCount = (count: number, max: number) => {
-  const n = Math.max(0, Math.floor(count));
-  const top = Math.max(0, Math.floor(Number.isFinite(max) ? max : 99));
-  const format = (v: number) => new Intl.NumberFormat().format(v);
-  return n > top ? `${format(top)}+` : format(n);
-};
+  const n = Math.max(0, Math.floor(count))
+  const top = Math.max(0, Math.floor(Number.isFinite(max) ? max : 99))
+  const format = (v: number) => new Intl.NumberFormat().format(v)
+  return n > top ? `${format(top)}+` : format(n)
+}
 
 const isHugeIcon = (icon: unknown): icon is HugeIcon =>
-  Array.isArray(icon) && icon.length > 0 && icon.every((part) => Array.isArray(part) && typeof part[0] === "string");
+  Array.isArray(icon) &&
+  icon.length > 0 &&
+  icon.every(part => Array.isArray(part) && typeof part[0] === 'string')
 
 /** Draws a Hugeicons icon object as an inline SVG at the badge's stroke; anything else is shown as it is */
 function Glyph({ icon }: { icon: ReactNode | HugeIcon }) {
-  if (!isHugeIcon(icon)) return <>{icon}</>;
+  if (!isHugeIcon(icon)) return <>{icon}</>
   return (
     <svg viewBox="0 0 24 24" fill="none" focusable="false">
       {icon.map(([tag, { key, ...attrs }], i) =>
-        createElement(tag, { ...attrs, key: String(key ?? i), ...("strokeWidth" in attrs ? { strokeWidth: STROKE } : null) }),
+        createElement(tag, {
+          ...attrs,
+          key: String(key ?? i),
+          ...('strokeWidth' in attrs ? { strokeWidth: STROKE } : null),
+        }),
       )}
     </svg>
-  );
+  )
 }
-const STROKE = 2;
+const STROKE = 2
 
 /* ---------- Styles ---------- */
 
@@ -235,4 +254,4 @@ const css = /* css */ `
   --ui-bdg-purple-bg: #2a1c3d;
   --ui-bdg-purple-fg: #c9a2f5;
 }
-`;
+`

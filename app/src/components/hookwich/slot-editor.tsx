@@ -1,4 +1,4 @@
-import type { Skill } from '../../lib/backend'
+import type { ExistingHook, Skill } from '../../lib/backend'
 import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
 import type { Agent, Item, ItemKind, Slot } from '../../lib/lifecycle'
 import { Button } from '../ui/button'
@@ -17,6 +17,8 @@ type Props = {
   agent: Agent
   /** how this scope relates to the others for this moment */
   note?: string
+  /** hooks already set up outside hookwich for this moment, shown read-only */
+  existing?: ExistingHook[]
   onChange(item: Item): void
   onRemove(id: string): void
   onAdd(): void
@@ -31,6 +33,7 @@ export function SlotEditor({
   lang,
   agent,
   note,
+  existing = [],
   onChange,
   onRemove,
   onAdd,
@@ -51,6 +54,26 @@ export function SlotEditor({
       </div>
       <p className="hw-editor-hint">{eventHint(slot.event, lang, agent)}</p>
       {note && <p className="hw-note">{note}</p>}
+
+      {existing.length > 0 && (
+        <section className="hw-existing" aria-label={t.existingTitle}>
+          <div className="hw-existing-title">
+            {t.existingTitle} <span>{existing.length}</span>
+          </div>
+          <ul>
+            {existing.map((h, i) => (
+              <li key={`${h.from}-${h.name}-${i}`} title={h.detail}>
+                <b>{h.name}</b>
+                <span>
+                  {t.existingFrom(h.from)}
+                  {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="hw-editor-hint">{t.existingNote}</p>
+        </section>
+      )}
 
       {items.length === 0 && <p className="hw-editor-empty">{t.empty}</p>}
 

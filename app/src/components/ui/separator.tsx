@@ -1,6 +1,6 @@
-"use client";
+'use client'
 
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 
 /*
  * Separator – a single self-contained file.
@@ -9,33 +9,40 @@ import type { ComponentPropsWithRef, ReactNode } from "react";
  * The styles are injected below, so no extra files are needed.
  */
 
-export type SeparatorProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
+export type SeparatorProps = Omit<ComponentPropsWithRef<'div'>, 'children'> & {
   /** horizontal: a line across, as wide as its container · vertical: an upright line, 18px high in a row */
-  orientation?: "horizontal" | "vertical";
+  orientation?: 'horizontal' | 'vertical'
   /**
    * true (the default): only a visual line, hidden from screen readers · false: a real separator (role="separator")
    * that splits content into sections screen readers announce
    */
-  decorative?: boolean;
+  decorative?: boolean
   /** A short word in the middle of a horizontal line – "or", "Earlier", "Today" */
-  label?: ReactNode;
-};
+  label?: ReactNode
+}
 
-export function Separator({ orientation = "horizontal", decorative = true, label, className, ...rest }: SeparatorProps) {
-  const vertical = orientation === "vertical";
-  const hasLabel = !vertical && label != null && label !== false && label !== "";
+export function Separator({
+  orientation = 'horizontal',
+  decorative = true,
+  label,
+  className,
+  ...rest
+}: SeparatorProps) {
+  const vertical = orientation === 'vertical'
+  const hasLabel = !vertical && label != null && label !== false && label !== ''
   // A labelled separator names itself after its label, when the label is text
-  const name = hasLabel && (typeof label === "string" || typeof label === "number") ? String(label) : undefined;
+  const name =
+    hasLabel && (typeof label === 'string' || typeof label === 'number') ? String(label) : undefined
   const a11y = decorative
     ? // A decorative line with a label: the label stays readable as plain text, only the lines are hidden
       hasLabel
       ? {}
-      : { role: "none" as const }
+      : { role: 'none' as const }
     : {
-        role: "separator" as const,
-        "aria-orientation": vertical ? ("vertical" as const) : undefined,
-        "aria-label": name,
-      };
+        role: 'separator' as const,
+        'aria-orientation': vertical ? ('vertical' as const) : undefined,
+        'aria-label': name,
+      }
 
   return (
     <>
@@ -44,9 +51,9 @@ export function Separator({ orientation = "horizontal", decorative = true, label
         {css}
       </style>
       <div
-        className={["ui-sep", className].filter(Boolean).join(" ")}
-        data-orientation={vertical ? "vertical" : "horizontal"}
-        data-label={hasLabel ? "" : undefined}
+        className={['ui-sep', className].filter(Boolean).join(' ')}
+        data-orientation={vertical ? 'vertical' : 'horizontal'}
+        data-label={hasLabel ? '' : undefined}
         {...a11y}
         {...rest}
       >
@@ -59,7 +66,7 @@ export function Separator({ orientation = "horizontal", decorative = true, label
         )}
       </div>
     </>
-  );
+  )
 }
 
 /* ---------- Styles ---------- */
@@ -129,4 +136,4 @@ const css = /* css */ `
   --ui-sep-line: var(--aui-border, #2a2a2e);
   --ui-sep-text: var(--aui-muted, #8b8b92);
 }
-`;
+`

@@ -12,6 +12,8 @@ export type LifecycleDiagramProps = {
   onSelect(event: string): void
   /** the language the labels are drawn in */
   lang: Lang
+  /** hooks already set up outside hookwich, per event: drawn as a grey number at the top left */
+  existing?: Readonly<Record<string, number>>
 }
 
 type Tone = 'neutral' | 'green' | 'yellow' | 'pink' | 'side' | 'tool'
@@ -281,6 +283,7 @@ const styles = `
 .ui-lcd-flash { fill: none; stroke: var(--ui-lcd-glow); stroke-width: 3; pointer-events: none; animation: ui-lcd-fired 2500ms linear both; }
 .ui-lcd-badge { fill: var(--ui-lcd-ink); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-disabled { fill: var(--ui-lcd-bg); stroke: var(--ui-lcd-subtle); }
+.ui-lcd-badge-existing { fill: var(--ui-lcd-muted); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 9px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
 @keyframes ui-lcd-fired { 0%, 20% { opacity: 1; } 100% { opacity: 0; } }
@@ -345,6 +348,7 @@ export function LifecycleDiagram({
   onSelect,
   lang,
   agent = 'claude',
+  existing = {},
 }: LifecycleDiagramProps) {
   const t = UI[lang]
   const id = `ui-lcd-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
@@ -377,6 +381,7 @@ export function LifecycleDiagram({
       `${eventName(event, lang, agent)} (${event})${note ? ` · ${note}` : ''}`,
       eventHint(event, lang, agent),
       t.fired(activity.counts[event] ?? 0),
+      existing[event] ? `${t.existingTitle}: ${existing[event]}` : '',
     ]
       .filter(Boolean)
       .join('\n')
@@ -385,6 +390,10 @@ export function LifecycleDiagram({
     const badgeRadius = compact ? 5 : Math.max(7, badgeText.length * 2.7 + 2)
     const badgeX = x + width - (compact ? 6 : 7)
     const badgeY = y + (compact ? 4 : 6)
+    const already = existing[event] ?? 0
+    const alreadyText = String(already)
+    const alreadyRadius = compact ? 5 : Math.max(7, alreadyText.length * 2.7 + 2)
+    const alreadyX = x + (compact ? 6 : 7)
     return (
       <g
         key={event}
@@ -429,6 +438,21 @@ export function LifecycleDiagram({
           height={height + 6}
           rx={compact ? 3 : 8}
         />
+        {already > 0 && (
+          <g aria-hidden="true">
+            <circle className="ui-lcd-badge-existing" cx={alreadyX} cy={badgeY} r={alreadyRadius} />
+            <text
+              className="ui-lcd-badge-text"
+              x={alreadyX}
+              y={badgeY}
+              dy=".35em"
+              textAnchor="middle"
+              style={compact ? { fontSize: 6 } : undefined}
+            >
+              {alreadyText}
+            </text>
+          </g>
+        )}
         {count && (
           <g aria-hidden="true">
             <circle
@@ -574,7 +598,8 @@ export function LifecycleDiagram({
         <title id={`${id}-title`}>{layout.title}</title>
         <desc id={`${id}-description`}>
           Select a hook event to edit its items. Tab moves between events; Enter or Space selects one. Badges
-          count enabled items. A hollow badge means all items are disabled.
+          count enabled items. A hollow badge means all items are disabled. A grey badge at the top left
+          counts hooks already set up outside hookwich.
         </desc>
         <defs>
           <filter

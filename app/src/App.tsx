@@ -17,12 +17,14 @@ import {
   hideWindow,
   listSkills,
   newId,
+  existingHooks,
   readState,
   runningChats,
   setExpanded,
   startDrag,
   writeConfig,
   type CodexStatus,
+  type ExistingHooks,
   type Running,
   type Skill,
 } from './lib/backend'
@@ -31,6 +33,7 @@ import {
   decidingScope,
   emptyAgent,
   listOf,
+  mergeItems,
   slotOf,
   withList,
   type Activity,
@@ -45,6 +48,7 @@ import {
 const POLL_MS = 800
 const SAVE_DELAY_MS = 350
 const RUNNING_MS = 4000
+const EXISTING_MS = 15000
 
 /** Follows the system light/dark setting; affectUI reads `.dark` on <html>. */
 function useSystemTheme() {
@@ -136,12 +140,17 @@ export default function App() {
   const [codexNote, setCodexNote] = useState('')
   const [follow, setFollowState] = useState(loadFollow)
   const [running, setRunning] = useState<Running[]>([])
+  const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
+  const [done, setDone] = useState<{ message: string; before: Config } | null>(null)
   const t = UI[lang]
 
   const setFollow = (on: boolean) => {
     setFollowState(on)
     saveFollow(on)
-    if (on) followed.current = 0
+    if (on) {
+      followed.current = 0
+      followedTerminal.current = ''
+    }
   }
 
   useEffect(() => {
@@ -211,15 +220,22 @@ export default function App() {
 
   // Follow the chat you typed in last: its AI's picture, its project and its terminal.
   // Not while a moment is open for editing; it catches up when you go back to the picture.
+  // On reaching a new terminal, it opens on that project's settings, or on "everywhere" when the
+  // terminal is not in a project folder. Within the same terminal, the tab you picked stays.
   const latest = lastChatOf(activity)
   const followed = useRef(0)
+  const followedTerminal = useRef('')
   useEffect(() => {
     if (!follow || !latest || selected !== null || latest.at <= followed.current) return
     followed.current = latest.at
     setAgent(latest.agent)
     setProjectKey(latest.place.project)
     setTerminalKey(latest.place.terminal)
-  }, [follow, latest, selected])
+    if (latest.place.terminal !== followedTerminal.current) {
+      followedTerminal.current = latest.place.terminal
+      setScope(isProject(latest.place.project, latest.place.terminal) ? 'project' : 'global')
+    }
+  }, [follow, latest, selected]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Without a chat seen yet, open on the project and terminal that were active last.
   const last = activity[agent].place
@@ -253,6 +269,27 @@ export default function App() {
     await setExpanded(false)
   }
 
+  /** Whether a folder is a git project: from the open chats, else from what hookwich has seen. */
+  function isProject(path: string, terminal = ''): boolean {
+    return (
+      running.find(r => r.terminal === terminal)?.hasProject ??
+      running.find(r => r.project === path)?.hasProject ??
+      places.projects[path]?.git ??
+      false
+    )
+  }
+  const terminalProject =
+    running.find(r => r.terminal === terminalKey)?.project ?? places.terminals[terminalKey]?.cwd ?? ''
+  const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
+  const allProjects = [
+    ...new Set([
+      ...running.filter(r => r.hasProject).map(r => r.project),
+      ...Object.entries(places.projects)
+        .filter(([, v]) => v.git)
+        .map(([path]) => path),
+    ]),
+  ]
+
   const key = scope === 'project' ? projectKey : scope === 'terminal' ? terminalKey : ''
   const scopeReady = scope === 'global' || key !== ''
   const list = scopeReady ? listOf(config[agent], scope, key) : []
@@ -264,6 +301,64 @@ export default function App() {
   }
   const changeItem = (item: Item) => setList(list.map(i => (i.id === item.id ? item : i)))
   const removeItem = (id: string) => setList(list.filter(i => i.id !== id))
+
+  // Copy between scopes. Nothing is overwritten: items already there are skipped, and one undo is kept.
+  const act = (next: Config, message: string) => {
+    setDone({ message, before: config })
+    save(next)
+  }
+  const loadFrom = (from: Scope) => {
+    const fromKey = from === 'project' ? terminalProject : ''
+    const merged = mergeItems(list, listOf(config[agent], from, fromKey), newId)
+    act(withList(config, agent, scope, key, merged.list), t.copied(merged.added))
+  }
+  const applyGlobal = () => {
+    const merged = mergeItems(config[agent].global, list, newId)
+    act(withList(config, agent, 'global', '', merged.list), t.copied(merged.added))
+  }
+  const applyAllProjects = () => {
+    const targets = allProjects.filter(p => !(scope === 'project' && p === projectKey))
+    let next = config
+    let added = 0
+    for (const p of targets) {
+      const merged = mergeItems(listOf(next[agent], 'project', p), list, newId)
+      next = withList(next, agent, 'project', p, merged.list)
+      added += merged.added
+    }
+    act(next, t.copiedProjects(added, targets.length))
+  }
+  const undo = () => {
+    if (!done) return
+    save(done.before)
+    setDone(null)
+  }
+  useEffect(() => {
+    if (!done) return
+    const id = window.setTimeout(() => setDone(null), 12_000)
+    return () => window.clearTimeout(id)
+  }, [done])
+
+  // Hooks already set up outside hookwich at this place, read again now and then.
+  const existingProject = scope === 'global' ? '' : scope === 'project' ? projectKey : terminalProject
+  useEffect(() => {
+    if (!expanded) return
+    let alive = true
+    const read = () =>
+      void existingHooks(existingProject)
+        .then(found => alive && setExisting(found))
+        .catch(() => undefined)
+    read()
+    const id = window.setInterval(read, EXISTING_MS)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [expanded, existingProject])
+  const existingCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const h of existing[agent]) counts[h.event] = (counts[h.event] ?? 0) + 1
+    return counts
+  }, [existing, agent])
 
   const activeCount = useMemo(() => {
     const all = (a: typeof config.claude) => [
@@ -293,7 +388,7 @@ export default function App() {
   }
 
   // Open chats first (newest first), then places seen before, most recent first.
-  const openProjects = [...new Set(running.map(r => r.project).filter(Boolean))]
+  const openProjects = [...new Set(running.filter(r => r.hasProject).map(r => r.project))]
   const projectOptions = [
     ...openProjects.map(path => ({
       value: path,
@@ -301,7 +396,7 @@ export default function App() {
       description: `${t.openChats(running.filter(r => r.project === path).length)} · ${path}`,
     })),
     ...Object.entries(places.projects)
-      .filter(([path]) => !openProjects.includes(path))
+      .filter(([path, v]) => v.git && !openProjects.includes(path))
       .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
       .map(([path]) => ({ value: path, label: folderName(path), description: `${t.closed} · ${path}` })),
   ]
@@ -462,6 +557,48 @@ export default function App() {
           ) : (
             <p className="hw-editor-hint">{t.noPlaces}</p>
           ))}
+        {scopeReady && (
+          <div className="hw-actions">
+            {scope !== 'global' && (
+              <Button size="sm" variant="secondary" onClick={() => loadFrom('global')}>
+                {t.loadGlobal}
+              </Button>
+            )}
+            {scope === 'terminal' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!terminalHasProject}
+                title={terminalHasProject ? terminalProject : t.noProjectHere}
+                onClick={() => loadFrom('project')}
+              >
+                {t.loadProject}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={list.length === 0 || allProjects.length === 0}
+              title={allProjects.length === 0 ? t.noProjects : allProjects.map(folderName).join(', ')}
+              onClick={applyAllProjects}
+            >
+              {t.applyAllProjects}
+            </Button>
+            {scope !== 'global' && (
+              <Button size="sm" variant="ghost" disabled={list.length === 0} onClick={applyGlobal}>
+                {t.applyGlobal}
+              </Button>
+            )}
+          </div>
+        )}
+        {done && (
+          <div className="hw-done" role="status">
+            <span>{done.message}</span>
+            <Button size="sm" variant="ghost" onClick={undo}>
+              {t.undo}
+            </Button>
+          </div>
+        )}
         {agent === 'codex' && codex && (
           <div className="hw-codex">
             {!codex.installed ? (
@@ -508,6 +645,7 @@ export default function App() {
             slot={slot}
             agent={agent}
             note={noteFor(slot.event)}
+            existing={existing[agent].filter(h => h.event === slot.event)}
             items={list.filter(i => i.event === slot.event)}
             skills={skills}
             lang={lang}
@@ -518,7 +656,11 @@ export default function App() {
           />
         ) : (
           <>
-            <p className="hw-diagram-hint">{t.diagramHint}</p>
+            <p className="hw-diagram-hint">
+              {t.diagramHint}
+              <br />
+              {t.legend}
+            </p>
             <LifecycleDiagram
               layout={agent === 'codex' ? CODEX_LAYOUT : CLAUDE_LAYOUT}
               agent={agent}
@@ -527,6 +669,7 @@ export default function App() {
               selectedEvent={selected}
               onSelect={setSelected}
               lang={lang}
+              existing={existingCounts}
             />
           </>
         )}
