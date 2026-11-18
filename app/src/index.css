@@ -23,8 +23,16 @@ body {
 
 .hw-panel {
   --hw-bg: #ffffff;
+  --hw-ink: #0f172a;
+  --hw-card: #ffffff;
   --hw-line: rgba(15, 23, 42, 0.08);
-  --hw-soft: #64748b;
+  --hw-line-strong: rgba(15, 23, 42, 0.16);
+  --hw-soft: #5b6678;
+  --hw-tint: rgba(100, 116, 139, 0.08);
+  --hw-accent: rgba(59, 130, 246, 0.14);
+  /* affectUI's faint text: dark enough to read on the panel (4.5:1 or more) */
+  --aui-muted: var(--hw-soft);
+  color: var(--hw-ink);
   position: absolute;
   inset: 6px;
   display: flex;
@@ -40,8 +48,13 @@ body {
 
 .dark .hw-panel {
   --hw-bg: #17181c;
+  --hw-ink: #e8eaee;
+  --hw-card: #24262c;
   --hw-line: rgba(255, 255, 255, 0.09);
-  --hw-soft: #9aa3b2;
+  --hw-line-strong: rgba(255, 255, 255, 0.18);
+  --hw-soft: #a3acba;
+  --hw-tint: rgba(255, 255, 255, 0.06);
+  --hw-accent: rgba(96, 165, 250, 0.2);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.5),
     0 2px 6px rgba(0, 0, 0, 0.3);
@@ -243,7 +256,7 @@ input {
   margin-left: 4px;
   border-radius: 8px;
   background: var(--hw-soft);
-  color: var(--aui-bg, #fff);
+  color: var(--hw-bg);
   text-align: center;
   font-size: 10px;
 }
@@ -337,7 +350,7 @@ input {
   gap: 6px;
   padding: 6px 8px;
   border-radius: 8px;
-  background: rgba(100, 116, 139, 0.08);
+  background: var(--hw-tint);
   font-size: 12px;
   animation: hw-now-in 1200ms ease-out;
 }
@@ -364,7 +377,7 @@ input {
   margin: 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--hw-accent);
   font-size: 12px;
   font-weight: 600;
 }
@@ -376,7 +389,7 @@ input {
 @keyframes hw-now-moved {
   0%,
   40% {
-    background: rgba(59, 130, 246, 0.28);
+    background: var(--hw-accent);
   }
 }
 @media (prefers-reduced-motion: reduce) {

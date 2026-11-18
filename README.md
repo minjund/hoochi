@@ -85,6 +85,7 @@ saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks
   sit together in an **Anytime** band under the picture.
 - `–` folds it back into the bubble. `×` hides it; it waits in the menu bar at the top of the screen.
 - Languages: English, 한국어, 日本語, 中文. It follows your computer's language; change it at the top.
+- Light or dark: the button at the top switches between your computer's setting, light and dark.
 
 ## Install
 

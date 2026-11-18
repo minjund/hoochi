@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { CLAUDE_LAYOUT, CODEX_LAYOUT, LifecycleDiagram } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
@@ -52,15 +52,32 @@ const SAVE_DELAY_MS = 350
 const RUNNING_MS = 4000
 const EXISTING_MS = 15000
 
-/** Follows the system light/dark setting; affectUI reads `.dark` on <html>. */
-function useSystemTheme() {
+type Theme = 'system' | 'light' | 'dark'
+const THEME_KEY = 'hookwich.theme'
+const THEMES: Theme[] = ['system', 'light', 'dark']
+
+function loadTheme(): Theme {
+  try {
+    const v = localStorage.getItem(THEME_KEY)
+    return v === 'light' || v === 'dark' ? v : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+/** Light, dark, or the computer's setting; affectUI and the picture read `.dark` on <html>. */
+function useTheme(theme: Theme) {
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () => document.documentElement.classList.toggle('dark', media.matches)
+    const apply = () => {
+      const dark = theme === 'dark' || (theme === 'system' && media.matches)
+      document.documentElement.classList.toggle('dark', dark)
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    }
     apply()
     media.addEventListener('change', apply)
     return () => media.removeEventListener('change', apply)
-  }, [])
+  }, [theme])
 }
 
 /** False while the window is hidden in the menu bar: nothing is read then. */
@@ -97,6 +114,42 @@ const MinimizeIcon = (
     <path d="M3.5 8h9" strokeLinecap="round" />
   </svg>
 )
+
+const ThemeIcons: Record<Theme, ReactNode> = {
+  system: (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 2.5v11A5.5 5.5 0 0 0 8 2.5Z" fill="currentColor" />
+    </svg>
+  ),
+  light: (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    >
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+    </svg>
+  ),
+  dark: (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      <path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1Z" />
+    </svg>
+  ),
+}
 
 const HideIcon = (
   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -139,7 +192,8 @@ function lastChatOf(activity: Record<Agent, Activity>) {
 }
 
 export default function App() {
-  useSystemTheme()
+  const [theme, setTheme] = useState<Theme>(loadTheme)
+  useTheme(theme)
   const visible = usePageVisible()
   const [expanded, setIsExpanded] = useState(browserFlags.panel)
   const [config, setConfig] = useState<Config>(EMPTY_CONFIG)
@@ -514,6 +568,21 @@ export default function App() {
           onChange={next => {
             setLang(next)
             saveLang(next)
+          }}
+        />
+        <IconButton
+          size="sm"
+          variant="ghost"
+          icon={ThemeIcons[theme]}
+          label={`${t.themeLabel}: ${t.themes[theme]}`}
+          onClick={() => {
+            const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]
+            setTheme(next)
+            try {
+              localStorage.setItem(THEME_KEY, next)
+            } catch {
+              // only a convenience
+            }
           }}
         />
         <IconButton

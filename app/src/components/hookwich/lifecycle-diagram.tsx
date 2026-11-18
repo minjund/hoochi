@@ -289,8 +289,8 @@ const styles = `
 .ui-lcd-card {
   position: absolute; box-sizing: border-box; z-index: 5; width: min(260px, 70%); padding: 8px 10px; border-radius: 10px;
   transform: translate(-50%, calc(-100% - 6px)); pointer-events: none;
-  background: var(--ui-lcd-card-bg, #ffffff); color: var(--ui-lcd-ink);
-  border: 1px solid var(--ui-lcd-subtle); box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  background: var(--hw-card, #ffffff); color: var(--hw-ink, #191b1d);
+  border: 1px solid var(--hw-line-strong, rgba(0,0,0,.16)); box-shadow: 0 8px 24px rgba(0,0,0,.22);
   font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left;
 }
 .ui-lcd-card[data-below] { transform: translate(-50%, 6px); }
