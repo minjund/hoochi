@@ -3,71 +3,37 @@
 
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 
 use crate::codex::{detect_project, terminal_of};
 
-/// Which AI a process is, from its command line: `claude` or `codex` run in a terminal.
-fn agent_of(args: &str) -> Option<&'static str> {
-    let exe = args.split_whitespace().next()?;
-    let name = exe.rsplit('/').next()?;
-    match name {
+
+/// Which AI a process is, from its arguments: `claude` or `codex` run in a terminal.
+fn agent_of(args: &[String]) -> Option<&'static str> {
+    let exe = args.first()?;
+    match exe.rsplit('/').next()? {
         "claude" => Some("claude"),
         "codex" => Some("codex"),
-        _ if args.contains("@anthropic-ai/claude-code/cli") => Some("claude"),
+        _ if args.iter().any(|a| a.contains("@anthropic-ai/claude-code/cli")) => Some("claude"),
         _ => None,
     }
 }
 
-/// One line of `ps eww -axo pid=,tty=,command=`: the command with its environment after it.
-fn parse_line(line: &str) -> Option<(u32, &'static str, HashMap<String, String>)> {
-    let mut parts = line.trim_start().splitn(3, char::is_whitespace);
-    let pid = parts.next()?.parse().ok()?;
-    let tty = parts.next()?.trim();
-    let rest = parts.next()?.trim_start();
-    // Only chats in a terminal; helpers and background servers have no tty.
-    if tty.is_empty() || tty.starts_with('?') {
-        return None;
-    }
-    let agent = agent_of(rest)?;
-    let env = rest
-        .split_whitespace()
-        .filter_map(|w| w.split_once('='))
-        .filter(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-    Some((pid, agent, env))
+/// One process that may be a chat: its arguments and environment.
+pub struct Candidate {
+    pub pid: u32,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
 }
 
-/// The working folder of each pid, from one `lsof` call.
-fn cwds(pids: &[u32]) -> HashMap<u32, String> {
-    let mut out = HashMap::new();
-    if pids.is_empty() {
-        return out;
-    }
-    let list = pids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
-    let Ok(res) = Command::new("/usr/sbin/lsof").args(["-a", "-d", "cwd", "-Fpn", "-p", &list]).output() else {
-        return out;
-    };
-    let mut pid = 0;
-    for line in String::from_utf8_lossy(&res.stdout).lines() {
-        if let Some(p) = line.strip_prefix('p') {
-            pid = p.parse().unwrap_or(0);
-        } else if let Some(n) = line.strip_prefix('n') {
-            out.insert(pid, n.to_string());
-        }
-    }
-    out
-}
-
-pub fn parse(ps: &str) -> Vec<(u32, &'static str, String, String)> {
+/// One chat per terminal, newest first: `(pid, agent, terminal id, terminal label)`.
+pub fn choose(candidates: Vec<Candidate>) -> Vec<(u32, &'static str, String, String)> {
     let mut seen = HashSet::new();
-    let mut found: Vec<(u32, &'static str, String, String)> = ps
-        .lines()
-        .filter_map(parse_line)
-        .filter_map(|(pid, agent, env)| {
-            let (terminal, label) = terminal_of(|k| env.get(k).cloned())?;
-            Some((pid, agent, terminal, label))
+    let mut found: Vec<(u32, &'static str, String, String)> = candidates
+        .into_iter()
+        .filter_map(|c| {
+            let agent = agent_of(&c.args)?;
+            let (terminal, label) = terminal_of(|k| c.env.get(k).cloned())?;
+            Some((c.pid, agent, terminal, label))
         })
         .collect();
     // The newest chat in a terminal is the one in front.
@@ -76,23 +42,141 @@ pub fn parse(ps: &str) -> Vec<(u32, &'static str, String, String)> {
     found
 }
 
-/// `[{ agent, pid, terminal, terminalLabel, cwd, project }]`
+/// Reads the process table straight from the macOS kernel (no `ps`, no `lsof`).
+#[cfg(target_os = "macos")]
+mod kernel {
+    use std::collections::HashMap;
+    use std::ffi::{c_void, CStr};
+
+    use super::Candidate;
+
+    fn pids() -> Vec<i32> {
+        let n = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        if n <= 0 {
+            return Vec::new();
+        }
+        let mut buf = vec![0i32; n as usize + 64];
+        let bytes = (buf.len() * std::mem::size_of::<i32>()) as i32;
+        let got = unsafe { libc::proc_listallpids(buf.as_mut_ptr() as *mut c_void, bytes) };
+        buf.truncate(got.max(0) as usize);
+        buf
+    }
+
+    /// The short command name, and whether the process has a terminal.
+    fn name_and_tty(pid: i32) -> Option<(String, bool)> {
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+        let r = unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, &mut info as *mut _ as *mut c_void, size) };
+        if r != size {
+            return None;
+        }
+        let name = unsafe { CStr::from_ptr(info.pbi_comm.as_ptr()) }.to_string_lossy().to_string();
+        Some((name, info.e_tdev != u32::MAX && info.e_tdev != 0))
+    }
+
+    /// `KERN_PROCARGS2`: argc, the executable path, then argv and the environment, NUL-separated.
+    pub fn parse_procargs(buf: &[u8]) -> Option<(Vec<String>, HashMap<String, String>)> {
+        let argc = i32::from_ne_bytes(buf.get(..4)?.try_into().ok()?).max(0) as usize;
+        let mut rest = &buf[4..];
+        let skip_word = |r: &mut &[u8]| {
+            let end = r.iter().position(|b| *b == 0).unwrap_or(r.len());
+            let word = String::from_utf8_lossy(&r[..end]).to_string();
+            *r = &r[(end + 1).min(r.len())..];
+            word
+        };
+        skip_word(&mut rest); // the executable path
+        while rest.first() == Some(&0) {
+            rest = &rest[1..];
+        }
+        let mut args = Vec::with_capacity(argc);
+        for _ in 0..argc {
+            if rest.is_empty() {
+                break;
+            }
+            args.push(skip_word(&mut rest));
+        }
+        let mut env = HashMap::new();
+        while !rest.is_empty() && rest[0] != 0 {
+            let word = skip_word(&mut rest);
+            if let Some((k, v)) = word.split_once('=') {
+                env.insert(k.to_string(), v.to_string());
+            }
+        }
+        Some((args, env))
+    }
+
+    fn args_and_env(pid: i32) -> Option<(Vec<String>, HashMap<String, String>)> {
+        let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+        let mut argmax: libc::c_int = 0;
+        let mut size = std::mem::size_of::<libc::c_int>();
+        let r = unsafe {
+            libc::sysctl(mib.as_mut_ptr(), 2, &mut argmax as *mut _ as *mut c_void, &mut size, std::ptr::null_mut(), 0)
+        };
+        if r != 0 || argmax <= 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; argmax as usize];
+        let mut size = buf.len();
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+        let r = unsafe {
+            libc::sysctl(mib.as_mut_ptr(), 3, buf.as_mut_ptr() as *mut c_void, &mut size, std::ptr::null_mut(), 0)
+        };
+        if r != 0 {
+            return None;
+        }
+        parse_procargs(&buf[..size])
+    }
+
+    pub fn cwd(pid: u32) -> Option<String> {
+        let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as i32;
+        let r = unsafe {
+            libc::proc_pidinfo(pid as i32, libc::PROC_PIDVNODEPATHINFO, 0, &mut info as *mut _ as *mut c_void, size)
+        };
+        if r != size {
+            return None;
+        }
+        let raw = &info.pvi_cdir.vip_path;
+        let bytes: Vec<u8> = raw.iter().flat_map(|row| row.iter()).map(|c| *c as u8).take_while(|b| *b != 0).collect();
+        Some(String::from_utf8_lossy(&bytes).to_string()).filter(|p| !p.is_empty())
+    }
+
+    /// Processes that have a terminal, with their arguments and environment.
+    pub fn candidates() -> Vec<Candidate> {
+        pids()
+            .into_iter()
+            .filter(|pid| *pid > 0)
+            .filter_map(|pid| {
+                // Only processes with a terminal; the name alone won't do, since Claude Code's
+                // process is named after its version ("2.1.327"). The arguments say which AI it is.
+                let (_, tty) = name_and_tty(pid)?;
+                if !tty {
+                    return None;
+                }
+                let (args, env) = args_and_env(pid)?;
+                Some(Candidate { pid: pid as u32, args, env })
+            })
+            .collect()
+    }
+}
+
+/// `[{ agent, pid, terminal, terminalLabel, cwd, project, hasProject }]`
 pub fn running() -> Value {
-    let Ok(res) = Command::new("/bin/ps").args(["eww", "-axo", "pid=,tty=,command="]).output() else {
-        return json!([]);
-    };
-    let found = parse(&String::from_utf8_lossy(&res.stdout));
-    let dirs = cwds(&found.iter().map(|f| f.0).collect::<Vec<_>>());
+    #[cfg(target_os = "macos")]
+    let found = choose(kernel::candidates());
+    #[cfg(not(target_os = "macos"))]
+    let found: Vec<(u32, &'static str, String, String)> = Vec::new();
     Value::Array(
         found
             .into_iter()
             .map(|(pid, agent, terminal, label)| {
-                let cwd = dirs.get(&pid).cloned().unwrap_or_default();
+                #[cfg(target_os = "macos")]
+                let cwd = kernel::cwd(pid).unwrap_or_default();
+                #[cfg(not(target_os = "macos"))]
+                let cwd = String::new();
                 let project = if cwd.is_empty() { String::new() } else { detect_project(&cwd) };
-                {
-                    let has_project = !project.is_empty() && std::path::Path::new(&project).join(".git").exists();
-                    json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project })
-                }
+                let has_project = !project.is_empty() && std::path::Path::new(&project).join(".git").exists();
+                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project })
             })
             .collect(),
     )
@@ -102,24 +186,53 @@ pub fn running() -> Value {
 mod tests {
     use super::*;
 
+    fn cand(pid: u32, args: &[&str], env: &[(&str, &str)]) -> Candidate {
+        Candidate {
+            pid,
+            args: args.iter().map(|a| a.to_string()).collect(),
+            env: env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+        }
+    }
+
     #[test]
-    fn finds_chats_in_terminals_only() {
-        let ps = "\
-  100 ttys001  /Users/me/.local/bin/claude --mcp-config {\"a\": 1} TERM_PROGRAM=Whitebox WHITEBOX_SURFACE_ID=terminal:x:aaaa1111 HOME=/Users/me
-  101 ttys002  /usr/local/lib/node_modules/@openai/codex/bin/codex resume ITERM_SESSION_ID=w0t1p0:BEEF HOME=/Users/me
-  102 ??       /Applications/ChatGPT.app/Contents/MacOS/codex app-server HOME=/Users/me
-  103 ttys003  node /usr/local/bin/codex WHITEBOX_SURFACE_ID=terminal:x:cccc
-  104 ttys001  /Users/me/.local/bin/claude -p hi WHITEBOX_SURFACE_ID=terminal:x:aaaa1111
-  105 ttys004  /Users/me/.local/bin/claude HOME=/Users/me
-  106 ttys005  /bin/zsh -l WHITEBOX_SURFACE_ID=terminal:x:dddd";
-        let found = parse(ps);
-        let short: Vec<(u32, &str, &str)> = found.iter().map(|f| (f.0, f.1, f.2.as_str())).collect();
+    fn one_chat_per_terminal_newest_first() {
+        let found = choose(vec![
+            cand(100, &["/Users/me/.local/bin/claude", "--mcp-config", "{\"a\": 1}"], &[("WHITEBOX_SURFACE_ID", "terminal:x:aaaa1111")]),
+            cand(101, &["/usr/local/lib/node_modules/@openai/codex/bin/codex", "resume"], &[("ITERM_SESSION_ID", "w0t1p0:BEEF")]),
+            cand(103, &["node", "/usr/local/bin/codex"], &[("WHITEBOX_SURFACE_ID", "terminal:x:cccc")]),
+            cand(104, &["/Users/me/.local/bin/claude", "-p", "hi"], &[("WHITEBOX_SURFACE_ID", "terminal:x:aaaa1111")]),
+            cand(105, &["/Users/me/.local/bin/claude"], &[("HOME", "/Users/me")]),
+            cand(106, &["node", "/x/node_modules/@anthropic-ai/claude-code/cli.js"], &[("TMUX_PANE", "%3")]),
+        ]);
+        let short: Vec<(u32, &str, &str, &str)> = found.iter().map(|f| (f.0, f.1, f.2.as_str(), f.3.as_str())).collect();
         assert_eq!(
             short,
-            vec![(104, "claude", "whitebox:terminal:x:aaaa1111"), (101, "codex", "iterm:w0t1p0:BEEF")],
-            "one chat per terminal, newest first; no tty, no terminal id or not an AI → left out"
+            vec![
+                (106, "claude", "tmux:%3", "tmux %3"),
+                (104, "claude", "whitebox:terminal:x:aaaa1111", "Whitebox aaaa1111"),
+                (101, "codex", "iterm:w0t1p0:BEEF", "iTerm BEEF"),
+            ],
+            "one chat per terminal, newest first; no terminal id, or node running something else → left out"
         );
-        assert_eq!(found[1].3, "iTerm BEEF");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reads_kern_procargs2() {
+        let mut buf = 3i32.to_ne_bytes().to_vec();
+        buf.extend_from_slice(b"/usr/local/bin/claude\0\0\0\0claude\0--resume\0a b\0HOME=/Users/me\0WHITEBOX_SURFACE_ID=terminal:x:1\0\0junk");
+        let (args, env) = kernel::parse_procargs(&buf).unwrap();
+        assert_eq!(args, vec!["claude", "--resume", "a b"]);
+        assert_eq!(env.get("WHITEBOX_SURFACE_ID").map(String::as_str), Some("terminal:x:1"));
+        assert_eq!(env.len(), 2);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn finds_this_test_process_in_the_kernel_table() {
+        // The test runner has no tty under cargo, so check the parts directly on our own pid.
+        let pid = std::process::id();
+        assert!(kernel::cwd(pid).is_some_and(|c| c.starts_with('/')));
     }
 }
 
@@ -129,6 +242,12 @@ mod live {
     #[test]
     #[ignore]
     fn live_scan() {
+        let runs = 10;
+        let start = std::time::Instant::now();
+        for _ in 0..runs {
+            super::running();
+        }
+        println!("scan: {:.1} ms on average over {runs} runs", start.elapsed().as_secs_f64() * 1000.0 / runs as f64);
         for c in super::running().as_array().unwrap() {
             println!("{} {} {} {}", c["agent"], c["terminalLabel"], c["project"], c["pid"]);
         }

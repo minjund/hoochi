@@ -80,19 +80,41 @@ saved next to it). Then type `/hooks` in Codex once and trust the hookwich hooks
 
 ## Install
 
-**1. The plugin.** Type this in Claude Code, then answer `y` and pick where to install it:
+**1. The plugin.** In a terminal:
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
+
+Or inside Claude Code:
 
 ```
-/plugin install hookwich --marketplace minjund/hookwich
+/plugin marketplace add minjund/hookwich
+/plugin install hookwich@hookwich
 ```
 
-From a terminal instead: `claude plugin install hookwich --marketplace minjund/hookwich`
+Then start a new Claude Code chat.
 
-**2. The window (macOS).** The first time a Claude Code chat starts, the plugin downloads the window
-from the [releases page](https://github.com/minjund/hookwich/releases), checks that the file is
-genuine, and opens it.
+**2. The window (macOS 11 or later, Apple silicon or Intel).** The first time a Claude Code chat
+starts, the plugin downloads the window from the
+[latest release](https://github.com/minjund/hookwich/releases/latest), checks its SHA-256, and opens
+it. Type `/hookwich` to show or hide it.
 
-Type `/hookwich` to show or hide the window.
+To install the window by hand instead:
+
+```sh
+mkdir -p ~/.hookwich && cd ~/.hookwich
+curl -fsSLO https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip
+curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip.sha256 | shasum -a 256 -c
+ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
+```
+
+The app is not notarized by Apple. Downloaded with `curl` as above it opens normally; if you
+download the zip in a browser, macOS may refuse to open it the first time — right-click
+`Hookwich.app` and choose **Open**.
+
+**3. Codex (optional).** Open the window's Codex tab and press **Connect Codex**, then type `/hooks`
+in Codex once and trust the hookwich hooks.
 
 ## Is it safe?
 
@@ -105,8 +127,9 @@ Only add commands you would run yourself. A command is stopped after 30 seconds.
   first, then adds what is switched on. When Claude is about to finish, it asks Claude to keep going
   at most once per answer, so it never loops.
 - `app/` — the window: Tauri (Rust) + React + free [affectUI](https://www.affectui.com) components.
-- Both share three files in `~/.hookwich/`: `config.json` (what you added), `activity.json` (what just
-  happened) and `control.json` (show/hide).
+- They share files in `~/.hookwich/`: `config.json` (what you added), `activity-claude.json` and
+  `activity-codex.json` (what just happened), `places.json` (projects and terminals seen),
+  `parked.json` (hooks you switched off) and `control.json` (show/hide).
 
 Build it yourself (needs Node 20+, Rust and the Xcode command line tools):
 

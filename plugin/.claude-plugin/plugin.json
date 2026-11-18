@@ -3,5 +3,11 @@
   "version": "0.1.0",
   "description": "Sandwich anything around Claude Code's lifecycle: put text, commands or skills before or after any hook, from a little floating window.",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "minjund",
+    "url": "https://github.com/minjund"
+  },
+  "homepage": "https://github.com/minjund/hookwich",
+  "repository": "https://github.com/minjund/hookwich"
 }

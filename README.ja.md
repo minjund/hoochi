@@ -73,18 +73,38 @@ Codex タブを使うには **Codex を接続** を一度押します。hookwich
 
 ## インストール
 
-**1. プラグイン**：Claude Code に次を入力し、`y` を押してインストール先を選びます。
+**1. プラグイン**：ターミナルで
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
+
+または Claude Code の中で
 
 ```
-/plugin install hookwich --marketplace minjund/hookwich
+/plugin marketplace add minjund/hookwich
+/plugin install hookwich@hookwich
 ```
 
-ターミナルからは `claude plugin install hookwich --marketplace minjund/hookwich` です。
+そのあと Claude Code の会話を新しく始めてください。
 
-**2. ウィンドウ（macOS）**：Claude Code の会話を初めて始めたとき、プラグインが
-[リリースページ](https://github.com/minjund/hookwich/releases)からウィンドウを取得し、本物のファイルか確認してから開きます。
+**2. ウィンドウ（macOS 11 以降、Apple シリコン・Intel どちらも）**：Claude Code の会話を初めて始めたとき、プラグインが
+[最新リリース](https://github.com/minjund/hookwich/releases/latest)からウィンドウを取得し、SHA-256 で本物か確認してから開きます。
+`/hookwich` と入力すると表示・非表示を切り替えられます。
 
-`/hookwich` と入力するとウィンドウを表示・非表示にできます。
+ウィンドウを手動で入れるには：
+
+```sh
+mkdir -p ~/.hookwich && cd ~/.hookwich
+curl -fsSLO https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip
+curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip.sha256 | shasum -a 256 -c
+ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
+```
+
+このアプリは Apple の公証を受けていません。上のように `curl` で取得すればそのまま開きます。ブラウザで zip を取得すると、
+最初は macOS が開くのを止めることがあります。そのときは `Hookwich.app` を右クリックして **開く** を選んでください。
+
+**3. Codex（任意）**：ウィンドウの Codex タブで **Codex を接続** を押し、Codex で `/hooks` を一度入力して hookwich のフックを信頼してください。
 
 ## 安全ですか？
 

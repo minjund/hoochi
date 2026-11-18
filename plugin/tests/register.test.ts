@@ -243,8 +243,49 @@ test('typing a chat marks where you are, and later moments keep that mark', asyn
   const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
   expect(places.terminals['whitebox:terminal:t1'].agent).toBe('claude')
 
-  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {} })
+  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {}, tool_use_id: 't1' })
   const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
   expect(after.lastEvent).toBe('PostToolUse')
   expect(after.lastChat).toEqual(typed)
+})
+
+test('with the window app in place, /hookwich opens it and clears an old message', async ($, on) => {
+  const { ran } = machine(
+    on,
+    { [CONFIG]: v2({}), '/home/me/.hookwich/Hookwich.app': '' },
+    { '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' } },
+  )
+  const statuses: (string | undefined)[] = []
+  on('ui.status', (_, e) => {
+    statuses.push(e.text)
+    return { value: undefined }
+  })
+
+  const out = await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
+  expect((out as { text: string }).text).toBe('hookwich: toggle')
+  expect(ran).toContain('/usr/bin/open -g /home/me/.hookwich/Hookwich.app')
+  expect(statuses).toEqual([undefined])
+})
+
+test('without the app and no release to download, it says so plainly', async ($, on) => {
+  const { ran } = machine(
+    on,
+    { [CONFIG]: v2({}) },
+    {
+      '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
+      '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip':
+        { exitCode: 22, stdout: '' },
+    },
+  )
+  const statuses: (string | undefined)[] = []
+  on('ui.status', (_, e) => {
+    statuses.push(e.text)
+    return { value: undefined }
+  })
+
+  const out = await $.command.run({ command: 'hookwich', args: 'show', origin: 'composer' } as never)
+  expect((out as { text: string }).text).toContain('could not download the window app')
+  expect(statuses[0]).toContain('could not download the window app')
+  expect(ran.some(l => l.startsWith('/usr/bin/open'))).toBe(false)
 })

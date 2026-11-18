@@ -34,7 +34,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "Sandwich anything around Claude Code's lifecycle",
     "icon": [
@@ -45,7 +47,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
     }
   }
 }

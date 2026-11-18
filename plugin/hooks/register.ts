@@ -268,30 +268,53 @@ async function appPath($: EngineInterface, dir: string): Promise<string | undefi
   return undefined
 }
 
-/** Fetches the app from the latest release, checking its SHA-256. */
-async function installApp($: EngineInterface, dir: string): Promise<string | undefined> {
-  const arch = (await $.process.run(['uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
-  const zip = `${dir}/Hookwich-macos-${arch}.zip`
-  const url = `${RELEASE}/Hookwich-macos-${arch}.zip`
-  const got = await $.process.run(['curl', '-fsSL', '-o', zip, url], { timeoutMs: 120_000 })
-  const sums = await $.process.run(['curl', '-fsSL', `${url}.sha256`], { timeoutMs: 30_000 })
-  if (got.exitCode !== 0 || sums.exitCode !== 0) return undefined
-  const want = sums.stdout.trim().split(/\s+/)[0] ?? ''
-  const have = (await $.process.run(['shasum', '-a', '256', zip])).stdout.trim().split(/\s+/)[0]
-  if (want === '' || want !== have) return undefined
-  const unzip = await $.process.run(['ditto', '-x', '-k', zip, dir])
-  if (unzip.exitCode !== 0) return undefined
-  return appPath($, dir)
+/** Why the window app could not be opened, for the status line. */
+type AppTrouble = 'not-mac' | 'download' | 'checksum' | 'unzip'
+
+const TROUBLE: Record<AppTrouble, string> = {
+  'not-mac': 'hookwich: the window app is macOS only',
+  download: 'hookwich: could not download the window app (offline, or no release yet) — see the README',
+  checksum: 'hookwich: the downloaded window app did not match its checksum, so it was not opened',
+  unzip: 'hookwich: could not unpack the window app',
 }
 
-/** Opens the window app if it is not up; installs it the first time. */
-async function ensureApp($: EngineInterface, dir: string): Promise<boolean> {
-  const os = (await $.process.run(['uname', '-s']).catch(() => undefined))?.stdout.trim()
-  if (os !== 'Darwin') return false
-  const path = (await appPath($, dir)) ?? (await installApp($, dir).catch(() => undefined))
-  if (path === undefined) return false
-  await $.process.run(['open', '-g', path]).catch(() => undefined)
-  return true
+/** Fetches the app from the latest release, checking its SHA-256. */
+async function installApp($: EngineInterface, dir: string): Promise<string | AppTrouble> {
+  const arch = (await $.process.run(['/usr/bin/uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
+  const zip = `${dir}/Hookwich-macos-${arch}.zip`
+  const url = `${RELEASE}/Hookwich-macos-${arch}.zip`
+  const got = await $.process.run(['/usr/bin/curl', '-fsSL', '-o', zip, url], { timeoutMs: 120_000 })
+  const sums = await $.process.run(['/usr/bin/curl', '-fsSL', `${url}.sha256`], { timeoutMs: 30_000 })
+  if (got.exitCode !== 0 || sums.exitCode !== 0) return 'download'
+  const want = sums.stdout.trim().split(/\s+/)[0] ?? ''
+  const have = (await $.process.run(['/usr/bin/shasum', '-a', '256', zip])).stdout.trim().split(/\s+/)[0]
+  if (want === '' || want !== have) return 'checksum'
+  const unzip = await $.process.run(['/usr/bin/ditto', '-x', '-k', zip, dir])
+  if (unzip.exitCode !== 0) return 'unzip'
+  return (await appPath($, dir)) ?? 'unzip'
+}
+
+/** Opens the window app if it is not up; installs it the first time. One at a time per session. */
+let opening: Promise<AppTrouble | undefined> | undefined
+function ensureApp($: EngineInterface, dir: string): Promise<AppTrouble | undefined> {
+  opening ??= (async () => {
+    try {
+      const os = (await $.process.run(['/usr/bin/uname', '-s']).catch(() => undefined))?.stdout.trim()
+      if (os !== 'Darwin') return 'not-mac' as const
+      const path = (await appPath($, dir)) ?? (await installApp($, dir).catch(() => 'download' as const))
+      if (path === 'download' || path === 'checksum' || path === 'unzip') return path
+      await $.process.run(['/usr/bin/open', '-g', path]).catch(() => undefined)
+      return undefined
+    } finally {
+      opening = undefined
+    }
+  })()
+  return opening
+}
+
+/** Says why the window is missing, or clears an earlier message once it is there. */
+function showTrouble($: EngineInterface, trouble: AppTrouble | undefined) {
+  $.ui.status(trouble === undefined ? undefined : TROUBLE[trouble])
 }
 
 async function sendControl($: EngineInterface, dir: string, cmd: 'show' | 'hide' | 'toggle') {
@@ -395,9 +418,7 @@ export const register: Register = on => {
     void placeOf($)
       .then(place => notePlace($, dir, place))
       .catch(() => undefined)
-    void ensureApp($, dir).then(ok => {
-      if (!ok) $.ui.status('hookwich: window app not installed — see the README')
-    })
+    void ensureApp($, dir).then(trouble => showTrouble($, trouble))
 
     return started
   })
@@ -406,12 +427,11 @@ export const register: Register = on => {
     const dir = `${await home($)}/.hookwich`
     const word = (typeof e.args === 'string' ? e.args : '').trim()
     const cmd = word === 'show' || word === 'hide' ? word : 'toggle'
-    const ok = await ensureApp($, dir)
+    const trouble = await ensureApp($, dir)
+    showTrouble($, trouble)
     await sendControl($, dir, cmd)
 
-    return {
-      text: ok ? `hookwich: ${cmd}` : 'hookwich: the window app is not installed yet — see the README.',
-    }
+    return { text: trouble === undefined ? `hookwich: ${cmd}` : `${TROUBLE[trouble]}.` }
   })
 
   on('classic.*', async ($, e, next) => {

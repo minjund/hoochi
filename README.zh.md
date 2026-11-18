@@ -73,18 +73,38 @@ Codex 的钩子和 `/hooks` 一样在原处关闭，所以信任保持不变。�
 
 ## 安装
 
-**1. 插件**：在 Claude Code 中输入下面这行，按 `y`，再选择安装位置。
+**1. 插件**：在终端中
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
+
+或在 Claude Code 中
 
 ```
-/plugin install hookwich --marketplace minjund/hookwich
+/plugin marketplace add minjund/hookwich
+/plugin install hookwich@hookwich
 ```
 
-在终端中则是 `claude plugin install hookwich --marketplace minjund/hookwich`。
+然后重新开始一个 Claude Code 对话。
 
-**2. 窗口（macOS）**：第一次开始 Claude Code 对话时，插件会从[发布页面](https://github.com/minjund/hookwich/releases)
-下载窗口程序，确认文件可信后打开。
-
+**2. 窗口（macOS 11 及以上，Apple 芯片和 Intel 都可以）**：第一次开始 Claude Code 对话时，插件会从
+[最新发布](https://github.com/minjund/hookwich/releases/latest)下载窗口，用 SHA-256 确认文件可信后打开。
 输入 `/hookwich` 即可显示或隐藏窗口。
+
+要手动安装窗口：
+
+```sh
+mkdir -p ~/.hookwich && cd ~/.hookwich
+curl -fsSLO https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip
+curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip.sha256 | shasum -a 256 -c
+ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
+```
+
+这个应用没有经过 Apple 公证。像上面这样用 `curl` 下载可以直接打开；如果用浏览器下载 zip，macOS 第一次可能会阻止打开，
+这时右键点 `Hookwich.app`，选择 **打开**。
+
+**3. Codex（可选）**：在窗口的 Codex 标签页按 **连接 Codex**，然后在 Codex 中输入一次 `/hooks`，信任 hookwich 的钩子。
 
 ## 安全吗？
 

@@ -73,18 +73,38 @@ Codex 탭을 쓰려면 **Codex 연결하기**를 한 번 누르세요. hookwich�
 
 ## 설치
 
-**1. 플러그인**: Claude Code에 아래를 입력하고, `y`를 누른 뒤 설치할 곳을 고르세요.
+**1. 플러그인**: 터미널에서
+
+```sh
+claude plugin install hookwich --marketplace minjund/hookwich
+```
+
+또는 Claude Code 안에서
 
 ```
-/plugin install hookwich --marketplace minjund/hookwich
+/plugin marketplace add minjund/hookwich
+/plugin install hookwich@hookwich
 ```
 
-터미널에서는 `claude plugin install hookwich --marketplace minjund/hookwich`예요.
+그다음 Claude Code 대화를 새로 시작하세요.
 
-**2. 창(macOS)**: Claude Code 대화를 처음 시작할 때 플러그인이 [릴리스 페이지](https://github.com/minjund/hookwich/releases)에서
-창을 받아요. 진짜 파일이 맞는지 확인한 뒤 열어요.
-
+**2. 창(macOS 11 이상, 애플 실리콘·인텔 모두)**: Claude Code 대화를 처음 시작할 때 플러그인이
+[최신 릴리스](https://github.com/minjund/hookwich/releases/latest)에서 창을 받아, SHA-256으로 진짜 파일인지 확인한 뒤 열어요.
 `/hookwich`를 입력하면 창을 보이거나 숨겨요.
+
+창을 직접 설치하려면:
+
+```sh
+mkdir -p ~/.hookwich && cd ~/.hookwich
+curl -fsSLO https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip
+curl -fsSL https://github.com/minjund/hookwich/releases/latest/download/Hookwich-macos-arm64.zip.sha256 | shasum -a 256 -c
+ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
+```
+
+이 앱은 애플 공증을 받지 않았어요. 위처럼 `curl`로 받으면 그냥 열려요. 브라우저로 zip을 받으면 처음에 macOS가 열기를 막을 수 있어요.
+그때는 `Hookwich.app`을 오른쪽 클릭해서 **열기**를 고르세요.
+
+**3. Codex(선택)**: 창의 Codex 탭에서 **Codex 연결하기**를 누르고, Codex에서 `/hooks`를 한 번 입력해 hookwich 훅을 신뢰해 주세요.
 
 ## 안전한가요?
 
@@ -96,8 +116,8 @@ Codex 탭을 쓰려면 **Codex 연결하기**를 한 번 누르세요. hookwich�
 - `plugin/`: Claude Code 쪽이에요. 순간("훅 이벤트")마다 원래 있던 훅이 먼저 돌고, 그다음 켜 둔 것을 넣어요.
   Claude가 답을 마치려 할 때는 한 답에 많아야 한 번만 더 이어 가게 해서 끝없이 반복되지 않아요.
 - `app/`: 창이에요. Tauri(Rust) + React + 무료 [affectUI](https://www.affectui.com) 컴포넌트로 만들었어요.
-- 둘은 `~/.hookwich/`의 파일 세 개를 같이 써요. `config.json`(넣은 것), `activity.json`(방금 일어난 일),
-  `control.json`(보이기·숨기기)이에요.
+- 둘은 `~/.hookwich/`의 파일을 같이 써요. `config.json`(넣은 것), `activity-claude.json`·`activity-codex.json`(방금 일어난 일),
+  `places.json`(본 프로젝트·터미널), `parked.json`(꺼 둔 훅), `control.json`(보이기·숨기기)이에요.
 
 직접 빌드하려면 Node 20+, Rust, Xcode 명령줄 도구가 필요해요.
 

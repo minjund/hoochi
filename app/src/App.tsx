@@ -62,6 +62,17 @@ function useSystemTheme() {
   }, [])
 }
 
+/** False while the window is hidden in the menu bar: nothing is read then. */
+function usePageVisible() {
+  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', update)
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [])
+  return visible
+}
+
 function newItem(event: string, agent: Agent): Item {
   const slot = slotOf(event, agent)
   return {
@@ -121,6 +132,7 @@ function lastChatOf(activity: Record<Agent, Activity>) {
 
 export default function App() {
   useSystemTheme()
+  const visible = usePageVisible()
   const [expanded, setIsExpanded] = useState(browserFlags.panel)
   const [config, setConfig] = useState<Config>(EMPTY_CONFIG)
   const [activity, setActivity] = useState<Record<Agent, Activity>>({
@@ -165,6 +177,7 @@ export default function App() {
 
   // Read the files: the plugin and the Codex hook write activity, and may switch "once" items off.
   useEffect(() => {
+    if (!visible) return
     let alive = true
     const tick = async () => {
       try {
@@ -187,7 +200,7 @@ export default function App() {
       alive = false
       window.clearInterval(id)
     }
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     if (expanded && skills.length === 0)
@@ -198,7 +211,7 @@ export default function App() {
 
   // Every chat open in a terminal, found from the process list, even before hookwich hears from it.
   useEffect(() => {
-    if (!expanded) return
+    if (!expanded || !visible) return
     let alive = true
     const scan = () =>
       void runningChats()
@@ -210,7 +223,7 @@ export default function App() {
       alive = false
       window.clearInterval(id)
     }
-  }, [expanded])
+  }, [expanded, visible])
 
   useEffect(() => {
     if (expanded)
@@ -342,7 +355,7 @@ export default function App() {
   // Hooks already set up outside hookwich at this place, read again now and then.
   const existingProject = scope === 'global' ? '' : scope === 'project' ? projectKey : terminalProject
   useEffect(() => {
-    if (!expanded) return
+    if (!expanded || !visible) return
     let alive = true
     const read = () =>
       void existingHooks(existingProject)
@@ -354,7 +367,7 @@ export default function App() {
       alive = false
       window.clearInterval(id)
     }
-  }, [expanded, existingProject])
+  }, [expanded, visible, existingProject])
   const existingCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const h of existing[agent]) if (!h.off) counts[h.event] = (counts[h.event] ?? 0) + 1
