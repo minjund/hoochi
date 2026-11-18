@@ -7,6 +7,7 @@ import { Button } from './components/ui/button'
 import { IconButton } from './components/ui/icon-button'
 import { SegmentedControl } from './components/ui/segmented-control'
 import { Select } from './components/ui/select'
+import { Switch } from './components/ui/switch'
 import {
   browserFlags,
   codexConnect,
@@ -85,6 +86,31 @@ const HideIcon = (
 
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
+const FOLLOW_KEY = 'hookwich.follow'
+function loadFollow(): boolean {
+  try {
+    return localStorage.getItem(FOLLOW_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+function saveFollow(on: boolean) {
+  try {
+    localStorage.setItem(FOLLOW_KEY, on ? 'on' : 'off')
+  } catch {
+    // only a convenience
+  }
+}
+
+/** The chat you opened or typed in last, across Claude Code and Codex. */
+function lastChatOf(activity: Record<Agent, Activity>) {
+  const all = (['claude', 'codex'] as const).flatMap(agent => {
+    const chat = activity[agent].lastChat
+    return chat ? [{ agent, ...chat }] : []
+  })
+  return all.sort((a, b) => b.at - a.at)[0]
+}
+
 export default function App() {
   useSystemTheme()
   const [expanded, setIsExpanded] = useState(browserFlags.panel)
@@ -103,7 +129,14 @@ export default function App() {
   const [terminalKey, setTerminalKey] = useState('')
   const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [codexNote, setCodexNote] = useState('')
+  const [follow, setFollowState] = useState(loadFollow)
   const t = UI[lang]
+
+  const setFollow = (on: boolean) => {
+    setFollowState(on)
+    saveFollow(on)
+    if (on) followed.current = 0
+  }
 
   useEffect(() => {
     document.documentElement.lang = lang
@@ -148,13 +181,25 @@ export default function App() {
   }, [expanded, skills.length])
 
   useEffect(() => {
-    if (expanded && agent === 'codex')
+    if (expanded)
       void codexStatus()
         .then(setCodex)
         .catch(() => undefined)
   }, [expanded, agent])
 
-  // Open on the project and terminal that were active last, until the user picks others.
+  // Follow the chat you typed in last: its AI's picture, its project and its terminal.
+  // Not while a moment is open for editing; it catches up when you go back to the picture.
+  const latest = lastChatOf(activity)
+  const followed = useRef(0)
+  useEffect(() => {
+    if (!follow || !latest || selected !== null || latest.at <= followed.current) return
+    followed.current = latest.at
+    setAgent(latest.agent)
+    setProjectKey(latest.place.project)
+    setTerminalKey(latest.place.terminal)
+  }, [follow, latest, selected])
+
+  // Without a chat seen yet, open on the project and terminal that were active last.
   const last = activity[agent].place
   useEffect(() => {
     if (last && !projectKey) setProjectKey(last.project)
@@ -293,6 +338,26 @@ export default function App() {
       </header>
 
       <div className="hw-controls">
+        <Switch
+          size="sm"
+          placement="end"
+          label={t.follow}
+          description={
+            follow && latest
+              ? t.followNow(
+                  t.agents[latest.agent],
+                  places.terminals[latest.place.terminal]?.label ||
+                    latest.place.terminalLabel ||
+                    folderName(latest.place.project),
+                ) +
+                (latest.agent === 'claude' && codex?.installed && !codex.connected
+                  ? ` — ${t.followCodex}`
+                  : '')
+              : t.followHint
+          }
+          checked={follow}
+          onChange={e => setFollow(e.currentTarget.checked)}
+        />
         <SegmentedControl
           fullWidth
           size="sm"
@@ -305,6 +370,7 @@ export default function App() {
           onChange={next => {
             setAgent(next)
             setSelected(null)
+            setFollow(false)
           }}
         />
         <SegmentedControl
@@ -327,7 +393,10 @@ export default function App() {
               placeholder={t.pickProject}
               options={projectOptions}
               value={projectKey || null}
-              onChange={setProjectKey}
+              onChange={next => {
+                setProjectKey(next)
+                setFollow(false)
+              }}
             />
           ) : (
             <p className="hw-editor-hint">{t.noPlaces}</p>
@@ -340,7 +409,10 @@ export default function App() {
               placeholder={t.pickTerminal}
               options={terminalOptions}
               value={terminalKey || null}
-              onChange={setTerminalKey}
+              onChange={next => {
+                setTerminalKey(next)
+                setFollow(false)
+              }}
             />
           ) : (
             <p className="hw-editor-hint">{t.noPlaces}</p>

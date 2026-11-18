@@ -27,8 +27,8 @@ type Box = {
 }
 
 type DiagramLabel = {
-  key: 'turn' | 'loop' | 'resumed'
-  tone: 'turn' | 'agent' | 'resume'
+  key: 'turn' | 'loop' | 'resumed' | 'anytime'
+  tone: 'turn' | 'agent' | 'resume' | 'anytime'
   x: number
   y: number
   lineHeight?: number
@@ -46,7 +46,7 @@ export type DiagramLayout = {
   sideArrows: readonly { from: number; to: number; y: number; toY?: number; bendX?: number }[]
   loops: readonly { tone: 'orange' | 'blue' | 'resume'; path: string; head: string }[]
   containers: readonly {
-    tone: 'turn' | 'agent'
+    tone: 'turn' | 'agent' | 'anytime'
     x: number
     y: number
     width: number
@@ -56,9 +56,9 @@ export type DiagramLayout = {
   labels: readonly DiagramLabel[]
 }
 
-// Preserve the original Claude figure's 520 × 1336 geometry exactly.
+// The original Claude figure's 520 × 1336 geometry, with the "anytime" moments moved into a band below.
 export const CLAUDE_LAYOUT: DiagramLayout = {
-  viewBox: [0, 0, 520, 1336],
+  viewBox: [0, 0, 520, 1400],
   title: 'Claude Code hooks lifecycle',
   boxes: [
     { x: 15, y: 25, width: 115, events: ['Setup'], tone: 'side' },
@@ -93,22 +93,24 @@ export const CLAUDE_LAYOUT: DiagramLayout = {
     { x: 160, y: 956, width: 190, events: ['PreCompact'], tone: 'neutral' },
     { x: 160, y: 1029, width: 190, events: ['PostCompact'], tone: 'neutral' },
     { x: 160, y: 1102, width: 190, events: ['SessionEnd'], tone: 'neutral' },
-    { x: 15, y: 818, width: 115, events: ['Notification'], tone: 'side' },
-    { x: 15, y: 872, width: 115, events: ['ConfigChange'], tone: 'side' },
-    { x: 15, y: 926, width: 115, events: ['PreModelSwitch'], tone: 'neutral' },
-    { x: 15, y: 980, width: 115, events: ['PostModelSwitch'], tone: 'side' },
-    { x: 15, y: 1034, width: 115, events: ['WorktreeCreate'], tone: 'side' },
-    { x: 15, y: 1088, width: 115, events: ['WorktreeRemove'], tone: 'side' },
+    // Moments with no fixed place in the order: the official figure stacks them at the bottom
+    // left, which reads as if they came after Stop. hookwich gathers them in an "anytime" band.
+    { x: 24, y: 1206, width: 150, events: ['InstructionsLoaded'], tone: 'side' },
+    { x: 186, y: 1206, width: 150, events: ['WorktreeCreate'], tone: 'side' },
+    { x: 348, y: 1206, width: 150, events: ['ConfigChange'], tone: 'side' },
+    { x: 24, y: 1262, width: 150, events: ['Notification'], tone: 'side' },
+    { x: 186, y: 1262, width: 150, events: ['MessageDisplay'], tone: 'side' },
+    { x: 348, y: 1262, width: 150, events: ['PreModelSwitch'], tone: 'side' },
+    { x: 24, y: 1318, width: 150, events: ['PostModelSwitch'], tone: 'side' },
     {
-      x: 15,
-      y: 1142,
-      width: 115,
+      x: 186,
+      y: 1318,
+      width: 150,
       height: 54,
       events: ['CwdChanged', 'FileChanged', 'DirectoryAdded'],
       tone: 'side',
     },
-    { x: 15, y: 1215, width: 115, events: ['InstructionsLoaded'], tone: 'side' },
-    { x: 15, y: 1269, width: 115, events: ['MessageDisplay'], tone: 'side' },
+    { x: 348, y: 1318, width: 150, events: ['WorktreeRemove'], tone: 'side' },
   ],
   downward: [
     [67, 96],
@@ -140,10 +142,12 @@ export const CLAUDE_LAYOUT: DiagramLayout = {
   containers: [
     { tone: 'turn', x: 44, y: 88, width: 420, height: 775 },
     { tone: 'agent', x: 60, y: 158, width: 380, height: 610 },
+    { tone: 'anytime', x: 8, y: 1170, width: 504, height: 216 },
   ],
   labels: [
     { key: 'loop', tone: 'agent', x: 85, y: 185, lineHeight: 17 },
     { key: 'turn', tone: 'turn', x: 69, y: 785, lineHeight: 17 },
+    { key: 'anytime', tone: 'anytime', x: 24, y: 1194 },
     { key: 'resumed', tone: 'resume', x: 483, y: 564, rotation: -90, textAnchor: 'middle' },
   ],
 }
@@ -248,9 +252,11 @@ const styles = `
 .ui-lcd-container { fill: none; stroke-width: 2.5; stroke-dasharray: 6 4; }
 .ui-lcd-turn { stroke: var(--ui-lcd-blue); }
 .ui-lcd-agent { stroke: var(--ui-lcd-orange); }
+.ui-lcd-anytime { stroke: var(--ui-lcd-side-border); }
 .ui-lcd-container-label { font-size: 14px; font-weight: 800; letter-spacing: 2px; pointer-events: none; }
 .ui-lcd-turn-label { fill: var(--ui-lcd-blue); }
 .ui-lcd-agent-label { fill: var(--ui-lcd-orange); }
+.ui-lcd-anytime-label { fill: var(--ui-lcd-muted); font-size: 12px; letter-spacing: 1px; }
 .ui-lcd-arrow { fill: none; stroke: var(--ui-lcd-muted); stroke-width: 2; }
 .ui-lcd-arrow-head { fill: var(--ui-lcd-muted); }
 .ui-lcd-side-arrow { stroke: var(--ui-lcd-side-border); stroke-width: 1.5; stroke-dasharray: 5 3; }

@@ -22,6 +22,8 @@ export const browserFlags = {
   panel: !inApp && location.search.includes('panel'),
   select: inApp ? null : new URLSearchParams(location.search).get('select'),
   agent: inApp ? null : new URLSearchParams(location.search).get('agent'),
+  /** `?chat=codex`: the demo's last chat was typed in Codex, in another terminal */
+  chat: inApp ? null : new URLSearchParams(location.search).get('chat'),
 }
 
 if (browserFlags.demo) {
@@ -74,7 +76,13 @@ if (browserFlags.demo) {
       },
     }),
   )
-  const activity = (lastEvent: string) =>
+  const other = {
+    project: '/Users/me/Projects/blog',
+    terminal: 'iterm:w0t1p0',
+    terminalLabel: 'iTerm w0t1p0',
+  }
+  const codexLast = browserFlags.chat === 'codex'
+  const activity = (lastEvent: string, lastChat: object) =>
     JSON.stringify({
       lastEvent,
       lastAt: now + 60_000,
@@ -91,9 +99,16 @@ if (browserFlags.demo) {
         { event: 'Stop', at: now - 4000, kind: 'command', label: '$ npm test', tool: '', scope: 'project' },
       ],
       place,
+      lastChat,
     })
-  localStorage.setItem('hookwich.activity.claude', activity('PreToolUse'))
-  localStorage.setItem('hookwich.activity.codex', activity('PreModelRequest'))
+  localStorage.setItem(
+    'hookwich.activity.claude',
+    activity('PreToolUse', { at: codexLast ? now - 60_000 : now - 9000, place }),
+  )
+  localStorage.setItem(
+    'hookwich.activity.codex',
+    activity('PreModelRequest', { at: codexLast ? now - 2000 : now - 120_000, place: other }),
+  )
   localStorage.setItem(
     'hookwich.places',
     JSON.stringify({
@@ -149,6 +164,7 @@ export function parseActivity(text: string): Activity {
       counts: a.counts && typeof a.counts === 'object' ? a.counts : {},
       recent: Array.isArray(a.recent) ? a.recent : [],
       place: a.place,
+      lastChat: a.lastChat && typeof a.lastChat.at === 'number' && a.lastChat.place ? a.lastChat : undefined,
     }
   } catch {
     return EMPTY_ACTIVITY

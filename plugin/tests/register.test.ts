@@ -230,3 +230,21 @@ test('the window learns this project and terminal, and where the last event was'
   expect(places.terminals['whitebox:terminal:t1'].label).toBe('Whitebox t1')
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').place.project).toBe('/work/app')
 })
+
+test('typing a chat marks where you are, and later moments keep that mark', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({}) })
+  on('classic.UserPromptSubmit', () => ({}))
+  on('classic.PostToolUse', () => ({}))
+
+  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  const typed = JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat
+  expect(typed.place.terminal).toBe('whitebox:terminal:t1')
+  expect(typed.place.project).toBe('/work/app')
+  const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
+  expect(places.terminals['whitebox:terminal:t1'].agent).toBe('claude')
+
+  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {} })
+  const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
+  expect(after.lastEvent).toBe('PostToolUse')
+  expect(after.lastChat).toEqual(typed)
+})

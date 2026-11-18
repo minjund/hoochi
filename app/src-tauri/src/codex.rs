@@ -267,7 +267,8 @@ pub fn run_hook(event: &str) -> i32 {
     let session_id = str_of(&e, "session_id").to_string();
     let project = detect_project(if cwd.is_empty() { "." } else { &cwd });
     let (terminal, terminal_label) = detect_terminal(&session_id);
-    if event == "SessionStart" {
+    let here = event == "SessionStart" || event == "UserPromptSubmit";
+    if here {
         note_place(&project, &terminal, &terminal_label);
     }
 
@@ -346,6 +347,10 @@ pub fn run_hook(event: &str) -> i32 {
     seen["lastEvent"] = json!(event);
     seen["lastAt"] = json!(at);
     seen["place"] = json!({ "project": project, "terminal": terminal, "terminalLabel": terminal_label });
+    if here {
+        // You are here: the window follows the last chat you opened or typed in.
+        seen["lastChat"] = json!({ "at": at, "place": seen["place"].clone() });
+    }
     let count = seen.pointer(&format!("/counts/{event}")).and_then(Value::as_u64).unwrap_or(0) + 1;
     if !seen["counts"].is_object() {
         seen["counts"] = json!({});

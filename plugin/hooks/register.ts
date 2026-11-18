@@ -39,6 +39,9 @@ const TOOL_EVENTS: ReadonlySet<string> = new Set(['PreToolUse', 'PostToolUse', '
 /** Too frequent to log each one: recorded only when something was put in. */
 const QUIET: ReadonlySet<string> = new Set(['MessageDisplay', 'FileChanged'])
 
+/** You are here: a chat opened or a message typed. The window follows these. */
+const HERE: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit'])
+
 const activity = atom({ plugin: 'hookwich', key: 'activity' } as const, emptyActivity(), {
   shape: 'activity-2',
 })
@@ -347,6 +350,8 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     await $.fs.write(`${dir}/config.json`, JSON.stringify(next2, null, 2)).catch(() => undefined)
   }
 
+  if (HERE.has(event)) await notePlace($, dir, place).catch(() => undefined)
+
   if (!QUIET.has(event) || fired.length > 0) {
     const before0 = await read($, activity)
     const seen: Activity = {
@@ -355,6 +360,7 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
       counts: { ...before0.counts, [event]: (before0.counts[event] ?? 0) + 1 },
       recent: [...before0.recent, ...fired].slice(-40),
       place,
+      lastChat: HERE.has(event) ? { at, place } : before0.lastChat,
     }
     await update($, activity, () => seen)
     await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen)).catch(() => undefined)

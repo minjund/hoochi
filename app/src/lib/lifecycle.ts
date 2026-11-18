@@ -47,6 +47,8 @@ export type Activity = {
   counts: Record<string, number>
   recent: Fired[]
   place?: Place
+  /** when and where you last opened or typed a chat */
+  lastChat?: { at: number; place: Place }
 }
 
 export type Slot = {

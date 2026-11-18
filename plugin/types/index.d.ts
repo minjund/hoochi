@@ -58,6 +58,8 @@ export type Activity = {
   recent: Fired[]
   /** where the last event happened, so the window can open on it */
   place?: Place
+  /** when and where you last opened or typed a chat, so the window can follow you */
+  lastChat?: { at: number; place: Place }
 }
 
 declare module 'claude-code' {
