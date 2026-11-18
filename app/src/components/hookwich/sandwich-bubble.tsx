@@ -96,44 +96,31 @@ export function SandwichBubble({
       >
         {glowing && <span key={pulse} className="ui-swb__pulse" aria-hidden="true" />}
         <svg className="ui-swb__sandwich" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-          {/* Two slices of bread with HOOK as the filling, drawn by Codex (assets/icon.svg) */}
-          <g transform="translate(.65 6.05) scale(.05092105263)">
-            <g>
-              <g transform="scale(1 .84)">
-                <path
-                  fill="#ae622d"
-                  d="M0 186C0 73 149 0 380 0S760 73 760 186V192Q760 210 740 210H20Q0 210 0 192Z"
-                />
-                <path
-                  fill="#edb15c"
-                  d="M16 178C16 78 157 16 380 16S744 78 744 178Q744 188 732 188H28Q16 188 16 178Z"
-                />
-                <g fill="#ffe0a0">
-                  <path d="M239 91Q231 82 239 75L260 59Q270 53 276 62Q282 70 273 77L252 93Q245 98 239 91Z" />
-                  <path d="M363 57Q363 46 374 46H398Q409 46 409 57T398 68H374Q363 68 363 57Z" />
-                  <path d="M491 63Q497 54 507 61L528 77Q537 84 530 93Q524 101 514 94L493 78Q485 71 491 63Z" />
-                </g>
+          {/* Two slices of loaf bread with HOOK as the filling (assets/icon.svg) */}
+          <g transform="translate(1.4 6.2) scale(.05)">
+            <g fill="#f6e4c0" stroke="#b9793a" strokeWidth="10" strokeLinejoin="round">
+              <path d="M84 5H724Q739 5 739 20V66Q739 72 733 77L661 137Q655 141 646 141H20Q5 141 5 126V78Q5 71 12 65L74 10Q79 5 84 5Z" />
+              <path d="M8 75H656L736 10M656 75V140" fill="none" strokeWidth="8" />
+            </g>
+            <g
+              transform="translate(10 168) scale(1 1.075)"
+              fill="#3fa34d"
+              stroke="#1f5c2b"
+              strokeWidth="9"
+              strokeLinejoin="round"
+              paintOrder="stroke fill"
+              fillRule="evenodd"
+            >
+              <path d="M0 0H45V75H101V0H146V208H101V133H45V208H0Z" />
+              <path d="M225 0H279Q337 0 337 58V150Q337 208 279 208H225Q167 208 167 150V58Q167 0 225 0ZM233 46Q214 46 214 67V141Q214 162 233 162H271Q290 162 290 141V67Q290 46 271 46Z" />
+              <path d="M415 0H469Q527 0 527 58V150Q527 208 469 208H415Q357 208 357 150V58Q357 0 415 0ZM423 46Q404 46 404 67V141Q404 162 423 162H461Q480 162 480 141V67Q480 46 461 46Z" />
+              <path d="M549 0H595V78L657 0H716L635 99L724 208H664L605 136L595 149V208H549Z" />
+            </g>
+            <g transform="translate(0 406)">
+              <g fill="#f6e4c0" stroke="#b9793a" strokeWidth="10" strokeLinejoin="round">
+                <path d="M84 5H724Q739 5 739 20V66Q739 72 733 77L661 137Q655 141 646 141H20Q5 141 5 126V78Q5 71 12 65L74 10Q79 5 84 5Z" />
+                <path d="M8 75H656L736 10M656 75V140" fill="none" strokeWidth="8" />
               </g>
-              <g transform="translate(10 198) scale(1.0221 1.1923076923)">
-                <g
-                  fill="#f34e3e"
-                  stroke="#94291f"
-                  strokeWidth="9"
-                  strokeLinejoin="round"
-                  paintOrder="stroke fill"
-                  fillRule="evenodd"
-                >
-                  <path d="M0 0H45V75H101V0H146V208H101V133H45V208H0Z" />
-                  <path d="M225 0H279Q337 0 337 58V150Q337 208 279 208H225Q167 208 167 150V58Q167 0 225 0ZM233 46Q214 46 214 67V141Q214 162 233 162H271Q290 162 290 141V67Q290 46 271 46Z" />
-                  <path d="M415 0H469Q527 0 527 58V150Q527 208 469 208H415Q357 208 357 150V58Q357 0 415 0ZM423 46Q404 46 404 67V141Q404 162 423 162H461Q480 162 480 141V67Q480 46 461 46Z" />
-                  <path d="M549 0H595V78L657 0H716L635 99L724 208H664L605 136L595 149V208H549Z" />
-                </g>
-              </g>
-              <path
-                fill="#ae622d"
-                d="M12 464H748Q760 464 760 476V493Q760 548 704 548H56Q0 548 0 493V476Q0 464 12 464Z"
-              />
-              <path fill="#edb15c" d="M16 480H744V490Q744 526 704 526H56Q16 526 16 490Z" />
             </g>
           </g>
         </svg>
