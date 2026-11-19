@@ -101,7 +101,7 @@ async fn set_existing_hook(project: String, id: String, on: bool) -> Result<Valu
 }
 
 /// The file the plugin keeps a terminal's /context figures in (the plugin names it the same way).
-fn context_file(terminal: &str) -> String {
+pub(crate) fn context_file(terminal: &str) -> String {
     let safe: String = terminal
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' })

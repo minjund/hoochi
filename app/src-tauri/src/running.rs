@@ -7,9 +7,13 @@ use std::collections::{HashMap, HashSet};
 use crate::codex::{detect_project, terminal_of};
 
 
-/// Which AI a process is, from its arguments: `claude` or `codex` run in a terminal.
+/// Which AI a process is, from its arguments: `claude` or `codex` run in a terminal. A headless
+/// `claude -p` run (a script, or another tool working in that terminal) is not a chat you are in.
 fn agent_of(args: &[String]) -> Option<&'static str> {
     let exe = args.first()?;
+    if args.iter().skip(1).any(|a| a == "-p" || a == "--print") {
+        return None;
+    }
     match exe.rsplit('/').next()? {
         "claude" => Some("claude"),
         "codex" => Some("codex"),
@@ -21,24 +25,36 @@ fn agent_of(args: &[String]) -> Option<&'static str> {
 /// One process that may be a chat: its arguments and environment.
 pub struct Candidate {
     pub pid: u32,
+    /// when the process started, in ms since 1970
+    pub started: u64,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
 }
 
-/// One chat per terminal, newest first: `(pid, agent, terminal id, terminal label)`.
-pub fn choose(candidates: Vec<Candidate>) -> Vec<(u32, &'static str, String, String)> {
+/// One chat found: which process, which AI, which terminal, and when it started.
+#[derive(Debug, PartialEq)]
+pub struct Found {
+    pub pid: u32,
+    pub agent: &'static str,
+    pub terminal: String,
+    pub label: String,
+    pub started: u64,
+}
+
+/// One chat per terminal, newest first.
+pub fn choose(candidates: Vec<Candidate>) -> Vec<Found> {
     let mut seen = HashSet::new();
-    let mut found: Vec<(u32, &'static str, String, String)> = candidates
+    let mut found: Vec<Found> = candidates
         .into_iter()
         .filter_map(|c| {
             let agent = agent_of(&c.args)?;
             let (terminal, label) = terminal_of(|k| c.env.get(k).cloned())?;
-            Some((c.pid, agent, terminal, label))
+            Some(Found { pid: c.pid, agent, terminal, label, started: c.started })
         })
         .collect();
     // The newest chat in a terminal is the one in front.
-    found.sort_by(|a, b| b.0.cmp(&a.0));
-    found.retain(|(_, _, terminal, _)| seen.insert(terminal.clone()));
+    found.sort_by(|a, b| b.started.cmp(&a.started).then(b.pid.cmp(&a.pid)));
+    found.retain(|f| seen.insert(f.terminal.clone()));
     found
 }
 
@@ -62,8 +78,8 @@ mod kernel {
         buf
     }
 
-    /// The short command name, and whether the process has a terminal.
-    fn name_and_tty(pid: i32) -> Option<(String, bool)> {
+    /// The short command name, whether the process has a terminal, and when it started (ms).
+    fn name_and_tty(pid: i32) -> Option<(String, bool, u64)> {
         let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
         let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
         let r = unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, &mut info as *mut _ as *mut c_void, size) };
@@ -71,7 +87,8 @@ mod kernel {
             return None;
         }
         let name = unsafe { CStr::from_ptr(info.pbi_comm.as_ptr()) }.to_string_lossy().to_string();
-        Some((name, info.e_tdev != u32::MAX && info.e_tdev != 0))
+        let started = info.pbi_start_tvsec * 1000 + info.pbi_start_tvusec / 1000;
+        Some((name, info.e_tdev != u32::MAX && info.e_tdev != 0, started))
     }
 
     /// `KERN_PROCARGS2`: argc, the executable path, then argv and the environment, NUL-separated.
@@ -149,34 +166,45 @@ mod kernel {
             .filter_map(|pid| {
                 // Only processes with a terminal; the name alone won't do, since Claude Code's
                 // process is named after its version ("2.1.327"). The arguments say which AI it is.
-                let (_, tty) = name_and_tty(pid)?;
+                let (_, tty, started) = name_and_tty(pid)?;
                 if !tty {
                     return None;
                 }
                 let (args, env) = args_and_env(pid)?;
-                Some(Candidate { pid: pid as u32, args, env })
+                Some(Candidate { pid: pid as u32, started, args, env })
             })
             .collect()
     }
 }
 
-/// `[{ agent, pid, terminal, terminalLabel, cwd, project, hasProject }]`
+/// When hookwich last wrote this terminal's /context record (ms), if ever: a chat running hookwich
+/// writes it as it starts and after each turn, so one older than the chat means hookwich is not in it.
+fn hookwich_seen(terminal: &str) -> Option<u64> {
+    let path = crate::codex::home().join(".hookwich/context").join(crate::context_file(terminal));
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    Some(modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64)
+}
+
+/// `[{ agent, pid, terminal, terminalLabel, cwd, project, hasProject, started, hookwich }]`;
+/// `hookwich` is false for a Claude Code chat that hookwich is not running in (opened before it was
+/// installed, and not reloaded since), null for Codex.
 pub fn running() -> Value {
     #[cfg(target_os = "macos")]
     let found = choose(kernel::candidates());
     #[cfg(not(target_os = "macos"))]
-    let found: Vec<(u32, &'static str, String, String)> = Vec::new();
+    let found: Vec<Found> = Vec::new();
     Value::Array(
         found
             .into_iter()
-            .map(|(pid, agent, terminal, label)| {
+            .map(|Found { pid, agent, terminal, label, started }| {
                 #[cfg(target_os = "macos")]
                 let cwd = kernel::cwd(pid).unwrap_or_default();
                 #[cfg(not(target_os = "macos"))]
                 let cwd = String::new();
                 let project = if cwd.is_empty() { String::new() } else { detect_project(&cwd) };
                 let has_project = !project.is_empty() && std::path::Path::new(&project).join(".git").exists();
-                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project })
+                let hookwich = (agent == "claude").then(|| hookwich_seen(&terminal).is_some_and(|at| at >= started));
+                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project, "started": started, "hookwich": hookwich })
             })
             .collect(),
     )
@@ -189,6 +217,7 @@ mod tests {
     fn cand(pid: u32, args: &[&str], env: &[(&str, &str)]) -> Candidate {
         Candidate {
             pid,
+            started: u64::from(pid) * 1000,
             args: args.iter().map(|a| a.to_string()).collect(),
             env: env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
         }
@@ -204,16 +233,19 @@ mod tests {
             cand(105, &["/Users/me/.local/bin/claude"], &[("HOME", "/Users/me")]),
             cand(106, &["node", "/x/node_modules/@anthropic-ai/claude-code/cli.js"], &[("TMUX_PANE", "%3")]),
         ]);
-        let short: Vec<(u32, &str, &str, &str)> = found.iter().map(|f| (f.0, f.1, f.2.as_str(), f.3.as_str())).collect();
+        let short: Vec<(u32, &str, &str, &str)> =
+            found.iter().map(|f| (f.pid, f.agent, f.terminal.as_str(), f.label.as_str())).collect();
         assert_eq!(
             short,
             vec![
                 (106, "claude", "tmux:%3", "tmux %3"),
-                (104, "claude", "whitebox:terminal:x:aaaa1111", "Whitebox aaaa1111"),
                 (101, "codex", "iterm:w0t1p0:BEEF", "iTerm BEEF"),
+                (100, "claude", "whitebox:terminal:x:aaaa1111", "Whitebox aaaa1111"),
             ],
-            "one chat per terminal, newest first; no terminal id, or node running something else → left out"
+            "one chat per terminal, newest first; a `claude -p` run is not the chat there (104); \
+             no terminal id, or node running something else → left out"
         );
+        assert_eq!(found[2].started, 100_000);
     }
 
     #[cfg(target_os = "macos")]
@@ -249,7 +281,7 @@ mod live {
         }
         println!("scan: {:.1} ms on average over {runs} runs", start.elapsed().as_secs_f64() * 1000.0 / runs as f64);
         for c in super::running().as_array().unwrap() {
-            println!("{} {} {} {}", c["agent"], c["terminalLabel"], c["project"], c["pid"]);
+            println!("{} {} {} hookwich={}", c["agent"], c["terminal"], c["project"], c["hookwich"]);
         }
     }
 }

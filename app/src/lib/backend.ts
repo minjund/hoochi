@@ -240,6 +240,10 @@ export type Running = {
   project: string
   /** the folder is in a git project */
   hasProject: boolean
+  /** when the chat started (ms) */
+  started?: number
+  /** Claude Code only: false when hookwich is not running in that chat (opened before it was installed) */
+  hookwich?: boolean | null
 }
 
 /** A hook set up outside hookwich: in Claude Code's settings, a plugin, or Codex's hooks.json. */
@@ -313,11 +317,14 @@ export async function runningChats(): Promise<Running[]> {
     cwd: project,
     project,
     hasProject: project !== '/Users/me',
+    started: Date.now() - 3600_000,
+    hookwich: agent === 'claude' ? true : null,
   })
   return [
     chat('claude', 'a1', '/Users/me/Projects/shop'),
     chat('codex', 'b2', '/Users/me/Projects/shop'),
-    chat('claude', 'c3', '/Users/me/Projects/notes'),
+    // `?unhooked`: one Claude Code chat opened before hookwich was installed
+    { ...chat('claude', 'c3', '/Users/me/Projects/notes'), hookwich: !location.search.includes('unhooked') },
     chat('codex', 'd4', '/Users/me/Projects/api'),
     chat('claude', 'e5', '/Users/me'),
   ]

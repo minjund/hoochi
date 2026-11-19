@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { eventHint, eventName, subtitleOf, UI, type Lang } from '../../lib/i18n'
 import { type Activity, type Item } from '../../lib/lifecycle'
 
@@ -18,6 +18,8 @@ export type LifecycleDiagramProps = {
   describe?(event: string): ReactNode
   /** what /context shows for the chat in view, drawn at the moments it fills up */
   context?: ContextFill
+  /** a /context figure was pressed: show all of it */
+  onContext?(): void
 }
 
 /** The context window at a glance: what is in it, what came in at the start, what the talk took. */
@@ -325,7 +327,7 @@ const styles = `
 .ui-lcd-badge-disabled { fill: var(--ui-lcd-bg); stroke: var(--ui-lcd-subtle); }
 .ui-lcd-wrap { position: relative; }
 .ui-lcd-card {
-  position: absolute; box-sizing: border-box; z-index: 5; width: min(260px, 70%); padding: 8px 10px; border-radius: 10px;
+  position: absolute; box-sizing: border-box; z-index: 5; width: min(300px, 78%); padding: 10px 12px; border-radius: 12px;
   transform: translate(-50%, calc(-100% - 6px)); pointer-events: auto;
   max-height: 60vh; overflow-y: auto;
   background: var(--hw-card, #ffffff); color: var(--hw-ink, #191b1d);
@@ -337,6 +339,9 @@ const styles = `
 .ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 10px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
 .ui-lcd-ctx { fill: var(--ui-lcd-muted); font-size: 12.5px; pointer-events: none; }
+.ui-lcd-ctx-hit { pointer-events: auto; cursor: pointer; outline: none; }
+.ui-lcd-ctx-hit text { pointer-events: auto; }
+.ui-lcd-ctx-hit:hover text, .ui-lcd-ctx-hit:focus-visible text { text-decoration: underline; }
 .ui-lcd-ctx-strong { fill: var(--ui-lcd-ink); font-size: 14px; font-weight: 700; pointer-events: none; }
 .ui-lcd-ctx-track { fill: var(--ui-lcd-border); pointer-events: none; }
 .ui-lcd-ctx-fill { fill: var(--ui-lcd-blue); pointer-events: none; transition: width 400ms ease-out; }
@@ -408,10 +413,11 @@ export function LifecycleDiagram({
   existing = {},
   describe,
   context,
+  onContext,
 }: LifecycleDiagramProps) {
   // The hover card: which box, and where it sits in the picture (as fractions, so it scales).
   const wrap = useRef<HTMLDivElement | null>(null)
-  const [hover, setHover] = useState<{ event: string; left: number; top: number; below: boolean } | null>(
+  const [hover, setHover] = useState<{ event: string; left: number; top: number; below: boolean; room: number } | null>(
     null,
   )
   // The card stays while the pointer is on it, so what is in it can be read and pressed.
@@ -430,7 +436,12 @@ export function LifecycleDiagram({
     const host = wrap.current?.getBoundingClientRect()
     const box = el.getBoundingClientRect()
     if (!host || !describe) return
-    const below = box.top - host.top < host.height * 0.7
+    // The part of the picture you can see (it scrolls inside the panel): open toward the roomier side.
+    const view = (wrap.current?.closest('.hw-body') ?? document.documentElement).getBoundingClientRect()
+    const roomAbove = box.top - Math.max(view.top, host.top)
+    const roomBelow = Math.min(view.bottom, host.bottom) - box.bottom
+    const below = roomBelow >= roomAbove
+    const room = Math.max(120, (below ? roomBelow : roomAbove) - 12)
     // Keep the card inside the picture: its center stays half a card away from either edge.
     const card = Math.min(260, host.width * 0.7)
     const center = Math.min(
@@ -442,6 +453,7 @@ export function LifecycleDiagram({
       left: center / host.width,
       top: ((below ? box.bottom : box.top) - host.top) / host.height,
       below,
+      room,
     })
   }
   const t = UI[lang]
@@ -686,23 +698,45 @@ export function LifecycleDiagram({
     const near = context.used >= goal * 0.9 || undefined
     const [bx, by, bw, bh] = at.compact.box
     const track = bw - 16
+    // Each figure opens all of /context; the bar inside the box stays part of the box.
+    const press = onContext
+      ? {
+          className: 'ui-lcd-ctx-hit',
+          role: 'button',
+          tabIndex: 0,
+          'aria-label': t.ctxOpen,
+          onClick: onContext,
+          onKeyDown: (e: ReactKeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onContext()
+            }
+          },
+        }
+      : { 'aria-hidden': true }
     return (
-      <g aria-hidden="true" pointerEvents="none">
+      <g pointerEvents="none">
+        <g {...press}>
         <text className="ui-lcd-ctx-strong" data-near={near} x={at.total[0]} y={at.total[1]}>
           {context.percent}%
         </text>
         <text className="ui-lcd-ctx" x={at.total[0]} y={at.total[1] + 15}>
           {tokens(context.used)} / {tokens(context.max)}
         </text>
+        </g>
+        <g {...press}>
         <text className="ui-lcd-ctx" x={at.loaded[0]} y={at.loaded[1]} textAnchor="end">
           {t.ctxLoaded(tokens(context.loaded))}
         </text>
+        </g>
+        <g {...press}>
         <text className="ui-lcd-ctx" x={at.messages[0]} y={at.messages[1]}>
           {t.ctxMessagesShort}
         </text>
         <text className="ui-lcd-ctx-strong" x={at.messages[0]} y={at.messages[1] + 17}>
           {tokens(context.messages)}
         </text>
+        </g>
         <rect className="ui-lcd-ctx-track" x={bx + 8} y={by + bh - 7} width={track} height={3.5} rx={1.75} />
         <rect
           className="ui-lcd-ctx-fill"
@@ -713,12 +747,14 @@ export function LifecycleDiagram({
           height={3.5}
           rx={1.75}
         />
+        <g {...press}>
         <text className="ui-lcd-ctx-strong" data-near={near} x={at.compact.text[0]} y={at.compact.text[1]}>
           {tokens(context.used)} / {tokens(goal)}
         </text>
         <text className="ui-lcd-ctx" x={at.compact.text[0]} y={at.compact.text[1] + 16}>
           {context.compactAt === undefined ? t.ctxCompactOff : t.ctxCompactHere}
         </text>
+        </g>
       </g>
     )
   }
@@ -804,7 +840,7 @@ export function LifecycleDiagram({
           className="ui-lcd-card"
           role="tooltip"
           data-below={hover.below || undefined}
-          style={{ left: `${hover.left * 100}%`, top: `${hover.top * 100}%` }}
+          style={{ left: `${hover.left * 100}%`, top: `${hover.top * 100}%`, maxHeight: hover.room }}
           onMouseEnter={keepCard}
           onMouseLeave={() => closeCard()}
           onFocus={keepCard}

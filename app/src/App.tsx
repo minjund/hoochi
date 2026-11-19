@@ -4,10 +4,10 @@ import {
   CLAUDE_LAYOUT,
   CODEX_LAYOUT,
   LifecycleDiagram,
-  tokens,
   type ContextFill,
 } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
+import { ContextDetail, ContextGlance, type ContextFocus } from './components/hookwich/context-view'
 import { SkillsPanel } from './components/hookwich/skills-panel'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { Button } from './components/ui/button'
@@ -201,8 +201,8 @@ const HideIcon = (
 
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
-/** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | null
+/** The popup open over the panel: your whole list, every skill, or /context. One at a time. */
+type Modal = 'mine' | 'skills' | 'context' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -490,88 +490,32 @@ export default function App() {
   /** What the hover card adds about the context, at the moments it fills up. */
   const contextTip = (event: string): ReactNode => {
     if (!context || !contextFill) return null
-    const rowName = (name: string) => t.ctxRows[name] ?? name
-    const head = (
-      <span>
-        {t.ctxTitle} · {t.ago(Math.max(0, Date.now() - context.at))}
-      </span>
-    )
-    if (event === 'SessionStart')
-      return (
-        <>
-          {head}
-          <p>{t.ctxTipLoaded(tokens(contextFill.loaded))}</p>
-          <ul>
-            {context.rows
-              .filter(r => r.kind === 'used' && r.name !== 'Messages')
-              .map(r => (
-                <li key={r.name}>
-                  {rowName(r.name)} · {tokens(r.tokens)}
-                </li>
-              ))}
-          </ul>
-          {context.mcp.length > 0 && (
-            <p>
-              MCP:{' '}
-              {context.mcp
-                .slice(0, 3)
-                .map(m => `${m.server} ${tokens(m.tokens)}`)
-                .join(' · ')}
-            </p>
-          )}
-          {context.skills && context.skillGroups.length > 0 && (
-            <p>
-              {t.ctxSkills(context.skills.count)}:{' '}
-              {context.skillGroups
-                .slice(0, 3)
-                .map(
-                  g =>
-                    `${g.kind === 'plugin' ? g.name : g.kind === 'other' && g.name ? g.name : t.ctxFrom[g.kind]} ${tokens(g.tokens)}`,
-                )
-                .join(' · ')}
-            </p>
-          )}
-          {context.skills && (
-            <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>
+    const focus: ContextFocus | undefined =
+      event === 'SessionStart'
+        ? 'start'
+        : event === 'UserPromptSubmit' || event === 'PostToolUse'
+          ? 'messages'
+          : event === 'PreCompact' || event === 'PostCompact'
+            ? 'compact'
+            : undefined
+    if (!focus) return null
+    return (
+      <ContextGlance
+        snap={context}
+        focus={focus}
+        t={t}
+        onOpen={() => setModal('context')}
+        extra={
+          focus === 'start' && context.skills ? (
+            <Button size="sm" variant="ghost" onClick={() => setModal('skills')}>
               {t.skillsAll}
             </Button>
-          )}
-          {context.agents.length > 0 && (
-            <p>
-              {t.ctxAgents}: {context.agents.map(a => a.name).join(', ')}
-            </p>
-          )}
-        </>
-      )
-    if (event === 'UserPromptSubmit' || event === 'PostToolUse')
-      return (
-        <>
-          {head}
-          <p>{t.ctxTipMessages(tokens(contextFill.messages))}</p>
-        </>
-      )
-    if (event === 'PreCompact' || event === 'PostCompact')
-      return (
-        <>
-          {head}
-          <p>
-            {contextFill.compactAt === undefined
-              ? t.ctxCompactOff
-              : t.ctxTipCompact(tokens(contextFill.used), tokens(contextFill.compactAt))}
-          </p>
-          <ul>
-            {context.rows
-              .filter(r => r.kind === 'free' || r.kind === 'buffer')
-              .map(r => (
-                <li key={r.name}>
-                  {rowName(r.name)} · {tokens(r.tokens)}
-                </li>
-              ))}
-          </ul>
-        </>
-      )
-    return null
+          ) : undefined
+        }
+      />
+    )
   }
+
 
   // Moving to another terminal shows a short notice, and the "chatting now" chip flashes.
   const [switched, setSwitched] = useState<{ terminal: string; at: number } | null>(null)
@@ -645,6 +589,9 @@ export default function App() {
   const terminalAgent: Agent =
     running.find(r => r.terminal === terminalKey)?.agent ??
     (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
+  // Claude Code chats hookwich is not running in (opened before it was installed): the window
+  // cannot follow them or put anything in, so it says which, and how to bring hookwich in.
+  const unhooked = running.filter(r => r.agent === 'claude' && r.hookwich === false)
   const allProjects = [
     ...new Set([
       ...running.filter(r => r.hasProject).map(r => r.project),
@@ -1068,6 +1015,20 @@ export default function App() {
             <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
           </div>
         )}
+        {unhooked.length > 0 && (
+          <details className="hw-note hw-unhooked">
+            <summary>{t.unhookedTitle(unhooked.length)}</summary>
+            <p>{t.unhookedHow}</p>
+            <ul>
+              {unhooked.map(r => (
+                <li key={r.terminal}>
+                  {chatName(r.terminal, r.project, 'claude')}
+                  {r.started ? ` · ${t.openedAt(new Date(r.started))}` : ''}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {switched && latest && (
           <p className="hw-switched" role="status">
             {t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent))}
@@ -1232,42 +1193,58 @@ export default function App() {
               lang={lang}
               existing={existingCounts}
               context={contextFill}
+              onContext={() => setModal('context')}
               describe={event => {
                 const added = list.filter(i => i.event === event)
                 const already = existing[agent].filter(h => h.event === event)
+                const fired = activity[agent].counts[event] ?? 0
                 return (
                   <div className="hw-tip">
-                    <b>{eventName(event, lang, agent)}</b>
-                    {added.length === 0 && already.length === 0 && <p>{t.tipEmpty}</p>}
+                    <div className="hw-tip-head">
+                      <b>{eventName(event, lang, agent)}</b>
+                      {fired > 0 && <span className="hw-tip-count">{t.fired(fired)}</span>}
+                    </div>
+                    {added.length === 0 && already.length === 0 && !contextFill && <p>{t.tipEmpty}</p>}
                     {contextTip(event)}
                     {added.length > 0 && (
-                      <>
-                        <span>
+                      <section>
+                        <div className="hw-tip-label">
                           {t.tipAdded} · {t.scopes[scope]}
-                        </span>
-                        <ul>
+                        </div>
+                        <ul className="hw-tip-list">
                           {added.map(i => (
                             <li key={i.id} data-off={!i.enabled || undefined}>
-                              {t.kinds[i.kind]}: {itemLabel(i)}
-                              {i.enabled ? '' : ` (${t.tipOff})`}
+                              <i className="hw-chip" data-kind={i.kind}>
+                                {t.kinds[i.kind]}
+                              </i>
+                              <span>{itemLabel(i)}</span>
+                              {!i.enabled && <em>{t.tipOff}</em>}
                             </li>
                           ))}
                         </ul>
-                      </>
+                      </section>
                     )}
                     {already.length > 0 && (
-                      <>
-                        <span>{t.tipExisting}</span>
-                        <ul>
+                      <section>
+                        <div className="hw-tip-label">{t.tipExisting}</div>
+                        <ul className="hw-tip-list">
                           {already.map(h => (
                             <li key={h.id} data-off={h.off || undefined}>
-                              {h.name} · {t.existingFrom(h.from)}
-                              {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
-                              {h.off ? ` (${t.tipOff})` : ''}
+                              <i className="hw-chip" data-kind="existing">
+                                {t.existingFrom(h.from)}
+                              </i>
+                              <span>
+                                {h.name}
+                                {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                              </span>
+                              {h.off && <em>{t.tipOff}</em>}
                             </li>
                           ))}
                         </ul>
-                      </>
+                      </section>
+                    )}
+                    {added.length === 0 && already.length === 0 && contextFill && (
+                      <p className="hw-tip-hint">{t.tipEmpty}</p>
                     )}
                   </div>
                 )
@@ -1307,6 +1284,39 @@ export default function App() {
           onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(failed)}
           onClose={() => setModal(null)}
         />
+      )}
+      {modal === 'context' && context && (
+        <div
+          className="hw-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.ctxTitle}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
+        >
+          <div className="hw-modal-card">
+            <div className="hw-modal-head">
+              <b>{t.ctxTitle}</b>
+              <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
+            </div>
+            <p className="hw-editor-hint">
+              {chatName(
+                contextTerminal,
+                running.find(r => r.terminal === contextTerminal)?.project ??
+                  places.terminals[contextTerminal]?.cwd ??
+                  (latest?.place.terminal === contextTerminal ? latest.place.project : ''),
+                'claude',
+              )}
+            </p>
+            <div className="hw-modal-list">
+              <ContextDetail
+                snap={context}
+                t={t}
+                modelName={modelName(context.model)}
+                onSkills={context.skills ? () => setModal('skills') : undefined}
+              />
+            </div>
+          </div>
+        </div>
       )}
       {modal === 'mine' && (
         <div
