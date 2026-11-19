@@ -660,7 +660,8 @@ button.hw-existing-text:hover b {
   display: grid;
   align-content: start;
   gap: 10px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .hw-modal-list h4 {
   margin: 0 0 2px;

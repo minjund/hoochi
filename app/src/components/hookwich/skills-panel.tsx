@@ -50,13 +50,15 @@ export function SkillsPanel({
   // What the chat lists (sizes included) when its plugin wrote it, else what is on disk.
   const fromDisk = (snap?.skillList.length ?? 0) === 0
   const groups = useMemo(() => {
-    const installed = new Set(state.plugins.map(p => p.name))
+    // A plugin's skills may name it as its manifest does ("Notion") and the settings in lower case.
+    const same = (a = '', b = '') => a.toLowerCase() === b.toLowerCase()
+    const installed = new Set(state.plugins.map(p => p.name.toLowerCase()))
     const list: Row[] = fromDisk
       ? local.flatMap((k): Row[] => {
           const i = k.name.indexOf(':')
           if (i < 0) return [{ name: k.name, kind: 'user', tokens: 0 }]
           const plugin = k.name.slice(0, i)
-          return installed.has(plugin) && plugin !== 'hookwich'
+          return installed.has(plugin.toLowerCase()) && plugin !== 'hookwich'
             ? [{ name: k.name, kind: 'plugin', plugin, tokens: 0 }]
             : []
         })
@@ -65,7 +67,7 @@ export function SkillsPanel({
     const order = { plugin: 0, user: 1, project: 2, builtin: 3, synced: 4, other: 5, off: 6 } as const
     for (const row of list) {
       const key = row.kind === 'plugin' ? `plugin:${row.plugin ?? ''}` : row.kind
-      const plugin = row.kind === 'plugin' ? state.plugins.find(p => p.name === row.plugin) : undefined
+      const plugin = row.kind === 'plugin' ? state.plugins.find(p => same(p.name, row.plugin)) : undefined
       const g = byKey.get(key) ?? {
         key,
         kind: row.kind,
@@ -80,7 +82,8 @@ export function SkillsPanel({
     }
     // Plugins switched off are not listed to Claude, so they come from the settings instead.
     for (const p of state.plugins) {
-      if (p.on || p.name === 'hookwich' || byKey.has(`plugin:${p.name}`)) continue
+      const listed = [...byKey.values()].some(g => g.kind === 'plugin' && same(g.key.slice('plugin:'.length), p.name))
+      if (p.on || p.name === 'hookwich' || listed) continue
       byKey.set(`plugin:${p.name}`, {
         key: `plugin:${p.name}`,
         kind: 'plugin',
@@ -108,13 +111,27 @@ export function SkillsPanel({
     )
   }, [snap, state, local, fromDisk, t])
 
+  // Only what can be switched from here: a skill of yours or a built-in one by itself, a plugin
+  // as a whole (one row, its skills not listed one by one). Skills synced from claude.ai, ones of
+  // unknown origin, and hookwich itself are left out; how many is said once, at the end.
+  const canSwitch = (g: Group) =>
+    g.kind === 'off' ||
+    (g.kind !== 'plugin' && ONE_BY_ONE.has(g.kind)) ||
+    (g.kind === 'plugin' && g.plugin !== undefined && !g.plugin.key.startsWith('hookwich@'))
+  const usable = groups.filter(canSwitch)
+  const hidden = groups
+    .filter(g => !canSwitch(g))
+    .reduce((n, g) => n + g.rows.length, 0)
+  const plugins = usable.filter(g => g.kind === 'plugin')
+  const singles = usable.filter(g => g.kind !== 'plugin')
+
   const q = filter.trim().toLowerCase()
-  const shown = groups
-    .map(g => ({ ...g, rows: q ? g.rows.filter(r => r.name.toLowerCase().includes(q)) : g.rows }))
-    .filter(g => !q || g.rows.length > 0 || g.title.toLowerCase().includes(q))
-  const count = fromDisk
-    ? groups.reduce((n, g) => n + (g.kind === 'off' ? 0 : g.rows.length), 0)
-    : (snap?.skills?.count ?? 0)
+  const hits = (text: string) => text.toLowerCase().includes(q)
+  const shownPlugins = plugins.filter(g => !q || hits(g.title) || g.rows.some(r => hits(r.name)))
+  const shownSingles = singles
+    .map(g => ({ ...g, rows: q ? g.rows.filter(r => hits(r.name)) : g.rows }))
+    .filter(g => g.rows.length > 0)
+  const oneByOne = singles.reduce((n, g) => n + g.rows.length, 0)
 
   return (
     <div
@@ -127,8 +144,7 @@ export function SkillsPanel({
       <div className="hw-modal-card">
         <div className="hw-modal-head">
           <b>
-            {t.skillsTitle} · {count}
-            {snap?.skills && !fromDisk ? ` · ${tokens(snap.skills.tokens)}` : ''}
+            {t.skillsTitle} · {t.skillsCounts(oneByOne, plugins.length)}
           </b>
           <Button size="sm" variant="ghost" onClick={onClose}>
             {t.close}
@@ -136,7 +152,7 @@ export function SkillsPanel({
         </div>
         <p className="hw-editor-hint">{t.skillsHint}</p>
         {banner}
-        {fromDisk && <p className="hw-note">{t.skillsFromDisk(count, snap?.skills?.count)}</p>}
+        {fromDisk && <p className="hw-note">{t.skillsFromDisk}</p>}
         <input
           className="hw-skills-filter"
           type="search"
@@ -166,33 +182,53 @@ export function SkillsPanel({
           </div>
         )}
         <div className="hw-modal-list">
-          {shown.length === 0 && <p className="hw-editor-hint">{t.skillsNone}</p>}
-          {shown.map(g => (
-            <section key={g.key} data-off={g.plugin?.on === false || undefined}>
+          {shownPlugins.length === 0 && shownSingles.length === 0 && (
+            <p className="hw-editor-hint">{t.skillsNone}</p>
+          )}
+          {shownPlugins.length > 0 && (
+            <section>
+              <h4 className="hw-skills-head">
+                <span>{t.skillsPlugins}</span>
+              </h4>
+              <ul className="hw-skills-rows">
+                {shownPlugins.map(g => (
+                  <li
+                    key={g.key}
+                    data-off={g.plugin?.on === false || undefined}
+                    title={g.rows.map(r => r.name).join(', ')}
+                  >
+                    <span className="hw-skills-name">{g.key.slice('plugin:'.length)}</span>
+                    <span className="hw-skills-num">
+                      {g.rows.length > 0 ? t.ctxSkillCount(g.rows.length) : t.existingOff}
+                      {g.tokens > 0 ? ` · ${tokens(g.tokens)}` : ''}
+                    </span>
+                    {g.plugin && (
+                      <Switch
+                        size="sm"
+                        aria-label={t.pluginSwitch(g.title)}
+                        checked={g.plugin.on}
+                        onChange={e => {
+                          if (!g.plugin) return
+                          if (e.currentTarget.checked) onPlugin(g.plugin.key, true)
+                          else setAsking(g)
+                        }}
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {shownSingles.map(g => (
+            <section key={g.key}>
               <h4 className="hw-skills-head">
                 <span>
-                  {g.title}
-                  {g.rows.length > 0 ? ` · ${t.ctxSkillCount(g.rows.length)}` : ''}
+                  {g.title} · {t.ctxSkillCount(g.rows.length)}
                   {g.tokens > 0 ? ` · ${tokens(g.tokens)}` : ''}
-                  {g.plugin?.on === false ? ` · ${t.existingOff}` : ''}
                 </span>
-                {g.plugin && (
-                  <Switch
-                    size="sm"
-                    aria-label={t.pluginSwitch(g.title)}
-                    checked={g.plugin.on}
-                    onChange={e => {
-                      if (!g.plugin) return
-                      if (e.currentTarget.checked) onPlugin(g.plugin.key, true)
-                      else setAsking(g)
-                    }}
-                  />
-                )}
               </h4>
-              {g.kind === 'synced' && <p className="hw-editor-hint">{t.skillsSynced}</p>}
               <ul className="hw-skills-rows">
                 {g.rows.map(r => {
-                  const switchable = g.kind === 'off' || ONE_BY_ONE.has(r.kind)
                   const isOff = off.has(r.name)
                   return (
                     <li key={r.name} data-off={isOff || undefined}>
@@ -200,20 +236,19 @@ export function SkillsPanel({
                         {r.name}
                       </span>
                       {r.tokens > 0 && <span className="hw-skills-num">{tokens(r.tokens)}</span>}
-                      {switchable && (
-                        <Switch
-                          size="sm"
-                          aria-label={t.skillSwitch(r.name)}
-                          checked={!isOff}
-                          onChange={e => onSkill(r.name, e.currentTarget.checked)}
-                        />
-                      )}
+                      <Switch
+                        size="sm"
+                        aria-label={t.skillSwitch(r.name)}
+                        checked={!isOff}
+                        onChange={e => onSkill(r.name, e.currentTarget.checked)}
+                      />
                     </li>
                   )
                 })}
               </ul>
             </section>
           ))}
+          {hidden > 0 && !q && <p className="hw-editor-hint">{t.skillsHidden(hidden)}</p>}
         </div>
       </div>
     </div>

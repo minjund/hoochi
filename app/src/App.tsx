@@ -514,7 +514,7 @@ export default function App() {
           )}
           {context.skills && (
             <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>
-              {t.skillsAll(context.skills.count)}
+              {t.skillsAll}
             </Button>
           )}
           {context.agents.length > 0 && (
@@ -1175,7 +1175,7 @@ export default function App() {
             extra={
               slot.event === 'SessionStart' && agent === 'claude' && context?.skills ? (
                 <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>
-                  {t.skillsAll(context.skills.count)}
+                  {t.skillsAll}
                 </Button>
               ) : undefined
             }
