@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 
 import type { ContextRow, ContextSnapshot } from '../../lib/backend'
 import type { UiText } from '../../lib/i18n'
-import { Button } from '../ui/button'
 import { tokens } from './lifecycle-diagram'
 
 /** One color per kind of thing in the context window, the same in every view. */
@@ -109,45 +108,6 @@ function Headline({ snap, focus, t }: { snap: ContextSnapshot; focus: ContextFoc
   )
 }
 
-/** For a hover card: the figure for this moment, the bar, and its few rows. */
-export function ContextGlance({
-  snap,
-  focus,
-  t,
-  onOpen,
-  extra,
-}: {
-  snap: ContextSnapshot
-  focus: ContextFocus
-  t: UiText
-  onOpen(): void
-  extra?: ReactNode
-}) {
-  const used = usedRows(snap)
-  const rows =
-    focus === 'start'
-      ? used.filter(r => r.name !== 'Messages').slice(0, 3)
-      : focus === 'messages'
-        ? used.filter(r => r.name === 'Messages')
-        : snap.rows.filter(r => r.kind === 'free' || r.kind === 'buffer')
-  return (
-    <section className="hw-ctxglance" aria-label={t.ctxTitle}>
-      <div className="hw-tip-label">
-        {t.ctxTitle} · {t.ago(Math.max(0, Date.now() - snap.at))}
-      </div>
-      <Headline snap={snap} focus={focus} t={t} />
-      <ContextBar snap={snap} focus={focus} t={t} />
-      <Legend rows={rows} max={snap.max} t={t} />
-      <div className="hw-ctxglance-actions">
-        <Button size="sm" variant="secondary" onClick={onOpen}>
-          {t.ctxOpen}
-        </Button>
-        {extra}
-      </div>
-    </section>
-  )
-}
-
 /** A list of named sizes drawn as bars against the biggest. */
 function Bars({ rows }: { rows: { key: string; name: string; note?: string; tokens: number }[] }) {
   const top = Math.max(1, ...rows.map(r => r.tokens))
@@ -167,62 +127,29 @@ function Bars({ rows }: { rows: { key: string; name: string; note?: string; toke
   )
 }
 
-/** Everything /context says, in one place: the window, then what fills it. */
-export function ContextDetail({
-  snap,
-  t,
-  modelName,
-  onSkills,
-}: {
-  snap: ContextSnapshot
-  t: UiText
-  modelName: string
-  onSkills?(): void
-}) {
-  const used = usedRows(snap)
-  const rest = snap.rows.filter(r => r.kind === 'free' || r.kind === 'buffer')
+/** What a chat starts with, beyond the window's own rows: MCP servers, memory, skills, agents. */
+function StartDetail({ snap, t, extra }: { snap: ContextSnapshot; t: UiText; extra?: ReactNode }) {
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
   return (
-    <div className="hw-ctxdetail">
-      <div className="hw-ctxdetail-top">
-        <div className="hw-ctxhead">
-          <b>
-            {snap.percent}%<small> · {tokens(snap.used)} / {tokens(snap.max)}</small>
-          </b>
-          <span>
-            {modelName} ·{' '}
-            {snap.compactAt === undefined
-              ? t.ctxCompactOff
-              : t.ctxUntilCompact(tokens(Math.max(0, snap.compactAt - snap.used)))}{' '}
-            · {t.ago(Math.max(0, Date.now() - snap.at))}
-          </span>
-        </div>
-      </div>
-      <ContextBar snap={snap} t={t} />
-      <Legend rows={[...used, ...rest]} max={snap.max} t={t} />
-
+    <>
       {snap.mcp.length > 0 && (
-        <section>
-          <h4>{t.ctxMcpServers}</h4>
+        <div className="hw-ctxpart">
+          <div className="hw-tip-label">{t.ctxMcpServers}</div>
           <Bars rows={snap.mcp.map(m => ({ key: m.server, name: m.server, note: t.ctxTools(m.tools), tokens: m.tokens }))} />
-        </section>
+        </div>
       )}
       {snap.memory.length > 0 && (
-        <section>
-          <h4>{t.ctxRows['Memory files'] ?? 'Memory files'}</h4>
+        <div className="hw-ctxpart">
+          <div className="hw-tip-label">{t.ctxRows['Memory files'] ?? 'Memory files'}</div>
           <Bars rows={snap.memory.map(m => ({ key: m.path, name: home(m.path), tokens: m.tokens }))} />
-        </section>
+        </div>
       )}
       {snap.skills && snap.skillGroups.length > 0 && (
-        <section>
-          <h4 className="hw-ctxdetail-row">
+        <div className="hw-ctxpart">
+          <div className="hw-tip-label hw-ctxpart-head">
             <span>{t.ctxSkills(snap.skills.count)}</span>
-            {onSkills && (
-              <Button size="sm" variant="ghost" onClick={onSkills}>
-                {t.skillsAll}
-              </Button>
-            )}
-          </h4>
+            {extra}
+          </div>
           <Bars
             rows={snap.skillGroups.map(g => ({
               key: `${g.kind}:${g.name}`,
@@ -231,14 +158,50 @@ export function ContextDetail({
               tokens: g.tokens,
             }))}
           />
-        </section>
+        </div>
       )}
       {snap.agents.length > 0 && (
-        <section>
-          <h4>{t.ctxAgents}</h4>
+        <div className="hw-ctxpart">
+          <div className="hw-tip-label">{t.ctxAgents}</div>
           <Bars rows={snap.agents.map(a => ({ key: a.name, name: a.name, note: a.source, tokens: a.tokens }))} />
-        </section>
+        </div>
       )}
-    </div>
+    </>
+  )
+}
+
+/**
+ * For a hover card: the figure for this moment, the bar, its rows, and at the start of a chat
+ * what it loads (MCP servers, memory files, skills, agents). The card shows all of it at once.
+ */
+export function ContextGlance({
+  snap,
+  focus,
+  t,
+  extra,
+}: {
+  snap: ContextSnapshot
+  focus: ContextFocus
+  t: UiText
+  /** shown with the skills (the switch for them) */
+  extra?: ReactNode
+}) {
+  const used = usedRows(snap)
+  const rows =
+    focus === 'start'
+      ? used.filter(r => r.name !== 'Messages')
+      : focus === 'messages'
+        ? [...used.filter(r => r.name === 'Messages'), ...snap.rows.filter(r => r.kind === 'free')]
+        : snap.rows.filter(r => r.kind === 'free' || r.kind === 'buffer')
+  return (
+    <section className="hw-ctxglance" aria-label={t.ctxTitle}>
+      <div className="hw-tip-label">
+        {t.ctxTitle} · {t.ago(Math.max(0, Date.now() - snap.at))}
+      </div>
+      <Headline snap={snap} focus={focus} t={t} />
+      <ContextBar snap={snap} focus={focus} t={t} />
+      <Legend rows={rows} max={snap.max} t={t} />
+      {focus === 'start' && <StartDetail snap={snap} t={t} extra={extra} />}
+    </section>
   )
 }

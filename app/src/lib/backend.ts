@@ -317,7 +317,7 @@ export async function runningChats(): Promise<Running[]> {
     cwd: project,
     project,
     hasProject: project !== '/Users/me',
-    started: Date.now() - 3600_000,
+    started: 1_795_000_000_000,
     hookwich: agent === 'claude' ? true : null,
   })
   return [
@@ -534,6 +534,11 @@ export async function setExpanded(expanded: boolean): Promise<void> {
 
 export async function startDrag(): Promise<void> {
   if (inApp) await invoke('start_drag')
+}
+
+/** The bubble's right-click menu (native): hide to the menu bar, or quit. */
+export async function bubbleMenu(hide: string, quit: string): Promise<void> {
+  if (inApp) await invoke('bubble_menu', { hide, quit })
 }
 
 export async function hideWindow(): Promise<void> {

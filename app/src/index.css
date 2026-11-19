@@ -597,11 +597,6 @@ button.hw-existing-text:hover b {
   border-radius: 10px;
   background: var(--hw-tint);
 }
-.hw-ctxglance-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 .hw-ctxhead {
   display: grid;
   gap: 1px;
@@ -697,24 +692,16 @@ button.hw-existing-text:hover b {
   color: var(--hw-soft);
   font-variant-numeric: tabular-nums;
 }
-.hw-ctxdetail {
-  display: grid;
-  gap: 10px;
-}
-.hw-ctxdetail section {
+.hw-ctxpart {
   display: grid;
   gap: 4px;
+  margin-top: 4px;
 }
-.hw-ctxdetail h4 {
-  margin: 4px 0 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--hw-soft);
-}
-.hw-ctxdetail-row {
+.hw-ctxpart-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
 }
 .hw-ctxbars {
   display: grid;

@@ -305,6 +305,16 @@ fn hide_window(window: WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
 
+/// The bubble's right-click menu: hide to the menu bar, or quit. Labels come in the window's language.
+#[tauri::command]
+fn bubble_menu(window: WebviewWindow, hide: String, quit: String) -> Result<(), String> {
+    let app = window.app_handle();
+    let hide = MenuItemBuilder::with_id("bubble-hide", hide).build(app).map_err(|e| e.to_string())?;
+    let quit = MenuItemBuilder::with_id("bubble-quit", quit).build(app).map_err(|e| e.to_string())?;
+    let menu = MenuBuilder::new(app).items(&[&hide, &quit]).build().map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn quit(app: AppHandle) {
     app.exit(0);
@@ -430,6 +440,7 @@ pub fn run() {
             set_expanded,
             start_drag,
             hide_window,
+            bubble_menu,
             quit,
             codex_status,
             codex_connect,
@@ -497,6 +508,13 @@ pub fn run() {
                     }
                 });
             }
+
+            // The bubble's menu (any menu's events come here; the tray menu has its own ids).
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "bubble-hide" => toggle(app, Some(false)),
+                "bubble-quit" => app.exit(0),
+                _ => {}
+            });
 
             watch_control(app.handle().clone());
             Ok(())

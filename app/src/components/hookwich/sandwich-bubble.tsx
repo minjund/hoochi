@@ -11,6 +11,8 @@ export type SandwichBubbleProps = {
   chatName?: string
   onOpen(): void
   onDragStart(): void
+  /** right-click: the bubble's menu (hide, quit) */
+  onMenu?(): void
 }
 
 /** The floating, collapsed hookwich window. The host supplies the native window drag. */
@@ -21,6 +23,7 @@ export function SandwichBubble({
   chatName,
   onOpen,
   onDragStart,
+  onMenu,
 }: SandwichBubbleProps) {
   const pointer = useRef<{ id: number; x: number; y: number } | null>(null)
   const suppressClick = useRef(false)
@@ -84,6 +87,10 @@ export function SandwichBubble({
           if (pointer.current?.id !== event.pointerId) return
           pointer.current = null
           suppressClick.current = true
+        }}
+        onContextMenu={event => {
+          event.preventDefault()
+          onMenu?.()
         }}
         onClick={event => {
           // Native button activation supplies Enter/Space and assistive-technology clicks.

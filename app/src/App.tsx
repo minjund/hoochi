@@ -7,7 +7,7 @@ import {
   type ContextFill,
 } from './components/hookwich/lifecycle-diagram'
 import { SandwichBubble } from './components/hookwich/sandwich-bubble'
-import { ContextDetail, ContextGlance, type ContextFocus } from './components/hookwich/context-view'
+import { ContextGlance, type ContextFocus } from './components/hookwich/context-view'
 import { SkillsPanel } from './components/hookwich/skills-panel'
 import { SlotEditor } from './components/hookwich/slot-editor'
 import { Button } from './components/ui/button'
@@ -24,7 +24,7 @@ import {
   codexStatus,
   contextUsage,
   EMPTY_ACTIVITY,
-  hideWindow,
+  bubbleMenu,
   listSkills,
   newId,
   existingHooks,
@@ -141,11 +141,6 @@ function newItem(event: string, agent: Agent): Item {
 const folderName = (path: string) => path.split('/').filter(Boolean).pop() ?? path
 
 
-const MinimizeIcon = (
-  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6">
-    <path d="M3.5 8h9" strokeLinecap="round" />
-  </svg>
-)
 
 const ThemeIcons: Record<Theme, ReactNode> = {
   system: (
@@ -201,11 +196,28 @@ const HideIcon = (
 
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
-/** The popup open over the panel: your whole list, every skill, or /context. One at a time. */
-type Modal = 'mine' | 'skills' | 'context' | null
+/** The popup open over the panel: your whole list, or every skill. One at a time. */
+type Modal = 'mine' | 'skills' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
+
+const UNHOOKED_KEY = 'hookwich.unhookedSeen'
+function loadUnhookedSeen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(UNHOOKED_KEY) ?? '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function saveUnhookedSeen(keys: string[]) {
+  try {
+    localStorage.setItem(UNHOOKED_KEY, JSON.stringify(keys))
+  } catch {
+    // only a convenience
+  }
+}
 
 const FOLLOW_KEY = 'hookwich.follow'
 function loadFollow(): boolean {
@@ -504,7 +516,6 @@ export default function App() {
         snap={context}
         focus={focus}
         t={t}
-        onOpen={() => setModal('context')}
         extra={
           focus === 'start' && context.skills ? (
             <Button size="sm" variant="ghost" onClick={() => setModal('skills')}>
@@ -592,6 +603,16 @@ export default function App() {
   // Claude Code chats hookwich is not running in (opened before it was installed): the window
   // cannot follow them or put anything in, so it says which, and how to bring hookwich in.
   const unhooked = running.filter(r => r.agent === 'claude' && r.hookwich === false)
+  // "Don't show again": the chats seen then are remembered (each by terminal and start), so only a
+  // new chat without hookwich brings the notice back.
+  const [unhookedSeen, setUnhookedSeen] = useState<string[]>(loadUnhookedSeen)
+  const chatKey = (r: Running) => `${r.terminal}@${r.started ?? 0}`
+  const unhookedNew = unhooked.filter(r => !unhookedSeen.includes(chatKey(r)))
+  const dismissUnhooked = () => {
+    const keys = unhooked.map(chatKey)
+    setUnhookedSeen(keys)
+    saveUnhookedSeen(keys)
+  }
   const allProjects = [
     ...new Set([
       ...running.filter(r => r.hasProject).map(r => r.project),
@@ -723,7 +744,10 @@ export default function App() {
       ...Object.values(a.projects).flat(),
       ...Object.values(a.terminals).flat(),
     ]
-    return [...all(config.claude), ...all(config.codex)].filter(i => i.enabled).length
+    // Only what does something: switched on and not left empty.
+    const filled = (i: Item) =>
+      i.kind === 'text' ? i.text.trim() !== '' : i.kind === 'command' ? i.command.trim() !== '' : i.skill !== ''
+    return [...all(config.claude), ...all(config.codex)].filter(i => i.enabled && filled(i)).length
   }, [config])
 
   // Which place the scope notes talk about: the chosen project/terminal, else the last active one.
@@ -879,6 +903,7 @@ export default function App() {
           chatName={latest ? chatName(latest.place.terminal, latest.place.project, latest.agent) : undefined}
           onOpen={() => void open()}
           onDragStart={() => void startDrag()}
+          onMenu={() => void bubbleMenu(t.hide, t.quitApp)}
         />
       </div>
     )
@@ -902,7 +927,7 @@ export default function App() {
       >
         <div className="hw-head-title">
           hookwich
-          <span>{t.on(activeCount)}</span>
+          <span title={t.onHint}>{t.on(activeCount)}</span>
         </div>
         <SegmentedControl
           size="sm"
@@ -934,20 +959,8 @@ export default function App() {
             }
           }}
         />
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={MinimizeIcon}
-          label={t.fold}
-          onClick={() => void collapse()}
-        />
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={HideIcon}
-          label={t.hide}
-          onClick={() => void hideWindow()}
-        />
+        {/* × folds the panel into the bubble; hiding is on the bubble's right-click menu */}
+        <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.fold} onClick={() => void collapse()} />
       </header>
 
       {!modal && saveBar}
@@ -1015,10 +1028,13 @@ export default function App() {
             <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
           </div>
         )}
-        {unhooked.length > 0 && (
+        {unhookedNew.length > 0 && (
           <details className="hw-note hw-unhooked">
             <summary>{t.unhookedTitle(unhooked.length)}</summary>
             <p>{t.unhookedHow}</p>
+            <Button size="sm" variant="ghost" onClick={dismissUnhooked}>
+              {t.unhookedDismiss}
+            </Button>
             <ul>
               {unhooked.map(r => (
                 <li key={r.terminal}>
@@ -1193,7 +1209,6 @@ export default function App() {
               lang={lang}
               existing={existingCounts}
               context={contextFill}
-              onContext={() => setModal('context')}
               describe={event => {
                 const added = list.filter(i => i.event === event)
                 const already = existing[agent].filter(h => h.event === event)
@@ -1284,39 +1299,6 @@ export default function App() {
           onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(failed)}
           onClose={() => setModal(null)}
         />
-      )}
-      {modal === 'context' && context && (
-        <div
-          className="hw-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t.ctxTitle}
-          onClick={e => e.target === e.currentTarget && setModal(null)}
-        >
-          <div className="hw-modal-card">
-            <div className="hw-modal-head">
-              <b>{t.ctxTitle}</b>
-              <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
-            </div>
-            <p className="hw-editor-hint">
-              {chatName(
-                contextTerminal,
-                running.find(r => r.terminal === contextTerminal)?.project ??
-                  places.terminals[contextTerminal]?.cwd ??
-                  (latest?.place.terminal === contextTerminal ? latest.place.project : ''),
-                'claude',
-              )}
-            </p>
-            <div className="hw-modal-list">
-              <ContextDetail
-                snap={context}
-                t={t}
-                modelName={modelName(context.model)}
-                onSkills={context.skills ? () => setModal('skills') : undefined}
-              />
-            </div>
-          </div>
-        </div>
       )}
       {modal === 'mine' && (
         <div

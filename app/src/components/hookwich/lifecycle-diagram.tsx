@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import { eventHint, eventName, subtitleOf, UI, type Lang } from '../../lib/i18n'
 import { type Activity, type Item } from '../../lib/lifecycle'
 
@@ -18,8 +18,6 @@ export type LifecycleDiagramProps = {
   describe?(event: string): ReactNode
   /** what /context shows for the chat in view, drawn at the moments it fills up */
   context?: ContextFill
-  /** a /context figure was pressed: show all of it */
-  onContext?(): void
 }
 
 /** The context window at a glance: what is in it, what came in at the start, what the talk took. */
@@ -327,21 +325,18 @@ const styles = `
 .ui-lcd-badge-disabled { fill: var(--ui-lcd-bg); stroke: var(--ui-lcd-subtle); }
 .ui-lcd-wrap { position: relative; }
 .ui-lcd-card {
-  position: absolute; box-sizing: border-box; z-index: 5; width: min(300px, 78%); padding: 10px 12px; border-radius: 12px;
-  transform: translate(-50%, calc(-100% - 6px)); pointer-events: auto;
-  max-height: 60vh; overflow-y: auto;
+  position: fixed; box-sizing: border-box; z-index: 30; width: min(300px, calc(100vw - 16px)); padding: 10px 12px; border-radius: 12px;
+  pointer-events: auto;
+  /* only a card taller than the whole window would scroll */
+  max-height: calc(100vh - 16px); overflow-y: auto;
   background: var(--hw-card, #ffffff); color: var(--hw-ink, #191b1d);
   border: 1px solid var(--hw-line-strong, rgba(0,0,0,.16)); box-shadow: 0 8px 24px rgba(0,0,0,.22);
   font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left;
 }
-.ui-lcd-card[data-below] { transform: translate(-50%, 6px); }
 .ui-lcd-badge-existing { fill: var(--ui-lcd-muted); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 10px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
 .ui-lcd-ctx { fill: var(--ui-lcd-muted); font-size: 12.5px; pointer-events: none; }
-.ui-lcd-ctx-hit { pointer-events: auto; cursor: pointer; outline: none; }
-.ui-lcd-ctx-hit text { pointer-events: auto; }
-.ui-lcd-ctx-hit:hover text, .ui-lcd-ctx-hit:focus-visible text { text-decoration: underline; }
 .ui-lcd-ctx-strong { fill: var(--ui-lcd-ink); font-size: 14px; font-weight: 700; pointer-events: none; }
 .ui-lcd-ctx-track { fill: var(--ui-lcd-border); pointer-events: none; }
 .ui-lcd-ctx-fill { fill: var(--ui-lcd-blue); pointer-events: none; transition: width 400ms ease-out; }
@@ -413,13 +408,13 @@ export function LifecycleDiagram({
   existing = {},
   describe,
   context,
-  onContext,
 }: LifecycleDiagramProps) {
-  // The hover card: which box, and where it sits in the picture (as fractions, so it scales).
+  // The hover card floats over the whole window (not inside the scrolling picture), so it is
+  // never cut off and never scrolls: it is measured, then put where all of it fits.
   const wrap = useRef<HTMLDivElement | null>(null)
-  const [hover, setHover] = useState<{ event: string; left: number; top: number; below: boolean; room: number } | null>(
-    null,
-  )
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const [hover, setHover] = useState<{ event: string; cx: number; top: number; bottom: number } | null>(null)
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null)
   // The card stays while the pointer is on it, so what is in it can be read and pressed.
   const closing = useRef<number | undefined>(undefined)
   const keepCard = () => window.clearTimeout(closing.current)
@@ -433,29 +428,43 @@ export function LifecycleDiagram({
   useEffect(() => () => window.clearTimeout(closing.current), [])
   const showCard = (event: string, el: Element) => {
     keepCard()
-    const host = wrap.current?.getBoundingClientRect()
+    if (!describe) return
     const box = el.getBoundingClientRect()
-    if (!host || !describe) return
-    // The part of the picture you can see (it scrolls inside the panel): open toward the roomier side.
-    const view = (wrap.current?.closest('.hw-body') ?? document.documentElement).getBoundingClientRect()
-    const roomAbove = box.top - Math.max(view.top, host.top)
-    const roomBelow = Math.min(view.bottom, host.bottom) - box.bottom
-    const below = roomBelow >= roomAbove
-    const room = Math.max(120, (below ? roomBelow : roomAbove) - 12)
-    // Keep the card inside the picture: its center stays half a card away from either edge.
-    const card = Math.min(260, host.width * 0.7)
-    const center = Math.min(
-      Math.max(box.left + box.width / 2 - host.left, card / 2 + 4),
-      host.width - card / 2 - 4,
-    )
-    setHover({
-      event,
-      left: center / host.width,
-      top: ((below ? box.bottom : box.top) - host.top) / host.height,
-      below,
-      room,
-    })
+    setHover({ event, cx: box.left + box.width / 2, top: box.top, bottom: box.bottom })
   }
+  // Below the box when it fits there, else above, else as far inside the window as it goes.
+  // Again whenever the card changes size (its figures update while it is open).
+  useLayoutEffect(() => {
+    const el = cardRef.current
+    if (!hover || !el) {
+      setPlace(null)
+      return
+    }
+    const fit = () => {
+      const card = el.getBoundingClientRect()
+      const gap = 6
+      const edge = 8
+      const room = window.innerHeight - edge
+      const below = hover.bottom + gap
+      const above = hover.top - gap - card.height
+      let top = below + card.height <= room ? below : above >= edge ? above : below
+      top = Math.max(edge, Math.min(top, room - card.height))
+      const left = Math.max(edge, Math.min(hover.cx - card.width / 2, window.innerWidth - edge - card.width))
+      setPlace(p => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.top - top) < 0.5 ? p : { left, top }))
+    }
+    fit()
+    const watch = new ResizeObserver(fit)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [hover])
+  // The picture scrolling under a card that floats would leave it pointing at nothing.
+  useEffect(() => {
+    if (!hover) return
+    const scroller = wrap.current?.closest('.hw-body')
+    const close = () => setHover(null)
+    scroller?.addEventListener('scroll', close, { passive: true })
+    return () => scroller?.removeEventListener('scroll', close)
+  }, [hover])
   const t = UI[lang]
   const id = `ui-lcd-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [, redraw] = useReducer((value: number) => value + 1, 0)
@@ -698,45 +707,23 @@ export function LifecycleDiagram({
     const near = context.used >= goal * 0.9 || undefined
     const [bx, by, bw, bh] = at.compact.box
     const track = bw - 16
-    // Each figure opens all of /context; the bar inside the box stays part of the box.
-    const press = onContext
-      ? {
-          className: 'ui-lcd-ctx-hit',
-          role: 'button',
-          tabIndex: 0,
-          'aria-label': t.ctxOpen,
-          onClick: onContext,
-          onKeyDown: (e: ReactKeyboardEvent) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              onContext()
-            }
-          },
-        }
-      : { 'aria-hidden': true }
     return (
-      <g pointerEvents="none">
-        <g {...press}>
+      <g aria-hidden="true" pointerEvents="none">
         <text className="ui-lcd-ctx-strong" data-near={near} x={at.total[0]} y={at.total[1]}>
           {context.percent}%
         </text>
         <text className="ui-lcd-ctx" x={at.total[0]} y={at.total[1] + 15}>
           {tokens(context.used)} / {tokens(context.max)}
         </text>
-        </g>
-        <g {...press}>
         <text className="ui-lcd-ctx" x={at.loaded[0]} y={at.loaded[1]} textAnchor="end">
           {t.ctxLoaded(tokens(context.loaded))}
         </text>
-        </g>
-        <g {...press}>
         <text className="ui-lcd-ctx" x={at.messages[0]} y={at.messages[1]}>
           {t.ctxMessagesShort}
         </text>
         <text className="ui-lcd-ctx-strong" x={at.messages[0]} y={at.messages[1] + 17}>
           {tokens(context.messages)}
         </text>
-        </g>
         <rect className="ui-lcd-ctx-track" x={bx + 8} y={by + bh - 7} width={track} height={3.5} rx={1.75} />
         <rect
           className="ui-lcd-ctx-fill"
@@ -747,14 +734,12 @@ export function LifecycleDiagram({
           height={3.5}
           rx={1.75}
         />
-        <g {...press}>
         <text className="ui-lcd-ctx-strong" data-near={near} x={at.compact.text[0]} y={at.compact.text[1]}>
           {tokens(context.used)} / {tokens(goal)}
         </text>
         <text className="ui-lcd-ctx" x={at.compact.text[0]} y={at.compact.text[1] + 16}>
           {context.compactAt === undefined ? t.ctxCompactOff : t.ctxCompactHere}
         </text>
-        </g>
       </g>
     )
   }
@@ -837,10 +822,10 @@ export function LifecycleDiagram({
       </svg>
       {hover && describe && (
         <div
+          ref={cardRef}
           className="ui-lcd-card"
           role="tooltip"
-          data-below={hover.below || undefined}
-          style={{ left: `${hover.left * 100}%`, top: `${hover.top * 100}%`, maxHeight: hover.room }}
+          style={place ? { left: place.left, top: place.top } : { left: 0, top: 0, visibility: 'hidden' }}
           onMouseEnter={keepCard}
           onMouseLeave={() => closeCard()}
           onFocus={keepCard}
