@@ -24,7 +24,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.15'
+export const APP_VERSION = '0.1.16'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -53,8 +53,19 @@ const TOOL_EVENTS: ReadonlySet<string> = new Set(['PreToolUse', 'PostToolUse', '
 /** Too frequent to log each one: recorded only when something was put in. */
 const QUIET: ReadonlySet<string> = new Set(['MessageDisplay', 'FileChanged'])
 
-/** You are here: a chat opened or a message typed. The window follows these. */
+/** A chat opened or a message sent: the window learns this project and terminal. */
 const HERE: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit'])
+
+/**
+ * Where a prompt or a key came from: only your own Enter or keys (in the terminal, or through
+ * Remote Control) mean "you are chatting here". A notification, another session's message, a
+ * scheduled run or a terminal app's request to this chat reach UserPromptSubmit too, and must not
+ * pull the window away from the terminal you are typing in.
+ */
+export function byYou(origin: unknown): boolean {
+  const kind = (origin as { kind?: unknown } | undefined)?.kind
+  return kind === 'composer' || kind === 'bridge'
+}
 
 /**
  * Whether a person is at this session's prompt. A `claude -p` run or an SDK script in the same
@@ -437,6 +448,15 @@ export async function noteTyping($: EngineInterface): Promise<boolean> {
   return true
 }
 
+/** You sent a message here (your own Enter): this terminal is where you are chatting. */
+export async function noteSent($: EngineInterface): Promise<void> {
+  const dir = `${await home($)}/.hookwich`
+  const [now, place] = await Promise.all([$.clock.now(), placeOf($)])
+  const seen: Activity = { ...(await read($, activity)), lastChat: { at: now, place } }
+  await update($, activity, () => seen)
+  await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen))
+}
+
 /** The file name a terminal's context snapshot goes in; the window builds the same one. */
 export function contextFile(terminal: string): string {
   return `${terminal.replace(/[^A-Za-z0-9._-]/g, '_')}.json`
@@ -536,6 +556,44 @@ export async function noteContext($: EngineInterface, force = false): Promise<bo
   return true
 }
 
+/** Claude Code's record of the plugins installed, and hookwich's entry in it. */
+const INSTALLED = '.claude/plugins/installed_plugins.json'
+const PLUGIN_KEY = 'hookwich@hookwich'
+const RELOAD_CHECK_MS = 10_000
+
+/** The newest hookwich Claude Code has installed; none when the record cannot be read. */
+export function installedVersion(record: string | undefined): string | undefined {
+  try {
+    const plugins = (JSON.parse(record ?? '') as Loose).plugins as Loose | undefined
+    const entries = plugins?.[PLUGIN_KEY]
+    return (Array.isArray(entries) ? entries : [])
+      .map(entry => (entry as Loose | null)?.version)
+      .filter((v): v is string => typeof v === 'string' && /^\d+(\.\d+)*$/.test(v))
+      .reduce<string | undefined>((best, v) => (best === undefined || newer(v, best) ? v : best), undefined)
+  } catch {
+    return undefined
+  }
+}
+
+/** The version this chat last reloaded for; kept across the reload, so one that did not take is not tried again. */
+const reloaded = atom({ plugin: 'hookwich', key: 'reloaded' } as const, '')
+
+/**
+ * A newer hookwich was installed (the window's Update button, or `claude plugin update`) while
+ * this chat runs the old one: it runs /reload-plugins once, which Claude Code holds until the chat
+ * is idle, so the new version applies here without starting Claude Code again.
+ */
+export async function reloadIfUpdated($: EngineInterface): Promise<boolean> {
+  if (!interactive) return false
+  const version = installedVersion(await readText($, `${await home($)}/${INSTALLED}`))
+  if (version === undefined || !newer(version, APP_VERSION)) return false
+  if ((await read($, reloaded)) === version) return false
+  await update($, reloaded, () => version)
+  $.ui.toast(`hookwich ${version}: reloading plugins so this chat uses it`)
+  await $.command.run({ command: 'reload-plugins' })
+  return true
+}
+
 /** Switches "once" items off in the scope they came from. */
 function spend(config: Config, scope: Scope, key: string, ids: Set<string>): Config {
   const off = (list: Item[] = []) => list.map(i => (ids.has(i.id) ? { ...i, enabled: false } : i))
@@ -594,7 +652,9 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     const before0 = await read($, activity)
     // Other Claude Code chats write this file too: keep the newest "where you last chatted",
     // so a chat working in the background never takes it back from the one you are typing in.
-    const mine = HERE.has(event) && interactive ? { at, place } : before0.lastChat
+    // A chat opened here (not one compacting on its own); a message is counted by prompt.submit.
+    const opened = event === 'SessionStart' && (e as Loose).source !== 'compact'
+    const mine = opened && interactive ? { at, place } : before0.lastChat
     const seen: Activity = {
       lastEvent: event,
       lastAt: at,
@@ -640,6 +700,8 @@ export const register: Register = on => {
         .catch(() => undefined)
     void ensureApp($, dir).then(trouble => showTrouble($, trouble))
     void noteContext($, true).catch(() => undefined)
+    // A reload stops this timer, and the new version's session.start starts its own.
+    if (interactive) $.clock.every(RELOAD_CHECK_MS, () => void reloadIfUpdated($).catch(() => undefined))
 
     return started
   })
@@ -672,8 +734,14 @@ export const register: Register = on => {
   on('prompt.edit', async ($, e, next) => {
     const box = await next(e)
     // At most one quick check a second (two small reads); typing never waits on more.
-    await noteTyping($).catch(() => undefined)
+    if (interactive && byYou(e.origin)) await noteTyping($).catch(() => undefined)
     return box
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    const entered = await next(e)
+    if (interactive && byYou(e.origin) && !('drop' in entered)) void noteSent($).catch(() => undefined)
+    return entered
   })
 
   on('classic.*', async ($, e, next) => {

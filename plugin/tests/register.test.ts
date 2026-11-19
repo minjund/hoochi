@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 type On = Parameters<TestBody>[1]
@@ -9,6 +9,7 @@ function machine(
   files: Record<string, string>,
   commands: Record<string, { exitCode: number; stdout: string }> = {},
   env: Record<string, string> = { WHITEBOX_SURFACE_ID: 'terminal:t1' },
+  { clock = true }: { clock?: boolean } = {},
 ) {
   const fs = new Map(Object.entries(files))
   const ran: string[] = []
@@ -37,7 +38,7 @@ function machine(
     return { value: { ...r, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   let now = 1_000
-  on('clock.now', () => ({ value: (now += 10) }))
+  if (clock) on('clock.now', () => ({ value: (now += 10) }))
   return { fs, ran }
 }
 
@@ -236,6 +237,8 @@ test('typing a chat marks where you are, and later moments keep that mark', asyn
   on('classic.UserPromptSubmit', () => ({}))
   on('classic.PostToolUse', () => ({}))
 
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await send($, 'composer')
   await $.classic.UserPromptSubmit({ prompt: 'hi' })
   const typed = JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat
   expect(typed.place.terminal).toBe('whitebox:terminal:t1')
@@ -274,7 +277,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.15/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.16/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -292,7 +295,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.15'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.16'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -608,4 +611,87 @@ test('a claude -p run in the same terminal is not where you chat', async ($, on)
   expect(fs.has('/home/me/.hookwich/places.json')).toBe(false)
   expect(asked).toBe(0)
   expect(fs.has(CONTEXT)).toBe(false)
+})
+
+const INSTALLED = '/home/me/.claude/plugins/installed_plugins.json'
+const installed = (version: string) =>
+  JSON.stringify({ version: 2, plugins: { 'hookwich@hookwich': [{ scope: 'user', version }] } })
+
+function reloadsSeen(on: On) {
+  const reloads: unknown[] = []
+  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('command.run', { command: 'reload-plugins' }, (_, e) => {
+    reloads.push(e)
+    return { text: 'Reloaded' }
+  })
+  return reloads
+}
+
+test('a newer hookwich installed: the open chat reloads its plugins, once', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000 })
+  const { fs } = machine(on, { [CONFIG]: v2({}), [INSTALLED]: installed('0.0.1') }, {}, undefined, {
+    clock: false,
+  })
+  const reloads = reloadsSeen(on)
+
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  await clock.advance(10_000)
+  expect(reloads).toHaveLength(0)
+
+  fs.set(INSTALLED, installed('9.0.0'))
+  await clock.advance(10_000)
+  expect(reloads).toHaveLength(1)
+  // a reload that did not take is not tried again for the same version
+  await clock.advance(60_000)
+  expect(reloads).toHaveLength(1)
+})
+
+test('a `claude -p` run never reloads plugins', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000 })
+  machine(on, { [CONFIG]: v2({}), [INSTALLED]: installed('9.0.0') }, {}, undefined, { clock: false })
+  const reloads = reloadsSeen(on)
+  on('session.usage', () => ({ value: usage(10_000) }))
+
+  await $.session.start({ cwd: '/tmp/scratch', surface: null, isInteractive: false })
+  await clock.advance(30_000)
+  expect(reloads).toHaveLength(0)
+})
+
+/** A prompt entering the session, from where the engine says it came. */
+function send($: Parameters<TestBody>[0], kind: string) {
+  return ($.prompt as unknown as { submit(e: unknown): Promise<unknown> }).submit({
+    text: 'hi',
+    origin: { kind },
+    wait: false,
+  })
+}
+
+test('only your own Enter makes this "where you are chatting"', async ($, on) => {
+  const clock = mock.clock(on, { now: 9_000_000 })
+  const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: elsewhere(5_000) }, {}, undefined, { clock: false })
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('classic.UserPromptSubmit', () => ({}))
+
+  // a terminal app's request, a notification, a scheduled run: the window stays on t9
+  for (const kind of ['unclassified', 'task-notification', 'peer', 'scheduled-trigger']) {
+    await send($, kind)
+    await $.classic.UserPromptSubmit({ prompt: 'hi' })
+    await clock.settle()
+    expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat.place.terminal).toBe('whitebox:terminal:t9')
+  }
+
+  await send($, 'composer')
+  await clock.settle()
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat.place.terminal).toBe('whitebox:terminal:t1')
+})
+
+test('a chat compacting on its own does not take "where you are chatting"', async ($, on) => {
+  // t9 was typed in a moment ago, earlier than this chat's own clock reads now
+  const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: elsewhere(500) })
+  on('classic.SessionStart', () => ({}))
+
+  await $.classic.SessionStart({ source: 'compact' })
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat.place.terminal).toBe('whitebox:terminal:t9')
 })

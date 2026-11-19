@@ -96,7 +96,8 @@ ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 hookwich 훅을 신뢰해 주세요.
 
 **새 판 받기:** 새 판이 나오면 창 위쪽에 **업데이트하기** 버튼이 떠요. 누르면 플러그인과 창을 함께 바꾸고 창을 다시
-열어요. 손으로 하려면 `claude plugin update hookwich@hookwich` 다음에 Claude Code를 새로 켜세요. 새 판을 저절로
+열어요. 손으로 하려면 `claude plugin update hookwich@hookwich`를 치세요. 이미 열린 대화도 몇 초 안에 저절로
+`/reload-plugins`를 해서 새 판으로 바뀌어요(0.1.16부터; 그 전 판에서 올릴 때는 한 번만 직접 치세요). 새 판을 저절로
 받으려면 `/plugin` → **Marketplaces** → hookwich → **Enable auto-update**를 한 번 켜 두세요. 창은 다음 대화에서
 플러그인과 같은 판으로 바뀌어요.
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import type { ContextSnapshot, Skill, SkillGroup, SkillState } from '../../lib/backend'
 import type { UiText } from '../../lib/i18n'
@@ -27,6 +27,7 @@ export function SkillsPanel({
   state,
   local,
   t,
+  banner,
   onSkill,
   onPlugin,
   onClose,
@@ -36,6 +37,8 @@ export function SkillsPanel({
   /** skills found on disk: your own, and installed plugins' as "plugin:skill" */
   local: Skill[]
   t: UiText
+  /** what the window has to say while this is open (a switch that failed), shown inside it */
+  banner?: ReactNode
   onSkill(name: string, on: boolean): void
   onPlugin(key: string, on: boolean): void
   onClose(): void
@@ -132,7 +135,8 @@ export function SkillsPanel({
           </Button>
         </div>
         <p className="hw-editor-hint">{t.skillsHint}</p>
-        {fromDisk && <p className="hw-note">{t.skillsFromDisk}</p>}
+        {banner}
+        {fromDisk && <p className="hw-note">{t.skillsFromDisk(count, snap?.skills?.count)}</p>}
         <input
           className="hw-skills-filter"
           type="search"

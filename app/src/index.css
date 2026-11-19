@@ -10,7 +10,6 @@ body,
 
 body {
   font-family: var(--aui-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
-  -webkit-font-smoothing: antialiased;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -93,7 +92,19 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px 12px 14px;
+  padding: 10px 10px 14px 12px;
+}
+
+/* A thin scrollbar, so the picture keeps its width (the text in it is drawn smaller as it narrows). */
+.hw-body::-webkit-scrollbar {
+  width: 6px;
+}
+.hw-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--hw-line-strong);
+}
+.hw-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .hw-feed {
@@ -126,9 +137,37 @@ body {
 }
 
 .hw-editor-head {
+  position: sticky;
+  top: -10px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: -10px -10px 0 -12px;
+  padding: 10px 10px 8px 12px;
+  background: var(--hw-bg);
+  border-bottom: 1px solid var(--hw-line);
+}
+
+/* what you put in for this moment elsewhere, listed under the cards */
+.hw-elsewhere {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--hw-line-strong);
+}
+
+/* Save and the buttons beside it, at the card's end */
+.hw-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* a card with changes not saved yet */
+.hw-item[data-unsaved] {
+  box-shadow: inset 3px 0 0 var(--aui-accent, #2563eb);
 }
 
 .hw-editor-title {
@@ -427,6 +466,17 @@ button.hw-existing-text:hover b {
   gap: 8px;
   font-size: 11px;
   color: var(--hw-soft);
+}
+/* something did not work: says so in red, with Close instead of Undo */
+.hw-done[data-notice='error'] {
+  padding: 2px 2px 2px 8px;
+  border-radius: 8px;
+  background: var(--aui-danger-soft, #fdecea);
+  color: var(--aui-danger, #c4320a);
+}
+.dark .hw-done[data-notice='error'] {
+  background: var(--aui-danger-soft, #3b1c14);
+  color: var(--aui-danger, #ff8a7a);
 }
 
 .hw-tip {

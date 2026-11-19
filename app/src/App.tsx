@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 
 import {
   CLAUDE_LAYOUT,
@@ -46,6 +46,19 @@ import {
   type Skill,
 } from './lib/backend'
 import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
+import { modelName } from './lib/names'
+import {
+  afterChange,
+  createSaver,
+  followState,
+  NOTICE_MS,
+  noticePlace,
+  pluginNote,
+  REOPEN_MS,
+  updateFlow,
+  type Notice,
+  type SaveStatus,
+} from './lib/machines'
 import {
   decidingScope,
   emptyAgent,
@@ -127,6 +140,7 @@ function newItem(event: string, agent: Agent): Item {
 
 const folderName = (path: string) => path.split('/').filter(Boolean).pop() ?? path
 
+
 const MinimizeIcon = (
   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6">
     <path d="M3.5 8h9" strokeLinecap="round" />
@@ -187,6 +201,12 @@ const HideIcon = (
 
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
+/** The popup open over the panel: your whole list, or every skill. One at a time. */
+type Modal = 'mine' | 'skills' | null
+
+/** Connecting Codex: what the last press did, or that one is under way. */
+type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
+
 const FOLLOW_KEY = 'hookwich.follow'
 function loadFollow(): boolean {
   try {
@@ -240,33 +260,28 @@ export default function App() {
   const [projectKey, setProjectKey] = useState('')
   const [terminalKey, setTerminalKey] = useState('')
   const [codex, setCodex] = useState<CodexStatus | null>(null)
-  const [codexNote, setCodexNote] = useState('')
+  const [codexFlow, setCodexFlow] = useState<CodexFlow>({ step: 'idle' })
   const [follow, setFollowState] = useState(loadFollow)
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
-  const [done, setDone] = useState<{ message: string; before: Config; below?: boolean } | null>(null)
-  const [showAll, setShowAll] = useState(false)
+  const [notice, setNotice] = useState<Notice<Config> | null>(null)
+  const [modal, setModal] = useState<Modal>(null)
   const [context, setContext] = useState<ContextSnapshot | null>(null)
-  const [update, setUpdate] = useState<UpdateState | null>(null)
-  const [showSkills, setShowSkills] = useState(false)
+  const [update, dispatchUpdate] = useReducer(updateFlow, { step: 'unknown' })
+  const [justUpdated, setJustUpdated] = useState<UpdateState['updated']>(null)
   const [skillsNow, setSkillsNow] = useState<SkillState>({ off: [], plugins: [] })
-  const [updating, setUpdating] = useState<'idle' | 'busy' | 'done'>('idle')
-  const [updateError, setUpdateError] = useState('')
+  /** The model each Claude Code terminal's chat runs, from its /context. */
+  const [models, setModels] = useState<Record<string, string>>({})
   useEffect(() => {
-    if (!showSkills) return
-    void skillState()
-      .then(setSkillsNow)
-      .catch(() => undefined)
-    const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowSkills(false)
+    if (!modal) return
+    if (modal === 'skills')
+      void skillState()
+        .then(setSkillsNow)
+        .catch(() => undefined)
+    const close = (e: KeyboardEvent) => e.key === 'Escape' && setModal(null)
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
-  }, [showSkills])
-  useEffect(() => {
-    if (!showAll) return
-    const close = (e: KeyboardEvent) => e.key === 'Escape' && setShowAll(false)
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [showAll])
+  }, [modal])
   const t = UI[lang]
 
   const setFollow = (on: boolean) => {
@@ -279,10 +294,17 @@ export default function App() {
     document.documentElement.lang = lang
   }, [lang])
 
-  // The config we last wrote or read (as canonical JSON), and whether an edit waits to be saved.
-  const known = useRef('')
-  const dirty = useRef(false)
-  const saveTimer = useRef<number | undefined>(undefined)
+  // Your edits are written after a short delay, one write at a time; one that failed stays on
+  // screen (the file does not replace it) until it is written. See lib/machines.ts.
+  const [saving, setSaving] = useState<{ status: SaveStatus; error?: string }>({ status: 'saved' })
+  const [saver] = useState(() =>
+    createSaver<Config>({
+      write: writeConfig,
+      key: c => JSON.stringify(c),
+      delay: SAVE_DELAY_MS,
+      onStatus: (status, error) => setSaving({ status, error }),
+    }),
+  )
 
   // Read the files: the plugin and the Codex hook write activity, and may switch "once" items off.
   useEffect(() => {
@@ -294,11 +316,7 @@ export default function App() {
         if (!alive) return
         setActivity({ claude: s.claude, codex: s.codex })
         setPlaces(s.places)
-        const text = JSON.stringify(s.config)
-        if (!dirty.current && text !== known.current) {
-          known.current = text
-          setConfig(s.config)
-        }
+        if (saver.fromDisk(JSON.stringify(s.config))) setConfig(s.config)
       } catch {
         // try again on the next tick
       }
@@ -309,7 +327,7 @@ export default function App() {
       alive = false
       window.clearInterval(id)
     }
-  }, [visible])
+  }, [visible, saver])
 
   useEffect(() => {
     if (expanded && skills.length === 0)
@@ -340,6 +358,16 @@ export default function App() {
         .then(setCodex)
         .catch(() => undefined)
   }, [expanded, agent])
+  /** Connect or disconnect Codex: one press at a time, and what went wrong is said in place. */
+  const codexDo = (run: () => Promise<CodexStatus>, after: CodexFlow) => {
+    setCodexFlow({ step: 'busy' })
+    void run()
+      .then(status => {
+        setCodex(status)
+        setCodexFlow(after)
+      })
+      .catch((e: unknown) => setCodexFlow({ step: 'failed', error: String(e) }))
+  }
 
   // Follow the chat you typed in last: its AI's picture, its project and its terminal.
   // Not while a moment is open for editing; it catches up when you go back to the picture.
@@ -361,7 +389,11 @@ export default function App() {
     if (!force && Date.now() - lastLook.current < UPDATE_MIN_GAP_MS) return
     lastLook.current = Date.now()
     void checkUpdate()
-      .then(u => setUpdate(prev => (prev?.updated && !u.updated ? { ...u, updated: prev.updated } : u)))
+      .then(u => {
+        dispatchUpdate({ type: 'checked', info: { current: u.current, latest: u.latest, available: u.available } })
+        // told once by the window, so kept until you close it
+        if (u.updated) setJustUpdated(u.updated)
+      })
       .catch(() => undefined)
   }, [])
   useEffect(() => {
@@ -374,17 +406,21 @@ export default function App() {
     if (expanded) lookForUpdate()
   }, [expanded, lookForUpdate])
   const runUpdate = async () => {
-    if (!update?.latest) return
-    setUpdating('busy')
-    setUpdateError('')
+    if (update.step !== 'available' || !update.info.latest) return
+    dispatchUpdate({ type: 'install' })
     try {
-      await applyUpdate(update.latest)
-      setUpdating('done')
+      await applyUpdate(update.info.latest)
+      dispatchUpdate({ type: 'installed' })
     } catch (e) {
-      setUpdating('idle')
-      setUpdateError(String(e))
+      dispatchUpdate({ type: 'failed', error: t.updateFailed(String(e)) })
     }
   }
+  // The window quits and reopens as the new one; still here after a while, it says so.
+  useEffect(() => {
+    if (update.step !== 'reopening') return
+    const id = window.setTimeout(() => dispatchUpdate({ type: 'failed', error: t.updateStuck }), REOPEN_MS)
+    return () => window.clearTimeout(id)
+  }, [update.step, t])
 
   // /context for the Claude Code chat you are in (or, when that is Codex, the Claude terminal in
   // view), as its chat keeps writing it. Shown whether or not the window follows you.
@@ -396,7 +432,12 @@ export default function App() {
     let alive = true
     const read = () =>
       void contextUsage(contextTerminal)
-        .then(snap => alive && setContext(snap))
+        .then(snap => {
+          if (!alive) return
+          setContext(snap)
+          const model = snap?.model ? modelName(snap.model) : ''
+          if (model) setModels(m => (m[contextTerminal] === model ? m : { ...m, [contextTerminal]: model }))
+        })
         .catch(() => undefined)
     read()
     const id = window.setInterval(read, POLL_MS)
@@ -426,7 +467,7 @@ export default function App() {
     for (const f of activity[agent].recent) if (f.id && (at[f.id] ?? 0) < f.at) at[f.id] = f.at
     return at
   }, [activity, agent])
-  const skillError = (e: unknown) => setDone({ message: t.toggleFailed(String(e)), before: config })
+  const failed = (e: unknown) => setNotice({ kind: 'error', message: t.toggleFailed(String(e)) })
   /** What the hover card adds about the context, at the moments it fills up. */
   const contextTip = (event: string): ReactNode => {
     if (!context || !contextFill) return null
@@ -472,7 +513,7 @@ export default function App() {
             </p>
           )}
           {context.skills && (
-            <Button size="sm" variant="secondary" onClick={() => setShowSkills(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>
               {t.skillsAll(context.skills.count)}
             </Button>
           )}
@@ -537,19 +578,18 @@ export default function App() {
     if (last && !terminalKey) setTerminalKey(last.terminal)
   }, [latest, last, projectKey, terminalKey])
 
-  const save = useCallback((next: Config) => {
-    setConfig(next)
-    dirty.current = true
-    window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(async () => {
-      try {
-        await writeConfig(next)
-        known.current = JSON.stringify(next)
-      } finally {
-        dirty.current = false
-      }
-    }, SAVE_DELAY_MS)
-  }, [])
+  const save = useCallback(
+    (next: Config) => {
+      setConfig(next)
+      saver.save(next)
+    },
+    [saver],
+  )
+  /** An edit of yours: an undo still on offer would now throw it away, so the undo ends. */
+  const edit = (next: Config) => {
+    save(next)
+    setNotice(afterChange)
+  }
 
   const open = async () => {
     await setExpanded(true)
@@ -559,6 +599,7 @@ export default function App() {
   const collapse = async () => {
     setIsExpanded(false)
     setSelected(null)
+    setModal(null)
     await setExpanded(false)
   }
 
@@ -574,14 +615,10 @@ export default function App() {
   const terminalProject =
     running.find(r => r.terminal === terminalKey)?.project ?? places.terminals[terminalKey]?.cwd ?? ''
   const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
-  // Terminals are told apart by folder, AI and a number in the order they were opened
-  // (among the chats open now), never by their raw ids.
-  const order = [...running].sort((a, b) => a.pid - b.pid).map(r => r.terminal)
-  const chatName = (terminal: string, project: string, who: Agent) => {
-    const n = order.indexOf(terminal) + 1
-    const sameFolder = running.filter(r => r.project === project).length > 1
-    return [folderName(project), t.agents[who], ...(n > 0 && sameFolder ? [t.terminalNo(n)] : [])].join(' · ')
-  }
+  // A chat is named by its project and its AI (the model, once its /context said which), never
+  // by a number: numbers moved as chats opened and closed. Its color dot tells two alike apart.
+  const chatName = (terminal: string, project: string, who: Agent) =>
+    [folderName(project), models[terminal] ?? t.agents[who]].join(' · ')
   const terminalAgent: Agent =
     running.find(r => r.terminal === terminalKey)?.agent ??
     (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
@@ -597,19 +634,16 @@ export default function App() {
   const key = scope === 'project' ? projectKey : scope === 'terminal' ? terminalKey : ''
   const scopeReady = scope === 'global' || key !== ''
   const list = scopeReady ? listOf(config[agent], scope, key) : []
-  const setList = (next: Item[]) => save(withList(config, agent, scope, key, next))
+  const setList = (next: Item[]) => edit(withList(config, agent, scope, key, next))
 
-  const addTo = (event: string) => {
-    setList([...list, newItem(event, agent)])
-    setSelected(event)
-  }
+  const addTo = (item: Item) => setList([...list, item])
   const changeItem = (item: Item) => setList(list.map(i => (i.id === item.id ? item : i)))
   const removeItem = (id: string) => setList(list.filter(i => i.id !== id))
 
   // Copy between scopes. Nothing is overwritten: items already there are skipped, and one undo is kept.
-  const act = (next: Config, message: string, below = false) => {
-    setDone({ message, before: config, below })
+  const act = (next: Config, message: string, near: 'controls' | 'list' = 'controls') => {
     save(next)
+    setNotice({ kind: 'undo', message, before: config, near })
   }
   const loadFrom = (from: Scope) => {
     const fromKey = from === 'project' ? terminalProject : ''
@@ -650,24 +684,46 @@ export default function App() {
     ...(scope !== 'global' && list.length > 0 ? [{ label: t.applyGlobal, run: applyGlobal }] : []),
   ]
 
-  const doneBanner = done && (
-    <div className="hw-done" role="status">
-      <span>{done.message}</span>
-      <Button size="sm" variant="ghost" onClick={undo}>
-        {t.undo}
-      </Button>
+  const noticeBanner = notice && (
+    <div className="hw-done" role={notice.kind === 'error' ? 'alert' : 'status'} data-notice={notice.kind}>
+      <span>{notice.message}</span>
+      {notice.kind === 'undo' ? (
+        <Button size="sm" variant="ghost" onClick={undo}>
+          {t.undo}
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
+          {t.close}
+        </Button>
+      )}
     </div>
   )
   function undo() {
-    if (!done) return
-    save(done.before)
-    setDone(null)
+    if (notice?.kind !== 'undo') return
+    save(notice.before)
+    setNotice(null)
   }
   useEffect(() => {
-    if (!done) return
-    const id = window.setTimeout(() => setDone(null), 12_000)
+    if (!notice) return
+    const id = window.setTimeout(() => setNotice(null), NOTICE_MS[notice.kind])
     return () => window.clearTimeout(id)
-  }, [done])
+  }, [notice])
+  const noticeAt = noticePlace(notice, modal)
+  // An edit that could not be written: kept on screen, said until it is.
+  const saveBar = saving.status === 'failed' && (
+    <div className="hw-update" role="alert" data-save="failed">
+      <span>{t.saveFailed(saving.error ?? '')}</span>
+      <Button size="sm" variant="primary" onClick={() => saver.retry()}>
+        {t.retry}
+      </Button>
+    </div>
+  )
+  const inModal = (
+    <>
+      {saveBar}
+      {noticeAt === 'modal' && noticeBanner}
+    </>
+  )
 
   // Hooks already set up outside hookwich at this place, read again now and then.
   const existingProject = scope === 'global' ? '' : scope === 'project' ? projectKey : terminalProject
@@ -765,7 +821,7 @@ export default function App() {
             ),
           )
   const setMine = (m: Mine, enabled: boolean) =>
-    save(
+    edit(
       withList(
         config,
         agent,
@@ -785,10 +841,10 @@ export default function App() {
         listOf(config[agent], m.scope, m.key).filter(i => i.id !== m.item.id),
       ),
       t.mineDeleted(eventName(m.item.event, lang, agent)),
-      true,
+      'list',
     )
   const goTo = (m: Mine) => {
-    setShowAll(false)
+    setModal(null)
     setScope(m.scope)
     if (m.scope === 'project') setProjectKey(m.key)
     if (m.scope === 'terminal') setTerminalKey(m.key)
@@ -841,10 +897,11 @@ export default function App() {
   ].filter(g => g.rows.length > 0)
 
   const slot = selected ? slotOf(selected, agent) : undefined
+  const following = followState(follow, selected !== null)
 
   if (!expanded) {
     return (
-      <div className="hw-bubble-host">
+      <div className="hw-bubble-host" data-view="bubble" data-follow={following}>
         <SandwichBubble
           activeCount={activeCount}
           pulseKey={Math.max(activity.claude.lastAt, activity.codex.lastAt)}
@@ -858,7 +915,14 @@ export default function App() {
   }
 
   return (
-    <div className="hw-panel">
+    <div
+      className="hw-panel"
+      data-view={slot ? 'editor' : 'picture'}
+      data-modal={modal ?? undefined}
+      data-save={saving.status}
+      data-update={update.step}
+      data-follow={following}
+    >
       <header
         className="hw-head"
         onMouseDown={e => {
@@ -916,37 +980,44 @@ export default function App() {
         />
       </header>
 
-      {update?.updated && (
+      {!modal && saveBar}
+      {justUpdated && (
         <div className="hw-update" role="status">
           <span>
-            {t.updatedTo(update.updated.to)} {update.updated.plugin ? t.updatedPlugin : t.updatedNoPlugin}
+            {t.updatedTo(justUpdated.to)}{' '}
+            {
+              { auto: t.updatedPluginAuto, once: t.updatedPluginOnce, 'by-hand': t.updatedNoPlugin }[
+                pluginNote(justUpdated)
+              ]
+            }
           </span>
-          <Button size="sm" variant="ghost" onClick={() => setUpdate({ ...update, updated: null })}>
+          <Button size="sm" variant="ghost" onClick={() => setJustUpdated(null)}>
             {t.close}
           </Button>
         </div>
       )}
-      {update?.available && !update.updated && (
-        <div className="hw-update" role="status" data-new>
-          <span>
-            {updating === 'done'
-              ? t.updateReopening
-              : updateError
-                ? t.updateFailed(updateError)
-                : t.updateReady(update.latest ?? '', update.current)}
-          </span>
-          {updating !== 'done' && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={updating === 'busy'}
-              onClick={() => void runUpdate()}
-            >
-              {updating === 'busy' ? t.updating : t.updateNow}
-            </Button>
-          )}
-        </div>
-      )}
+      {!justUpdated &&
+        (update.step === 'available' || update.step === 'installing' || update.step === 'reopening') && (
+          <div className="hw-update" role="status" data-new>
+            <span>
+              {update.step === 'reopening'
+                ? t.updateReopening
+                : update.step === 'available' && update.error
+                  ? update.error
+                  : t.updateReady(update.info.latest ?? '', update.info.current)}
+            </span>
+            {update.step !== 'reopening' && (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={update.step === 'installing'}
+                onClick={() => void runUpdate()}
+              >
+                {update.step === 'installing' ? t.updating : t.updateNow}
+              </Button>
+            )}
+          </div>
+        )}
 
       <div className="hw-controls">
         <Switch
@@ -955,6 +1026,7 @@ export default function App() {
           label={t.follow}
           description={
             t.followHint +
+            (following === 'paused' ? ` ${t.followPaused}` : '') +
             (follow && latest?.agent === 'claude' && codex?.installed && !codex.connected
               ? ` ${t.followCodex}`
               : '')
@@ -1041,38 +1113,37 @@ export default function App() {
             ))}
           </div>
         )}
-        {done && !done.below && doneBanner}
+        {noticeAt === 'controls' && noticeBanner}
         {agent === 'codex' && codex && (
           <div className="hw-codex">
             {!codex.installed ? (
               <span>{t.codexMissing}</span>
             ) : codex.connected ? (
               <>
-                <span>{codexNote || '✓ Codex'}</span>
+                <span>
+                  {codexFlow.step === 'failed'
+                    ? t.toggleFailed(codexFlow.error)
+                    : codexFlow.step === 'connected-now'
+                      ? t.codexTrust
+                      : '✓ Codex'}
+                </span>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    void codexDisconnect()
-                      .then(setCodex)
-                      .then(() => setCodexNote(''))
-                  }
+                  disabled={codexFlow.step === 'busy'}
+                  onClick={() => codexDo(codexDisconnect, { step: 'idle' })}
                 >
                   {t.codexDisconnect}
                 </Button>
               </>
             ) : (
               <>
-                <span>{t.codexOff}</span>
+                <span>{codexFlow.step === 'failed' ? t.toggleFailed(codexFlow.error) : t.codexOff}</span>
                 <Button
                   size="sm"
                   variant="primary"
-                  onClick={() =>
-                    void codexConnect()
-                      .then(setCodex)
-                      .then(() => setCodexNote(t.codexTrust))
-                      .catch((e: unknown) => setCodexNote(String(e)))
-                  }
+                  disabled={codexFlow.step === 'busy'}
+                  onClick={() => codexDo(codexConnect, { step: 'connected-now' })}
                 >
                   {t.codexConnect}
                 </Button>
@@ -1092,12 +1163,18 @@ export default function App() {
             onToggleExisting={(hook, on) =>
               void setExistingHook(existingProject, hook.id, on)
                 .then(setExisting)
-                .catch((e: unknown) => setDone({ message: t.toggleFailed(String(e)), before: config }))
+                .catch(failed)
             }
             lastRun={lastRun}
+            elsewhere={(() => {
+              const others = mine.filter(
+                m => m.item.event === slot.event && !(m.scope === scope && m.key === key),
+              )
+              return { count: others.length, rows: others.map(m => mineRow(m)) }
+            })()}
             extra={
               slot.event === 'SessionStart' && agent === 'claude' && context?.skills ? (
-                <Button size="sm" variant="secondary" onClick={() => setShowSkills(true)}>
+                <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>
                   {t.skillsAll(context.skills.count)}
                 </Button>
               ) : undefined
@@ -1107,7 +1184,8 @@ export default function App() {
             lang={lang}
             onChange={changeItem}
             onRemove={removeItem}
-            onAdd={() => addTo(slot.event)}
+            makeItem={() => newItem(slot.event, agent)}
+            onAdd={addTo}
             onBack={() => setSelected(null)}
           />
         ) : (
@@ -1178,7 +1256,7 @@ export default function App() {
             {t.mine} · {mine.length}
           </span>
           {mine.length > 3 && (
-            <Button size="sm" variant="ghost" onClick={() => setShowAll(true)}>
+            <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
               {t.seeAll(mine.length)}
             </Button>
           )}
@@ -1188,27 +1266,28 @@ export default function App() {
         ) : (
           mine.slice(0, 3).map(m => mineRow(m))
         )}
-        {done?.below && !showAll && doneBanner}
+        {noticeAt === 'list' && noticeBanner}
       </footer>
 
-      {showSkills && (
+      {modal === 'skills' && (
         <SkillsPanel
           snap={context}
           state={skillsNow}
           local={skills}
           t={t}
-          onSkill={(name, on) => void setSkill(name, on).then(setSkillsNow).catch(skillError)}
-          onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(skillError)}
-          onClose={() => setShowSkills(false)}
+          banner={inModal}
+          onSkill={(name, on) => void setSkill(name, on).then(setSkillsNow).catch(failed)}
+          onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(failed)}
+          onClose={() => setModal(null)}
         />
       )}
-      {showAll && (
+      {modal === 'mine' && (
         <div
           className="hw-modal"
           role="dialog"
           aria-modal="true"
           aria-label={t.mine}
-          onClick={e => e.target === e.currentTarget && setShowAll(false)}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
         >
           <div className="hw-modal-card">
             <div className="hw-modal-head">
@@ -1220,11 +1299,11 @@ export default function App() {
                 variant="ghost"
                 icon={HideIcon}
                 label={t.close}
-                onClick={() => setShowAll(false)}
+                onClick={() => setModal(null)}
               />
             </div>
             <p className="hw-editor-hint">{t.mineHint}</p>
-            {done?.below && doneBanner}
+            {inModal}
             <div className="hw-modal-list">
               {groups.map(g => (
                 <section key={g.name}>

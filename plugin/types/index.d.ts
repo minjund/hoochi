@@ -114,6 +114,6 @@ export type SkillGroup = {
 
 declare module 'claude-code' {
   interface PluginState {
-    hookwich: { activity: Shaped<Activity> }
+    hookwich: { activity: Shaped<Activity>; reloaded: string }
   }
 }

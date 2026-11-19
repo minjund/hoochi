@@ -334,9 +334,9 @@ const styles = `
 }
 .ui-lcd-card[data-below] { transform: translate(-50%, 6px); }
 .ui-lcd-badge-existing { fill: var(--ui-lcd-muted); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
-.ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 9px; font-weight: 700; pointer-events: none; }
+.ui-lcd-badge-text { fill: var(--ui-lcd-badge-ink); font-size: 10px; font-weight: 700; pointer-events: none; }
 .ui-lcd-badge-text-disabled { fill: var(--ui-lcd-muted); }
-.ui-lcd-ctx { fill: var(--ui-lcd-muted); font-size: 12px; pointer-events: none; }
+.ui-lcd-ctx { fill: var(--ui-lcd-muted); font-size: 12.5px; pointer-events: none; }
 .ui-lcd-ctx-strong { fill: var(--ui-lcd-ink); font-size: 14px; font-weight: 700; pointer-events: none; }
 .ui-lcd-ctx-track { fill: var(--ui-lcd-border); pointer-events: none; }
 .ui-lcd-ctx-fill { fill: var(--ui-lcd-blue); pointer-events: none; transition: width 400ms ease-out; }
@@ -545,7 +545,7 @@ export function LifecycleDiagram({
               y={badgeY}
               dy=".35em"
               textAnchor="middle"
-              style={compact ? { fontSize: 6 } : undefined}
+              style={compact ? { fontSize: 7 } : undefined}
             >
               {alreadyText}
             </text>
@@ -565,7 +565,7 @@ export function LifecycleDiagram({
               y={badgeY}
               dy=".35em"
               textAnchor="middle"
-              style={compact ? { fontSize: 6 } : undefined}
+              style={compact ? { fontSize: 7 } : undefined}
             >
               {badgeText}
             </text>
@@ -577,7 +577,7 @@ export function LifecycleDiagram({
 
   /** Centered lines of a label inside one area of a box. */
   function labelLines(text: string, cx: number, top: number, height: number, width: number, narrow: boolean) {
-    const size = narrow ? 11.5 : 12.5
+    const size = narrow ? 12 : 13
     const lines = wrapLabel(text, width - 10, size)
     const step = size + 2
     const block = lines.length * step
@@ -616,12 +616,12 @@ export function LifecycleDiagram({
                 <text
                   key={event}
                   className="ui-lcd-label"
-                  style={{ fontSize: 9.5 }}
+                  style={{ fontSize: 10.5 }}
                   x={center}
                   y={y + 11 + index * 12.5}
                   textAnchor="middle"
                 >
-                  {wrapLabel(eventName(event, lang, agent), width - 8, 9.5, 1)[0]}
+                  {wrapLabel(eventName(event, lang, agent), width - 8, 10.5, 1)[0]}
                 </text>
               ))
             : events.length === 0

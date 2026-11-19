@@ -89,7 +89,8 @@ ditto -x -k Hookwich-macos-arm64.zip . && open Hookwich.app
 **3. Codex（可选）** — 在窗口的 Codex 标签页按 **连接 Codex**，然后在 Codex 中输入一次 `/hooks`，信任 hookwich 的钩子。
 
 **更新：** 有新版本时，窗口顶部会出现 **更新** 按钮：点一下会同时更新插件和窗口并重新打开。
-手动更新：运行 `claude plugin update hookwich@hookwich`，然后重新打开 Claude Code。想自动获取新版本，就在
+手动更新：运行 `claude plugin update hookwich@hookwich`。已打开的对话几秒内会自动执行 `/reload-plugins` 换成新版本
+（从 0.1.16 起；从更早的版本升级时，请手动输入一次）。想自动获取新版本，就在
 `/plugin` → **Marketplaces** → hookwich → **Enable auto-update** 打开一次。窗口会在下一次对话时换成与插件相同的版本。
 
 ## 马上试试
