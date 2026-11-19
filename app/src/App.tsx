@@ -284,11 +284,15 @@ export default function App() {
   }, [modal])
   const t = UI[lang]
 
+  // The switch: changed only when you press it (kept across updates in localStorage).
   const setFollow = (on: boolean) => {
     setFollowState(on)
     saveFollow(on)
+    setHeld(false)
     if (on) followed.current = 0
   }
+  // You moved the window yourself: following waits for your next chat, the switch stays on.
+  const [held, setHeld] = useState(false)
 
   useEffect(() => {
     document.documentElement.lang = lang
@@ -370,17 +374,32 @@ export default function App() {
   }
 
   // Follow the chat you typed in last: its AI's picture, its project and its terminal.
-  // Not while a moment is open for editing; it catches up when you go back to the picture.
-  // The tab (everywhere / this project / this terminal) stays the one you picked.
+  // Not while a moment is open for editing; it catches up when you go back to the workflow.
+  // The tab follows too (below): this project when that chat is in one, else everywhere.
   const latest = lastChatOf(activity)
   const followed = useRef(0)
+  const holdFollow = () => {
+    if (!follow) return
+    followed.current = Math.max(followed.current, Date.now())
+    setHeld(true)
+  }
   useEffect(() => {
     if (!follow || !latest || selected !== null || latest.at <= followed.current) return
     followed.current = latest.at
+    setHeld(false)
     setAgent(latest.agent)
     setProjectKey(latest.place.project)
     setTerminalKey(latest.place.terminal)
   }, [follow, latest, selected])
+
+  // The tab, while following: "this project" when the chat you are in has a git project, else
+  // "everywhere". "This terminal" is yours to pick; once picked it stays, on the terminal you chat
+  // in last. Picking another tab yourself holds following until you chat again (holdFollow).
+  const chatHasProject = latest ? isProject(latest.place.project, latest.place.terminal) : false
+  useEffect(() => {
+    if (!follow || held || selected !== null || !latest) return
+    setScope(s => (s === 'terminal' ? s : chatHasProject ? 'project' : 'global'))
+  }, [follow, held, selected, latest, chatHasProject])
 
   // A newer hookwich: looked for when the window opens, each time you open the panel (at most every
   // five minutes), and every half hour while it is shown. About two GitHub requests an hour.
@@ -613,12 +632,16 @@ export default function App() {
     )
   }
   const terminalProject =
-    running.find(r => r.terminal === terminalKey)?.project ?? places.terminals[terminalKey]?.cwd ?? ''
+    running.find(r => r.terminal === terminalKey)?.project ??
+    places.terminals[terminalKey]?.cwd ??
+    (latest?.place.terminal === terminalKey ? latest.place.project : '')
   const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
   // A chat is named by its project and its AI (the model, once its /context said which), never
   // by a number: numbers moved as chats opened and closed. Its color dot tells two alike apart.
   const chatName = (terminal: string, project: string, who: Agent) =>
-    [folderName(project), models[terminal] ?? t.agents[who]].join(' · ')
+    [project && isProject(project, terminal) ? folderName(project) : t.noProject, models[terminal] ?? t.agents[who]].join(
+      ' · ',
+    )
   const terminalAgent: Agent =
     running.find(r => r.terminal === terminalKey)?.agent ??
     (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
@@ -848,9 +871,9 @@ export default function App() {
     setScope(m.scope)
     if (m.scope === 'project') setProjectKey(m.key)
     if (m.scope === 'terminal') setTerminalKey(m.key)
-    // Editing somewhere other than the chat you are in: stop following, or it would jump back.
+    // Editing somewhere other than the chat you are in: hold following, or it would jump back.
     const here = m.scope === 'project' ? latest?.place.project : latest?.place.terminal
-    if (m.scope !== 'global' && m.key !== here) setFollow(false)
+    if (m.scope !== 'global' && m.key !== here) holdFollow()
     setSelected(m.item.event)
   }
   const mineRow = (m: Mine, withPlace = true) => {
@@ -897,7 +920,7 @@ export default function App() {
   ].filter(g => g.rows.length > 0)
 
   const slot = selected ? slotOf(selected, agent) : undefined
-  const following = followState(follow, selected !== null)
+  const following = followState(follow, selected !== null, held)
 
   if (!expanded) {
     return (
@@ -1026,7 +1049,7 @@ export default function App() {
           label={t.follow}
           description={
             t.followHint +
-            (following === 'paused' ? ` ${t.followPaused}` : '') +
+            (following === 'paused' ? ` ${t.followPaused}` : following === 'held' ? ` ${t.followHeld}` : '') +
             (follow && latest?.agent === 'claude' && codex?.installed && !codex.connected
               ? ` ${t.followCodex}`
               : '')
@@ -1062,7 +1085,7 @@ export default function App() {
           onChange={next => {
             setAgent(next)
             setSelected(null)
-            setFollow(false)
+            holdFollow()
           }}
         />
         <SegmentedControl
@@ -1075,7 +1098,11 @@ export default function App() {
             { value: 'terminal', label: t.scopes.terminal },
           ]}
           value={scope}
-          onChange={setScope}
+          onChange={next => {
+            setScope(next)
+            // "This terminal" is kept while following; the other two would be changed back at once.
+            if (next !== 'terminal') holdFollow()
+          }}
         />
         {scope === 'project' &&
           (projectOptions.length ? (
@@ -1087,7 +1114,7 @@ export default function App() {
               value={projectKey || null}
               onChange={next => {
                 setProjectKey(next)
-                setFollow(false)
+                holdFollow()
               }}
             />
           ) : (

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="510" viewBox="0 0 920 510" lang="en" role="img" aria-labelledby="title desc">
+<title id="title">hookwich</title>
+<desc id="desc">Agents → ~/.hookwich → hookwich Window</desc>
+<rect x=".5" y=".5" width="919" height="509" rx="24" fill="#fbfcf9" stroke="#dfe5dc"/>
+<g font-family="system-ui, -apple-system, &quot;Apple SD Gothic Neo&quot;, &quot;Hiragino Sans&quot;, &quot;PingFang SC&quot;, sans-serif">
+<text x="36" y="39" font-size="19" fill="#1e1e1e" font-weight="700">Agents</text>
+<text x="350" y="39" font-size="21" fill="#1e1e1e" font-weight="700">~/.hookwich</text>
+<text x="350" y="62" font-size="13" fill="#5b6678" font-weight="400">My computer</text>
+<text x="730" y="39" font-size="21" fill="#1e1e1e" font-weight="700">hookwich</text>
+<text x="730" y="62" font-size="13" fill="#5b6678" font-weight="400">Window · Tauri · Rust</text>
+<rect x="24" y="84" width="202" height="278" rx="16" fill="#f1f5ee" stroke="#dfe5dc"/>
+<rect x="38" y="104" width="170" height="78" rx="10" fill="#ffffff" stroke="#d8e2d4"/>
+<rect x="38" y="221" width="170" height="78" rx="10" fill="#ffffff" stroke="#d8e2d4"/>
+<g transform="translate(51 119)" fill="none" stroke="#1f5c2b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="22" height="18" rx="4" fill="#eef7eb"/><path d="M5 5L9 9L5 13M12 13H17"/></g>
+<text x="82" y="134" font-size="16" fill="#1e1e1e" font-weight="650">Claude Code</text>
+<text x="51" y="163" font-size="13" fill="#5b6678" font-weight="400">hookwich plugin</text>
+<g transform="translate(51 236)" fill="none" stroke="#1f5c2b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="22" height="18" rx="4" fill="#eef7eb"/><path d="M5 5L9 9L5 13M12 13H17"/></g>
+<text x="82" y="251" font-size="16" fill="#1e1e1e" font-weight="650">Codex</text>
+<text x="51" y="280" font-size="13" fill="#5b6678" font-weight="400">hookwich hook</text>
+<rect x="350" y="91" width="228" height="71" rx="12" fill="#f0f7ec" stroke="#c7dcc1"/>
+<g transform="translate(364 107)" fill="none" stroke="#5b6678" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M0 0H11L17 6V21H0ZM11 0V6H17M4 11H12M4 16H10"/></g>
+<text x="391" y="118" font-size="16" fill="#1e1e1e" font-weight="650">config.json</text>
+<text x="391" y="139" font-size="13" fill="#5b6678" font-weight="400">What I put in</text>
+<rect x="350" y="191" width="228" height="71" rx="12" fill="#fff7e7" stroke="#e4cda9"/>
+<g transform="translate(364 207)" fill="none" stroke="#5b6678" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M0 0H11L17 6V21H0ZM11 0V6H17M4 11H12M4 16H10"/></g>
+<text x="391" y="218" font-size="16" fill="#1e1e1e" font-weight="650">activity-*.json</text>
+<text x="391" y="239" font-size="13" fill="#5b6678" font-weight="400">What just happened</text>
+<rect x="350" y="291" width="228" height="71" rx="12" fill="#ffffff" stroke="#d8e2d4"/>
+<g transform="translate(364 307)" fill="none" stroke="#5b6678" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M0 0H11L17 6V21H0ZM11 0V6H17M4 11H12M4 16H10"/></g>
+<text x="391" y="318" font-size="16" fill="#1e1e1e" font-weight="650">context/</text>
+<text x="391" y="339" font-size="13" fill="#5b6678" font-weight="400">/context record</text>
+<text x="391" y="355" font-size="13" fill="#5b6678" font-weight="400">Claude Code only</text>
+<rect x="730" y="84" width="166" height="278" rx="16" fill="#ffffff" stroke="#c7dcc1"/>
+<path d="M731 120H895" stroke="#d8e2d4"/>
+<g fill="#3fa34d"><circle cx="747" cy="102" r="3"/><circle cx="758" cy="102" r="3"/><circle cx="769" cy="102" r="3"/></g>
+<circle cx="813" cy="226" r="54" fill="#f0f7ec"/>
+<g stroke-linejoin="round">
+  <path d="M777 204L787 196H850L840 204V214H777Z" fill="#f6e4c0" stroke="#b9793a" stroke-width="2"/>
+  <path d="M777 204H840L850 196V206L840 214" fill="none" stroke="#b9793a" stroke-width="2"/>
+  <path d="M779 224H847L842 233H778Z" fill="#3fa34d" stroke="#1f5c2b" stroke-width="2"/>
+  <path d="M777 246L787 238H850L840 246V256H777Z" fill="#f6e4c0" stroke="#b9793a" stroke-width="2"/>
+  <path d="M777 246H840L850 238V248L840 256" fill="none" stroke="#b9793a" stroke-width="2"/>
+</g>
+<g fill="none" stroke="#1f5c2b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+<path d="M226 126H348"/>
+<path d="M226 226H348"/>
+<path d="M730 126H580"/>
+<path d="M578 226H728"/>
+</g>
+<g fill="none" stroke="#b9793a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M208 161H218V326H348"/><path d="M578 326H728"/></g>
+<circle cx="208" cy="161" r="3" fill="#b9793a"/>
+<text x="288" y="114" font-size="13" fill="#1f5c2b" font-weight="600" text-anchor="middle">Read at each moment</text>
+<text x="288" y="214" font-size="13" fill="#1f5c2b" font-weight="600" text-anchor="middle">Write</text>
+<text x="288" y="314" font-size="13" fill="#1e1e1e" font-weight="600" text-anchor="middle">Write</text>
+<text x="654" y="114" font-size="13" fill="#1f5c2b" font-weight="600" text-anchor="middle">Save</text>
+<text x="654" y="214" font-size="13" fill="#1f5c2b" font-weight="600" text-anchor="middle">Lights up</text>
+<text x="654" y="314" font-size="13" fill="#1e1e1e" font-weight="600" text-anchor="middle">/context view</text>
+<rect x="24" y="380" width="872" height="110" rx="14" fill="#eef5e9" stroke="#dce8d5"/>
+<circle cx="44" cy="406" r="10" fill="#ffffff" stroke="#c7dcc1"/>
+<text x="44" y="411" font-size="13" fill="#1f5c2b" font-weight="650" text-anchor="middle">1</text>
+<text x="64" y="411" font-size="13" fill="#1e1e1e" font-weight="400">Existing hooks run first; then add input from the narrowest scope (This terminal → This project → Everywhere).</text>
+<circle cx="44" cy="441" r="10" fill="#ffffff" stroke="#c7dcc1"/>
+<text x="44" y="446" font-size="13" fill="#1f5c2b" font-weight="650" text-anchor="middle">2</text>
+<text x="64" y="446" font-size="13" fill="#1e1e1e" font-weight="400">When an answer ends, it keeps going at most once per answer.</text>
+<circle cx="44" cy="476" r="10" fill="#ffffff" stroke="#c7dcc1"/>
+<text x="44" y="481" font-size="13" fill="#1f5c2b" font-weight="650" text-anchor="middle">3</text>
+<text x="64" y="481" font-size="13" fill="#1e1e1e" font-weight="400">Everything stays on my computer.</text>
+<g fill="none" stroke="#1f5c2b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M340 120L348 126L340 132M340 220L348 226L340 232M588 120L580 126L588 132M720 220L728 226L720 232"/></g>
+<g fill="none" stroke="#b9793a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M340 320L348 326L340 332M720 320L728 326L720 332"/></g>
+</g>
+</svg>

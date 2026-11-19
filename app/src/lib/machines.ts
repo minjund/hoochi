@@ -208,9 +208,15 @@ export function noticePlace<T>(
 
 // ---------- Following where you chat ----------
 
-/** on → follows; paused → follows again when you go back to the picture; off → stays put. */
-export type FollowState = 'on' | 'paused' | 'off'
+/**
+ * on     → follows the chat you type in
+ * paused → a moment is open; follows again when you go back to the workflow
+ * held   → you moved the window yourself (another place, AI or project); follows again once you
+ *          chat somewhere. The switch is changed only by you, never by these.
+ * off    → stays put
+ */
+export type FollowState = 'on' | 'paused' | 'held' | 'off'
 
-export function followState(follow: boolean, editing: boolean): FollowState {
-  return !follow ? 'off' : editing ? 'paused' : 'on'
+export function followState(follow: boolean, editing: boolean, held = false): FollowState {
+  return !follow ? 'off' : editing ? 'paused' : held ? 'held' : 'on'
 }

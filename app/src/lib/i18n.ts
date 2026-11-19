@@ -486,6 +486,8 @@ export const UI = {
     followNow: (agent: string, where: string) => `Now: ${agent} · ${where}`,
     followHint: 'Switches by itself to the AI and terminal you last typed in.',
     followPaused: 'Paused while a moment is open; it catches up when you go back.',
+    followHeld: 'Showing the place you picked; it follows again when you next chat.',
+    noProject: 'No project',
     followCodex: 'To follow Codex too, connect it in the Codex tab.',
   },
   ko: {
@@ -689,6 +691,8 @@ export const UI = {
     followNow: (agent: string, where: string) => `지금: ${agent} · ${where}`,
     followHint: '마지막으로 채팅을 친 AI와 터미널로 저절로 바뀌어요.',
     followPaused: '순간을 열어 둔 동안은 멈춰 있다가, 워크플로우로 돌아가면 따라가요.',
+    followHeld: '직접 고른 곳을 보여 주는 중이에요. 다음에 채팅을 치면 다시 따라가요.',
+    noProject: '프로젝트 없음',
     followCodex: 'Codex도 따라가려면 Codex 탭에서 연결해 주세요.',
   },
   ja: {
@@ -894,7 +898,9 @@ export const UI = {
     follow: 'チャットしている場所に合わせる',
     followNow: (agent: string, where: string) => `いま：${agent} · ${where}`,
     followHint: '最後に入力した AI とターミナルに自動で切り替わります。',
-    followPaused: '瞬間を開いているあいだは止まり、図に戻ると追いつきます。',
+    followPaused: '瞬間を開いているあいだは止まり、ワークフローに戻ると追いつきます。',
+    followHeld: '選んだ場所を表示しています。次にチャットすると、また追いかけます。',
+    noProject: 'プロジェクトなし',
     followCodex: 'Codex にも合わせるには、Codex タブで接続してください。',
   },
   zh: {
@@ -1095,7 +1101,9 @@ export const UI = {
     follow: '跟随我正在聊天的地方',
     followNow: (agent: string, where: string) => `现在：${agent} · ${where}`,
     followHint: '会自动切换到你最后输入的 AI 和终端。',
-    followPaused: '打开某个时刻时会暂停，回到图上后再跟上。',
+    followPaused: '打开某个时刻时会暂停，回到工作流程后再跟上。',
+    followHeld: '正在显示你选的地方；下次聊天时会再次跟随。',
+    noProject: '无项目',
     followCodex: '要同时跟随 Codex，请在 Codex 标签页中连接。',
   },
 } satisfies Record<Lang, unknown>
