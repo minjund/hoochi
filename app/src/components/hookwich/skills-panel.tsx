@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 
 import type { ContextSnapshot, Skill, SkillGroup, SkillState } from '../../lib/backend'
 import type { UiText } from '../../lib/i18n'
+import { ONE_BY_ONE } from '../../lib/skills'
 import { Button } from '../ui/button'
 import { Switch } from '../ui/switch'
 import { tokens } from './lifecycle-diagram'
@@ -17,9 +18,6 @@ type Group = {
   /** for a plugin: its "name@marketplace" and whether it is on */
   plugin?: { key: string; on: boolean }
 }
-
-/** Kinds of skill that can be switched one by one (skillOverrides); plugins go whole. */
-const ONE_BY_ONE: ReadonlySet<SkillGroup['kind']> = new Set(['user', 'project', 'builtin'])
 
 /** Every skill Claude is shown, by where it comes from, with a switch wherever one works. */
 export function SkillsPanel({

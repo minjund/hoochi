@@ -550,6 +550,12 @@ button.hw-existing-text:hover b {
   font-size: 10.5px;
   color: var(--hw-soft);
 }
+.hw-tip-list li.hw-tip-more,
+.hw-ctxbars li.hw-ctxbars-more {
+  display: block;
+  font-size: 10.5px;
+  color: var(--hw-soft);
+}
 .hw-tip-list li[data-off] > span {
   opacity: 0.5;
   text-decoration: line-through;
@@ -705,7 +711,7 @@ button.hw-existing-text:hover b {
 }
 .hw-ctxbars {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -714,7 +720,7 @@ button.hw-existing-text:hover b {
 .hw-ctxbars li {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 2px 8px;
+  gap: 1px 8px;
 }
 .hw-ctxbars span {
   min-width: 0;
@@ -732,7 +738,7 @@ button.hw-existing-text:hover b {
 }
 .hw-ctxbars i {
   grid-column: 1 / -1;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
   background: #22a6b3;
   min-width: 2px;

@@ -82,6 +82,8 @@ const RUNNING_MS = 4000
 const EXISTING_MS = 15000
 const UPDATE_MS = 30 * 60_000
 const UPDATE_MIN_GAP_MS = 5 * 60_000
+/** A hover card lists this many hooks of a kind, then how many more (the editor lists them all). */
+const TIP_ROWS = 4
 
 type Theme = 'system' | 'light' | 'dark'
 const THEME_KEY = 'hookwich.theme'
@@ -278,6 +280,15 @@ export default function App() {
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [modal])
+  // The hover card counts only skills that can be switched, so it needs the installed plugins;
+  // read again with each new /context, since a plugin may have been switched since.
+  const contextAt = context?.at
+  useEffect(() => {
+    if (contextAt === undefined) return
+    void skillState()
+      .then(setSkillsNow)
+      .catch(() => undefined)
+  }, [contextAt])
   const t = UI[lang]
 
   // You moved the window yourself: following waits for your next chat.
@@ -491,6 +502,7 @@ export default function App() {
       <ContextGlance
         snap={context}
         focus={focus}
+        plugins={skillsNow.plugins}
         t={t}
         extra={
           focus === 'start' && context.skills ? (
@@ -773,9 +785,9 @@ export default function App() {
     ]
     // Items from before hookwich kept the time come after, newest in each list first.
     return all
-      .map((m, i) => ({ ...m, at: m.item.added ?? 0, i }))
-      .sort((x, y) => y.at - x.at || y.i - x.i)
-      .map(({ i: _, ...m }) => m)
+      .map((m, i) => ({ mine: { ...m, at: m.item.added ?? 0 }, i }))
+      .sort((x, y) => y.mine.at - x.mine.at || y.i - x.i)
+      .map(x => x.mine)
   })()
   const placeName = (m: Pick<Mine, 'scope' | 'key'>) =>
     m.scope === 'global'
@@ -1192,7 +1204,7 @@ export default function App() {
                           {t.tipAdded} · {t.scopes[scope]}
                         </div>
                         <ul className="hw-tip-list">
-                          {added.map(i => (
+                          {added.slice(0, TIP_ROWS).map(i => (
                             <li key={i.id} data-off={!i.enabled || undefined}>
                               <i className="hw-chip" data-kind={i.kind}>
                                 {t.kinds[i.kind]}
@@ -1201,6 +1213,9 @@ export default function App() {
                               {!i.enabled && <em>{t.tipOff}</em>}
                             </li>
                           ))}
+                          {added.length > TIP_ROWS && (
+                            <li className="hw-tip-more">{t.tipMore(added.length - TIP_ROWS)}</li>
+                          )}
                         </ul>
                       </section>
                     )}
@@ -1208,7 +1223,7 @@ export default function App() {
                       <section>
                         <div className="hw-tip-label">{t.tipExisting}</div>
                         <ul className="hw-tip-list">
-                          {already.map(h => (
+                          {already.slice(0, TIP_ROWS).map(h => (
                             <li key={h.id} data-off={h.off || undefined}>
                               <i className="hw-chip" data-kind="existing">
                                 {t.existingFrom(h.from)}
@@ -1220,6 +1235,9 @@ export default function App() {
                               {h.off && <em>{t.tipOff}</em>}
                             </li>
                           ))}
+                          {already.length > TIP_ROWS && (
+                            <li className="hw-tip-more">{t.tipMore(already.length - TIP_ROWS)}</li>
+                          )}
                         </ul>
                       </section>
                     )}

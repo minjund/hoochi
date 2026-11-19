@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 
-import type { ContextRow, ContextSnapshot } from '../../lib/backend'
+import type { ContextRow, ContextSnapshot, SkillState } from '../../lib/backend'
 import type { UiText } from '../../lib/i18n'
+import { switchableGroups } from '../../lib/skills'
 import { tokens } from './lifecycle-diagram'
 
 /** One color per kind of thing in the context window, the same in every view. */
@@ -108,12 +109,17 @@ function Headline({ snap, focus, t }: { snap: ContextSnapshot; focus: ContextFoc
   )
 }
 
-/** A list of named sizes drawn as bars against the biggest. */
-function Bars({ rows }: { rows: { key: string; name: string; note?: string; tokens: number }[] }) {
+/** In a hover card each list shows only its biggest few, so the card stays short. */
+const TOP = 3
+
+/** A list of named sizes drawn as bars against the biggest; the biggest few, and how many more. */
+function Bars({ rows, t }: { rows: { key: string; name: string; note?: string; tokens: number }[]; t: UiText }) {
   const top = Math.max(1, ...rows.map(r => r.tokens))
+  const shown = [...rows].sort((a, b) => b.tokens - a.tokens).slice(0, TOP)
+  const more = rows.length - shown.length
   return (
     <ul className="hw-ctxbars">
-      {rows.map(r => (
+      {shown.map(r => (
         <li key={r.key}>
           <span title={r.name}>
             {r.name}
@@ -123,35 +129,50 @@ function Bars({ rows }: { rows: { key: string; name: string; note?: string; toke
           <i style={{ width: `${(r.tokens / top) * 100}%` }} />
         </li>
       ))}
+      {more > 0 && <li className="hw-ctxbars-more">{t.tipMore(more)}</li>}
     </ul>
   )
 }
 
 /** What a chat starts with, beyond the window's own rows: MCP servers, memory, skills, agents. */
-function StartDetail({ snap, t, extra }: { snap: ContextSnapshot; t: UiText; extra?: ReactNode }) {
+function StartDetail({
+  snap,
+  plugins,
+  t,
+  extra,
+}: {
+  snap: ContextSnapshot
+  plugins: SkillState['plugins']
+  t: UiText
+  extra?: ReactNode
+}) {
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
+  // Only what can be turned on and off is counted and listed, as in the skills popup.
+  const skills = switchableGroups(snap.skillGroups, plugins)
+  const skillCount = skills.reduce((n, g) => n + g.skills, 0)
   return (
     <>
       {snap.mcp.length > 0 && (
         <div className="hw-ctxpart">
           <div className="hw-tip-label">{t.ctxMcpServers}</div>
-          <Bars rows={snap.mcp.map(m => ({ key: m.server, name: m.server, note: t.ctxTools(m.tools), tokens: m.tokens }))} />
+          <Bars t={t} rows={snap.mcp.map(m => ({ key: m.server, name: m.server, note: t.ctxTools(m.tools), tokens: m.tokens }))} />
         </div>
       )}
       {snap.memory.length > 0 && (
         <div className="hw-ctxpart">
           <div className="hw-tip-label">{t.ctxRows['Memory files'] ?? 'Memory files'}</div>
-          <Bars rows={snap.memory.map(m => ({ key: m.path, name: home(m.path), tokens: m.tokens }))} />
+          <Bars t={t} rows={snap.memory.map(m => ({ key: m.path, name: home(m.path), tokens: m.tokens }))} />
         </div>
       )}
-      {snap.skills && snap.skillGroups.length > 0 && (
+      {snap.skills && skills.length > 0 && (
         <div className="hw-ctxpart">
           <div className="hw-tip-label hw-ctxpart-head">
-            <span>{t.ctxSkills(snap.skills.count)}</span>
+            <span>{t.ctxSkills(skillCount)}</span>
             {extra}
           </div>
           <Bars
-            rows={snap.skillGroups.map(g => ({
+            t={t}
+            rows={skills.map(g => ({
               key: `${g.kind}:${g.name}`,
               name: g.kind === 'plugin' ? g.name : g.kind === 'other' && g.name ? g.name : t.ctxFrom[g.kind],
               note: t.ctxSkillCount(g.skills),
@@ -163,7 +184,7 @@ function StartDetail({ snap, t, extra }: { snap: ContextSnapshot; t: UiText; ext
       {snap.agents.length > 0 && (
         <div className="hw-ctxpart">
           <div className="hw-tip-label">{t.ctxAgents}</div>
-          <Bars rows={snap.agents.map(a => ({ key: a.name, name: a.name, note: a.source, tokens: a.tokens }))} />
+          <Bars t={t} rows={snap.agents.map(a => ({ key: a.name, name: a.name, note: a.source, tokens: a.tokens }))} />
         </div>
       )}
     </>
@@ -172,16 +193,20 @@ function StartDetail({ snap, t, extra }: { snap: ContextSnapshot; t: UiText; ext
 
 /**
  * For a hover card: the figure for this moment, the bar, its rows, and at the start of a chat
- * what it loads (MCP servers, memory files, skills, agents). The card shows all of it at once.
+ * what it loads (MCP servers, memory files, skills that can be switched, agents), each list
+ * cut to its biggest few so the card stays short and off the box it points at.
  */
 export function ContextGlance({
   snap,
   focus,
+  plugins,
   t,
   extra,
 }: {
   snap: ContextSnapshot
   focus: ContextFocus
+  /** installed plugins, so only skills that can be switched are counted */
+  plugins: SkillState['plugins']
   t: UiText
   /** shown with the skills (the switch for them) */
   extra?: ReactNode
@@ -201,7 +226,7 @@ export function ContextGlance({
       <Headline snap={snap} focus={focus} t={t} />
       <ContextBar snap={snap} focus={focus} t={t} />
       <Legend rows={rows} max={snap.max} t={t} />
-      {focus === 'start' && <StartDetail snap={snap} t={t} extra={extra} />}
+      {focus === 'start' && <StartDetail snap={snap} plugins={plugins} t={t} extra={extra} />}
     </section>
   )
 }

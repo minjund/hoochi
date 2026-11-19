@@ -327,8 +327,8 @@ const styles = `
 .ui-lcd-card {
   position: fixed; box-sizing: border-box; z-index: 30; width: min(300px, calc(100vw - 16px)); padding: 10px 12px; border-radius: 12px;
   pointer-events: auto;
-  /* only a card taller than the whole window would scroll */
-  max-height: calc(100vh - 16px); overflow-y: auto;
+  /* cut to the room beside its box when it is placed; only then would it scroll */
+  max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--hw-card, #ffffff); color: var(--hw-ink, #191b1d);
   border: 1px solid var(--hw-line-strong, rgba(0,0,0,.16)); box-shadow: 0 8px 24px rgba(0,0,0,.22);
   font: 12px/1.45 system-ui, -apple-system, sans-serif; text-align: left;
@@ -414,7 +414,7 @@ export function LifecycleDiagram({
   const wrap = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const [hover, setHover] = useState<{ event: string; cx: number; top: number; bottom: number } | null>(null)
-  const [place, setPlace] = useState<{ left: number; top: number } | null>(null)
+  const [place, setPlace] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
   // The card stays while the pointer is on it, so what is in it can be read and pressed.
   const closing = useRef<number | undefined>(undefined)
   const keepCard = () => window.clearTimeout(closing.current)
@@ -432,8 +432,9 @@ export function LifecycleDiagram({
     const box = el.getBoundingClientRect()
     setHover({ event, cx: box.left + box.width / 2, top: box.top, bottom: box.bottom })
   }
-  // Below the box when it fits there, else above, else as far inside the window as it goes.
-  // Again whenever the card changes size (its figures update while it is open).
+  // Below the box when it fits there, else above; when it fits on neither side, on the side with
+  // more room, cut to that room (it scrolls inside), so it never covers the box and the box can
+  // still be pressed. Again whenever the card changes size (its figures update while it is open).
   useLayoutEffect(() => {
     const el = cardRef.current
     if (!hover || !el) {
@@ -444,13 +445,20 @@ export function LifecycleDiagram({
       const card = el.getBoundingClientRect()
       const gap = 6
       const edge = 8
-      const room = window.innerHeight - edge
-      const below = hover.bottom + gap
-      const above = hover.top - gap - card.height
-      let top = below + card.height <= room ? below : above >= edge ? above : below
-      top = Math.max(edge, Math.min(top, room - card.height))
+      // the card's whole height, even while it is cut short (scrollHeight leaves out the border)
+      const whole = el.scrollHeight + (card.height - el.clientHeight)
+      const roomBelow = window.innerHeight - edge - (hover.bottom + gap)
+      const roomAbove = hover.top - gap - edge
+      const side = whole <= roomBelow ? 'below' : whole <= roomAbove || roomAbove > roomBelow ? 'above' : 'below'
+      const maxHeight = Math.max(0, Math.floor(side === 'below' ? roomBelow : roomAbove))
+      const height = Math.min(whole, maxHeight)
+      const top = side === 'below' ? hover.bottom + gap : hover.top - gap - height
       const left = Math.max(edge, Math.min(hover.cx - card.width / 2, window.innerWidth - edge - card.width))
-      setPlace(p => (p && Math.abs(p.left - left) < 0.5 && Math.abs(p.top - top) < 0.5 ? p : { left, top }))
+      setPlace(p =>
+        p && Math.abs(p.left - left) < 0.5 && Math.abs(p.top - top) < 0.5 && p.maxHeight === maxHeight
+          ? p
+          : { left, top, maxHeight },
+      )
     }
     fit()
     const watch = new ResizeObserver(fit)
@@ -825,7 +833,11 @@ export function LifecycleDiagram({
           ref={cardRef}
           className="ui-lcd-card"
           role="tooltip"
-          style={place ? { left: place.left, top: place.top } : { left: 0, top: 0, visibility: 'hidden' }}
+          style={
+            place
+              ? { left: place.left, top: place.top, maxHeight: place.maxHeight }
+              : { left: 0, top: 0, visibility: 'hidden' }
+          }
           onMouseEnter={keepCard}
           onMouseLeave={() => closeCard()}
           onFocus={keepCard}

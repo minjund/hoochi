@@ -416,12 +416,16 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
     mcp: [
       { server: 'docs', tools: 2, tokens: 3900 },
       { server: 'browser', tools: 6, tokens: 2300 },
+      { server: 'tickets', tools: 4, tokens: 1500 },
+      { server: 'design', tools: 3, tokens: 900 },
     ],
-    skills: { count: 18, tokens: 1900 },
+    // synced from claude.ai: listed to Claude, but not switched from here, so not counted
+    skills: { count: 30, tokens: 2600 },
     skillGroups: [
       { kind: 'plugin', name: 'review-kit', skills: 9, tokens: 1100 },
       { kind: 'user', name: '', skills: 6, tokens: 520 },
       { kind: 'builtin', name: '', skills: 3, tokens: 280 },
+      { kind: 'synced', name: '', skills: 12, tokens: 700 },
     ],
     agents: [{ name: 'tester', source: 'review-kit', tokens: 300 }],
     skillList: [
