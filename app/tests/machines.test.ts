@@ -193,11 +193,10 @@ test('a notice shows inside an open popup, else where it belongs', () => {
 })
 
 test('following pauses while a moment is open, and holds where you moved it', () => {
-  assert.equal(followState(true, false), 'on')
-  assert.equal(followState(true, true), 'paused')
-  assert.equal(followState(true, false, true), 'held')
-  assert.equal(followState(false, true), 'off')
-  assert.equal(followState(false, false, true), 'off', 'a switch you turned off stays off')
+  assert.equal(followState(false), 'on')
+  assert.equal(followState(true), 'paused')
+  assert.equal(followState(false, true), 'held')
+  assert.equal(followState(true, true), 'paused', 'an open moment wins over a held place')
 })
 
 test('after an update, open chats reload by themselves only when they already could', () => {

@@ -12,7 +12,7 @@ The window's flows are written out as pure functions in `app/src/lib/machines.ts
 | Saving your edits (`createSaver`) | saved, waiting, writing, failed | `.hw-panel[data-save]` |
 | Updating hookwich (`updateFlow`) | unknown, current, available (+error), installing, reopening | `.hw-panel[data-update]` |
 | The notice (`Notice`) | undo, error | `[data-notice]` |
-| Following where you chat (`followState`) | on, paused, held, off; the tab goes to "this project" or "everywhere" while on | `[data-follow]` |
+| Following where you chat (`followState`), always on with no switch | on, paused, held; the tab goes to "this project" or "everywhere" | `[data-follow]` |
 | Which screen | bubble, picture, editor | `[data-view]` |
 | The popup (`Modal` in App.tsx) | mine, skills, none | `.hw-panel[data-modal]` |
 | An item being edited (`ItemCard` in slot-editor.tsx) | saved, unsaved (Save writes it) | `.hw-item[data-unsaved]` |

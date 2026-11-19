@@ -238,6 +238,7 @@ fn what_it_runs(hook: &Value, root: &str) -> (String, Option<f64>, String) {
 /// Every hook in one `{ Event: [{ matcher?, hooks: [...] }] }` block, with where each one lives.
 fn collect(
     hooks: &Value,
+    file: &str,
     root: &str,
     source: &str,
     from: &str,
@@ -279,6 +280,8 @@ fn collect(
                         "detail": detail, "from": from, "scope": scope, "off": off(&at),
                         "toggle": toggle, "plugin": plugin,
                         "body": body, "timeout": timeout, "about": about,
+                        "file": file.replace(&home().to_string_lossy().to_string(), "~"),
+                        "origin": crate::origin::origin(hook),
                     }),
                     place: at,
                 });
@@ -294,7 +297,7 @@ fn settings_hooks(path: &Path, from: &str, scope: &str, out: &mut Vec<Found>) {
         let place = move |event: &str, group: usize, hook: usize| {
             Some(Place::Settings { file: file.clone(), event: event.to_string(), group, hook })
         };
-        collect(h, "", "", from, scope, &place, &|_| false, false, out);
+        collect(h, &path.to_string_lossy(), "", "", from, scope, &place, &|_| false, false, out);
     }
 }
 
@@ -329,7 +332,7 @@ fn plugin_hooks(out: &mut Vec<Found>) {
             if let Some(h) = block.get("hooks") {
                 let k = key.clone();
                 let place = move |_: &str, _: usize, _: usize| Some(Place::Plugin { key: k.clone() });
-                collect(h, &root_s, name, &format!("plugin:{name}"), "global", &place, &|_| !on, false, out);
+                collect(h, &root_s, &root_s, name, &format!("plugin:{name}"), "global", &place, &|_| !on, false, out);
             }
         }
     }
@@ -362,7 +365,7 @@ fn codex_hooks(path: &Path, from: &str, scope: &str, off: &std::collections::Has
             Some(Place::Codex { state_key: format!("{file}:{}:{group}:{hook}", snake(event)) })
         };
         let is_off = |p: &Place| matches!(p, Place::Codex { state_key } if off.contains(state_key));
-        collect(h, "", "", from, scope, &place, &is_off, true, out);
+        collect(h, &path.to_string_lossy(), "", "", from, scope, &place, &is_off, true, out);
     }
 }
 
@@ -415,6 +418,9 @@ pub fn existing(project: &str) -> Value {
         if here {
             let mut info = p.get("info").cloned().unwrap_or(Value::Null);
             info["off"] = json!(true);
+            // Parked before hookwich told where hooks come from: say it now.
+            info["file"] = json!(file.replace(&home().to_string_lossy().to_string(), "~"));
+            info["origin"] = p.get("hook").and_then(crate::origin::origin).unwrap_or(Value::Null);
             claude.push(info);
         }
     }
@@ -634,7 +640,7 @@ mod tests {
             "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/sync/scripts/auto.py\" ensure" }] }]
         });
         let place = |_: &str, _: usize, _: usize| Some(Place::Plugin { key: "memory@market".into() });
-        collect(&hooks, "", "memory", "plugin:memory", "global", &place, &|_| false, false, &mut out);
+        collect(&hooks, "", "", "memory", "plugin:memory", "global", &place, &|_| false, false, &mut out);
         let names: Vec<(&str, &str)> =
             out.iter().map(|h| (h.info["event"].as_str().unwrap(), h.info["name"].as_str().unwrap())).collect();
         assert!(names.contains(&("Stop", "memory")));
@@ -657,7 +663,7 @@ mod tests {
         ]});
         let place = |e: &str, g: usize, h: usize| Some(Place::Codex { state_key: format!("/h.json:{}:{g}:{h}", snake(e)) });
         let is_off = |p: &Place| matches!(p, Place::Codex { state_key } if off.contains(state_key));
-        collect(&hooks, "", "", "settings", "global", &place, &is_off, true, &mut out);
+        collect(&hooks, "", "", "", "settings", "global", &place, &is_off, true, &mut out);
         let seen: Vec<(String, bool)> = out
             .iter()
             .map(|f| match &f.place { Place::Codex { state_key } => (state_key.clone(), f.info["off"].as_bool().unwrap()), _ => unreachable!() })

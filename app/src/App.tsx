@@ -219,21 +219,6 @@ function saveUnhookedSeen(keys: string[]) {
   }
 }
 
-const FOLLOW_KEY = 'hookwich.follow'
-function loadFollow(): boolean {
-  try {
-    return localStorage.getItem(FOLLOW_KEY) !== 'off'
-  } catch {
-    return true
-  }
-}
-function saveFollow(on: boolean) {
-  try {
-    localStorage.setItem(FOLLOW_KEY, on ? 'on' : 'off')
-  } catch {
-    // only a convenience
-  }
-}
 
 /** A steady color per terminal, so moving to another terminal is visible at a glance. */
 function colorOf(terminal: string): string {
@@ -273,7 +258,6 @@ export default function App() {
   const [terminalKey, setTerminalKey] = useState('')
   const [codex, setCodex] = useState<CodexStatus | null>(null)
   const [codexFlow, setCodexFlow] = useState<CodexFlow>({ step: 'idle' })
-  const [follow, setFollowState] = useState(loadFollow)
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
   const [notice, setNotice] = useState<Notice<Config> | null>(null)
@@ -296,14 +280,7 @@ export default function App() {
   }, [modal])
   const t = UI[lang]
 
-  // The switch: changed only when you press it (kept across updates in localStorage).
-  const setFollow = (on: boolean) => {
-    setFollowState(on)
-    saveFollow(on)
-    setHeld(false)
-    if (on) followed.current = 0
-  }
-  // You moved the window yourself: following waits for your next chat, the switch stays on.
+  // You moved the window yourself: following waits for your next chat.
   const [held, setHeld] = useState(false)
 
   useEffect(() => {
@@ -385,33 +362,32 @@ export default function App() {
       .catch((e: unknown) => setCodexFlow({ step: 'failed', error: String(e) }))
   }
 
-  // Follow the chat you typed in last: its AI's picture, its project and its terminal.
+  // Always follow the chat you typed in last, on its own: its AI's picture, its project and its terminal.
   // Not while a moment is open for editing; it catches up when you go back to the workflow.
   // The tab follows too (below): this project when that chat is in one, else everywhere.
   const latest = lastChatOf(activity)
   const followed = useRef(0)
   const holdFollow = () => {
-    if (!follow) return
     followed.current = Math.max(followed.current, Date.now())
     setHeld(true)
   }
   useEffect(() => {
-    if (!follow || !latest || selected !== null || latest.at <= followed.current) return
+    if (!latest || selected !== null || latest.at <= followed.current) return
     followed.current = latest.at
     setHeld(false)
     setAgent(latest.agent)
     setProjectKey(latest.place.project)
     setTerminalKey(latest.place.terminal)
-  }, [follow, latest, selected])
+  }, [latest, selected])
 
-  // The tab, while following: "this project" when the chat you are in has a git project, else
+  // The tab: "this project" when the chat you are in has a git project, else
   // "everywhere". "This terminal" is yours to pick; once picked it stays, on the terminal you chat
   // in last. Picking another tab yourself holds following until you chat again (holdFollow).
   const chatHasProject = latest ? isProject(latest.place.project, latest.place.terminal) : false
   useEffect(() => {
-    if (!follow || held || selected !== null || !latest) return
+    if (held || selected !== null || !latest) return
     setScope(s => (s === 'terminal' ? s : chatHasProject ? 'project' : 'global'))
-  }, [follow, held, selected, latest, chatHasProject])
+  }, [held, selected, latest, chatHasProject])
 
   // A newer hookwich: looked for when the window opens, each time you open the panel (at most every
   // five minutes), and every half hour while it is shown. About two GitHub requests an hour.
@@ -891,7 +867,7 @@ export default function App() {
   ].filter(g => g.rows.length > 0)
 
   const slot = selected ? slotOf(selected, agent) : undefined
-  const following = followState(follow, selected !== null, held)
+  const following = followState(selected !== null, held)
 
   if (!expanded) {
     return (
@@ -1003,20 +979,6 @@ export default function App() {
         )}
 
       <div className="hw-controls">
-        <Switch
-          size="sm"
-          placement="end"
-          label={t.follow}
-          description={
-            t.followHint +
-            (following === 'paused' ? ` ${t.followPaused}` : following === 'held' ? ` ${t.followHeld}` : '') +
-            (follow && latest?.agent === 'claude' && codex?.installed && !codex.connected
-              ? ` ${t.followCodex}`
-              : '')
-          }
-          checked={follow}
-          onChange={e => setFollow(e.currentTarget.checked)}
-        />
         {latest && (
           <div className="hw-now" key={latest.place.terminal} data-moved={switched ? true : undefined}>
             <span
@@ -1027,6 +989,9 @@ export default function App() {
             <span className="hw-now-label">{t.nowChatting}</span>
             <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
           </div>
+        )}
+        {latest?.agent === 'claude' && codex?.installed && !codex.connected && (
+          <p className="hw-editor-hint">{t.followCodex}</p>
         )}
         {unhookedNew.length > 0 && (
           <details className="hw-note hw-unhooked">
@@ -1249,7 +1214,7 @@ export default function App() {
                                 {t.existingFrom(h.from)}
                               </i>
                               <span>
-                                {h.name}
+                                {h.origin?.name ?? h.name}
                                 {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
                               </span>
                               {h.off && <em>{t.tipOff}</em>}

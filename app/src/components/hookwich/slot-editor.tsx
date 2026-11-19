@@ -156,11 +156,12 @@ export function SlotEditor({
                       <span className="hw-existing-caret" aria-hidden="true">
                         {open === h.id ? '▾' : '▸'}
                       </span>{' '}
-                      {h.name}
+                      {h.origin?.name ?? h.name}
                     </b>
                     <span>
                       {h.off ? `${t.existingOff} · ` : ''}
                       {t.existingFrom(h.from)}
+                      {h.origin && h.origin.name !== h.name ? ` · ${h.name}` : ''}
                       {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
                     </span>
                   </button>
@@ -484,6 +485,28 @@ function HookDetail({ hook, lang }: { hook: ExistingHook; lang: Lang }) {
           <dt>{t.runAbout}</dt>
           <dd className="hw-run-about" title={hook.about}>
             {hook.about}
+          </dd>
+        </>
+      )}
+      <dt>{t.runOrigin}</dt>
+      <dd>
+        {hook.origin ? (
+          <>
+            {t.originApp(hook.origin.name)}
+            <br />
+            <code>{hook.origin.path}</code>
+          </>
+        ) : hook.from.startsWith('plugin:') ? (
+          t.originPlugin(hook.from.slice('plugin:'.length))
+        ) : (
+          t.originUnknown
+        )}
+      </dd>
+      {hook.file && (
+        <>
+          <dt>{t.runFile}</dt>
+          <dd>
+            <code>{hook.file}</code>
           </dd>
         </>
       )}

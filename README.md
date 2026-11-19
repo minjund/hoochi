@@ -64,7 +64,7 @@ goes in, press Save. It applies from the next moment on.
 - **Words, commands, skills, anywhere.** Tap, write, save. Only on failure, just once, or only for certain tools.
 - **Everywhere · per project · per terminal.** Scope each rule; the narrowest one wins.
 - **Follows where you chat.** The window switches to the terminal you are typing in, and its project.
-- **Even the hidden hooks.** See what the hooks your plugins installed actually do, and switch them off and on.
+- **Even the hidden hooks.** See what the hooks your plugins and apps installed actually do, which app put each one there, and switch them off and on.
 - **/context, live.** How full the chat is and how far to auto-compact, right inside the picture.
 - **Skills on and off.** Switch off the skills you never use and save room.
 - **One-button updates.** Even chats already open move to the new version by themselves.
@@ -112,7 +112,7 @@ it again (`claude --continue` picks the conversation back up).
 3. Press **Save**.
 4. Ask Claude to fix something. If it tries to finish with the tests failing, it reads the failure and fixes once more.
 
-Type `/hookwich` to show or hide the window. `–` folds it into the bubble, `×` hides it in the menu bar.
+Type `/hookwich` to show or hide the window. `×` folds it into the bubble; right-click the bubble to hide it in the menu bar.
 
 ## How it works
 

@@ -270,6 +270,10 @@ export type ExistingHook = {
   timeout?: number | null
   /** a line about it: the skill's description, or the first comment of its script */
   about?: string
+  /** the file it is written in (a settings file, a plugin's folder, Codex's hooks.json) */
+  file?: string
+  /** the app that put it there, when that can be told (it runs from the app, or the app serves its address) */
+  origin?: { name: string; path: string } | null
 }
 export type ExistingHooks = Record<'claude' | 'codex', ExistingHook[]>
 
@@ -291,6 +295,8 @@ export async function existingHooks(project: string): Promise<ExistingHooks> {
     about: name.startsWith('skill:') ? 'Keeps your notes in step at the start of a chat.' : '',
     from,
     scope: from === 'project' ? 'project' : 'global',
+    file: from.startsWith('plugin:') ? `~/.claude/plugins/cache/demo/${from.slice(7)}/1.0.0` : '~/.claude/settings.json',
+    origin: name === 'Desk Pet' ? { name: 'Desk Pet', path: '/Applications/Desk Pet.app' } : null,
   })
   const inProject = (list: ExistingHook[]) => list.filter(h => project !== '' || h.scope === 'global')
   return {
