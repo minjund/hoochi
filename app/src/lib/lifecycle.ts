@@ -3,7 +3,10 @@
 // when that event fires. The diagram's layout follows the official hooks
 // lifecycle figure: https://code.claude.com/docs/en/hooks#hook-lifecycle
 
-export type ItemKind = 'text' | 'command' | 'skill'
+export type ItemKind = 'text' | 'command' | 'skill' | 'rules'
+
+/** One row of a "rules" item: in this situation, use this skill. */
+export type SkillRule = { when: string; skill: string }
 
 /** One thing put into a slot. Mirrors plugin/types/index.d.ts. */
 export type Item = {
@@ -14,8 +17,11 @@ export type Item = {
   command: string
   mode: 'always' | 'onFail'
   skill: string
+  /** kind "rules": which skill to use when (older configs have none) */
+  rules?: SkillRule[]
   tools: string
   enabled: boolean
+  /** once per chat: a new chat or /clear runs it again */
   once: boolean
   /** when it was put in (ms), to list the newest first */
   added?: number
@@ -145,10 +151,33 @@ export const ALL_SLOTS = CLAUDE_SLOTS
 export const slotOf = (event: string, agent: Agent = 'claude'): Slot | undefined =>
   SLOTS[agent].find(s => s.event === event)
 
+/** The rows of a "rules" item that say both when and which skill; the plugin passes only these. */
+export function fullRules(rules: readonly SkillRule[] = []): SkillRule[] {
+  return rules
+    .map(r => ({ when: r.when.replace(/\s+/g, ' ').trim(), skill: r.skill.trim() }))
+    .filter(r => r.when !== '' && r.skill !== '')
+}
+
+/** Whether an item puts anything in: not left empty. */
+export function itemFilled(item: Item): boolean {
+  if (item.kind === 'text') return item.text.trim() !== ''
+  if (item.kind === 'command') return item.command.trim() !== ''
+  if (item.kind === 'rules') return fullRules(item.rules).length > 0
+  return item.skill !== ''
+}
+
 /** A short label for an item, for chips and the feed. */
 export function itemLabel(item: Item): string {
   const raw =
-    item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
+    item.kind === 'text'
+      ? item.text
+      : item.kind === 'command'
+        ? `$ ${item.command}`
+        : item.kind === 'rules'
+          ? fullRules(item.rules)
+              .map(r => `/${r.skill}`)
+              .join(' ')
+          : `/${item.skill}`
   const one = raw.replace(/\s+/g, ' ').trim()
   return one.length > 40 ? `${one.slice(0, 39)}…` : one || '(empty)'
 }
@@ -189,6 +218,7 @@ export const sameItem = (a: Item, b: Item) =>
   a.text.trim() === b.text.trim() &&
   a.command.trim() === b.command.trim() &&
   a.skill === b.skill &&
+  JSON.stringify(fullRules(a.rules)) === JSON.stringify(fullRules(b.rules)) &&
   a.mode === b.mode &&
   a.tools.trim() === b.tools.trim()
 

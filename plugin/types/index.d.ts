@@ -1,5 +1,8 @@
-/** What a slot puts in: words, a shell command's output, or a skill to use. */
-export type ItemKind = 'text' | 'command' | 'skill'
+/** What a slot puts in: words, a shell command's output, a skill to use, or skills each with when to use it. */
+export type ItemKind = 'text' | 'command' | 'skill' | 'rules'
+
+/** One row of a "rules" item: in this situation, use this skill. */
+export type SkillRule = { when: string; skill: string }
 
 /** One thing put into a moment, as ~/.hookwich/config.json holds it. */
 export type Item = {
@@ -15,10 +18,12 @@ export type Item = {
   mode: 'always' | 'onFail'
   /** kind "skill": the skill's name */
   skill: string
+  /** kind "rules": which skill to use when; rows missing either half are left out */
+  rules: SkillRule[]
   /** tool events only: comma-separated tool names; empty means every tool */
   tools: string
   enabled: boolean
-  /** runs once, then switches itself off */
+  /** runs once per chat (session id), noted in once-<agent>.json; a new chat or /clear runs it again */
   once: boolean
   /** when it was put in (ms), to list the newest first */
   added?: number

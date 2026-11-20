@@ -1,10 +1,11 @@
 import type { ExistingHook, Skill } from '../../lib/backend'
 import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
-import type { Agent, Item, ItemKind, Slot } from '../../lib/lifecycle'
+import { itemFilled, type Agent, type Item, type ItemKind, type Slot, type SkillRule } from '../../lib/lifecycle'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
+import { IconButton } from '../ui/icon-button'
 import { SegmentedControl } from '../ui/segmented-control'
 import { Select } from '../ui/select'
 import { Switch } from '../ui/switch'
@@ -27,8 +28,6 @@ type Props = {
   lastRun?: Readonly<Record<string, number>>
   /** more about this moment, shown under its explanation */
   extra?: ReactNode
-  /** what you put in for this moment in the other places (rows the window draws), and how many */
-  elsewhere?: { count: number; rows: ReactNode }
   /** a saved item changed: its content by Save, its switch at once */
   onChange(item: Item): void
   onRemove(id: string): void
@@ -40,17 +39,24 @@ type Props = {
 }
 
 /** What Save writes; the on/off switch and Delete act at once. */
-type Draft = Pick<Item, 'kind' | 'text' | 'command' | 'mode' | 'skill' | 'tools' | 'once'>
+type Draft = Pick<Item, 'kind' | 'text' | 'command' | 'mode' | 'skill' | 'tools' | 'once'> & { rules: SkillRule[] }
 const draftOf = (i: Item): Draft => ({
   kind: i.kind,
   text: i.text,
   command: i.command,
   mode: i.mode,
   skill: i.skill,
+  rules: i.rules ?? [],
   tools: i.tools,
   once: i.once,
 })
 const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b)
+
+const RemoveIcon = (
+  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.7">
+    <path d="m4.5 4.5 7 7m0-7-7 7" strokeLinecap="round" />
+  </svg>
+)
 
 const BackIcon = (
   <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7">
@@ -70,7 +76,6 @@ export function SlotEditor({
   onToggleExisting,
   lastRun = {},
   extra,
-  elsewhere,
   onChange,
   onRemove,
   makeItem,
@@ -252,16 +257,6 @@ export function SlotEditor({
           + {t.add}
         </Button>
       )}
-
-      {elsewhere && elsewhere.count > 0 && (
-        <section className="hw-elsewhere" aria-label={t.elsewhereTitle}>
-          <div className="hw-existing-title">
-            {t.elsewhereTitle} <span>{elsewhere.count}</span>
-          </div>
-          {elsewhere.rows}
-          <p className="hw-editor-hint">{t.elsewhereHint}</p>
-        </section>
-      )}
     </div>
   )
 }
@@ -295,8 +290,8 @@ function ItemCard({
 }) {
   const t = UI[lang]
   const say = (text: string) => forAgent(text, agent)
-  // What you typed stays here until Save; the saved item changing elsewhere (a "once" item
-  // switched off) does not throw it away.
+  // What you typed stays here until Save; the saved item changing elsewhere (switched off in
+  // another window) does not throw it away.
   const saved = draftOf(item)
   const [draft, setDraft] = useState<Draft>(saved)
   const [base, setBase] = useState<Draft>(saved)
@@ -305,13 +300,13 @@ function ItemCard({
     if (same(draft, base)) setDraft(saved)
   }
   const dirty = isNew || !same(draft, saved)
-  const empty =
-    draft.kind === 'text' ? !draft.text.trim() : draft.kind === 'command' ? !draft.command.trim() : !draft.skill
+  const empty = !itemFilled({ ...item, ...draft })
   useEffect(() => onDirty(!isNew && dirty), [dirty, isNew, onDirty])
   const set = (patch: Partial<Draft>) => setDraft(d => ({ ...d, ...patch }))
   const save = () => {
     if (!dirty || empty) return
-    onSave({ ...item, ...draft })
+    // Rows left wholly blank go; a half-filled one stays to finish later (the plugin skips it).
+    onSave({ ...item, ...draft, rules: draft.rules.filter(r => r.when.trim() !== '' || r.skill !== '') })
   }
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -324,7 +319,11 @@ function ItemCard({
     { value: 'text', label: t.kinds.text, disabled: !slot.canInject },
     { value: 'command', label: t.kinds.command },
     { value: 'skill', label: t.kinds.skill, disabled: !slot.canInject },
+    { value: 'rules', label: t.kinds.rules, disabled: !slot.canInject },
   ]
+  const blankRule: SkillRule = { when: '', skill: '' }
+  const setRule = (at: number, patch: Partial<SkillRule>) =>
+    set({ rules: draft.rules.map((r, i) => (i === at ? { ...r, ...patch } : r)) })
 
   return (
     <Card className="hw-item" data-unsaved={dirty || undefined}>
@@ -335,7 +334,9 @@ function ItemCard({
             aria-label={t.kindLabel}
             options={kinds}
             value={item_.kind}
-            onChange={kind => set({ kind })}
+            onChange={kind =>
+              set(kind === 'rules' && draft.rules.length === 0 ? { kind, rules: [blankRule] } : { kind })
+            }
           />
           <Switch
             size="sm"
@@ -396,6 +397,42 @@ function ItemCard({
             value={item_.skill || null}
             onChange={skill => set({ skill })}
           />
+        )}
+
+        {item_.kind === 'rules' && (
+          <div className="hw-field">
+            <span className="hw-field-label">{say(t.rulesHint)}</span>
+            {item_.rules.map((rule, at) => (
+              <div className="hw-rule" key={at}>
+                <TextField
+                  size="sm"
+                  aria-label={t.ruleWhen}
+                  placeholder={t.ruleWhen}
+                  value={rule.when}
+                  onChange={e => setRule(at, { when: e.target.value })}
+                />
+                <Select
+                  size="sm"
+                  aria-label={t.kinds.skill}
+                  placeholder={skills.length ? t.pickSkill : t.noSkills}
+                  options={skills.map(s => ({ value: s.name, label: s.name, description: s.description }))}
+                  value={rule.skill || null}
+                  onChange={skill => setRule(at, { skill })}
+                />
+                <IconButton
+                  size="sm"
+                  icon={RemoveIcon}
+                  label={t.ruleRemove}
+                  onClick={() => set({ rules: draft.rules.filter((_, i) => i !== at) })}
+                />
+              </div>
+            ))}
+            <div>
+              <Button variant="ghost" size="sm" onClick={() => set({ rules: [...draft.rules, blankRule] })}>
+                + {t.ruleAdd}
+              </Button>
+            </div>
+          </div>
         )}
 
         {slot.hasTools && (

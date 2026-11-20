@@ -214,10 +214,31 @@ fn run_command(command: &str, only_on_fail: bool, cwd: &str) -> Option<String> {
     Some(if text.is_empty() { format!("$ {command} (exit {code})") } else { format!("$ {command} (exit {code})\n{text}") })
 }
 
+/// The rows of a "rules" item that say both when and which skill, spaces folded.
+fn full_rules(item: &Value) -> Vec<(String, String)> {
+    let fold = |v: &Value, key: &str| str_of(v, key).split_whitespace().collect::<Vec<_>>().join(" ");
+    item.get("rules")
+        .and_then(Value::as_array)
+        .map(|rows| rows.iter().map(|r| (fold(r, "when"), fold(r, "skill"))).filter(|(w, s)| !w.is_empty() && !s.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// What Codex reads for a "rules" item; None when no row is filled in.
+fn rules_text(item: &Value) -> Option<String> {
+    let rows = full_rules(item);
+    if rows.is_empty() {
+        return None;
+    }
+    let mut lines = vec!["When the task matches one of these, use that skill before you go on:".to_string()];
+    lines.extend(rows.iter().map(|(when, skill)| format!("- {when} → \"{skill}\"")));
+    Some(lines.join("\n"))
+}
+
 fn label_of(item: &Value) -> String {
     let raw = match str_of(item, "kind") {
         "command" => format!("$ {}", str_of(item, "command")),
         "skill" => format!("/{}", str_of(item, "skill")),
+        "rules" => full_rules(item).iter().map(|(_, s)| format!("/{s}")).collect::<Vec<_>>().join(" "),
         _ => str_of(item, "text").to_string(),
     };
     let one = raw.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -245,6 +266,43 @@ fn note_place(project: &str, terminal: &str, label: &str) {
         t.insert(terminal.to_string(), json!({ "label": label, "cwd": project, "agent": "codex", "lastSeen": now }));
     }
     let _ = write_json(&path, &known);
+}
+
+fn is_once(item: &Value) -> bool {
+    item.get("once").and_then(Value::as_bool) == Some(true)
+}
+
+/// A chat untouched this long is forgotten, so the file stays small.
+const ONCE_KEEP_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+
+/// The "once" items a chat (by its session id) already ran.
+fn once_done(log: &Value, session: &str) -> Vec<String> {
+    log.get(session)
+        .and_then(|s| s.get("ids"))
+        .and_then(Value::as_array)
+        .map(|ids| ids.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// The log with `ids` run in `session` now, and chats gone quiet for a month dropped.
+fn note_once(log: Value, session: &str, ids: &[String], now: u64) -> Value {
+    let mut done = once_done(&log, session);
+    for id in ids {
+        if !done.contains(id) {
+            done.push(id.clone());
+        }
+    }
+    let mut out = serde_json::Map::new();
+    if let Value::Object(chats) = log {
+        for (s, v) in chats {
+            let at = v.get("at").and_then(Value::as_u64).unwrap_or(0);
+            if s != session && now.saturating_sub(at) < ONCE_KEEP_MS {
+                out.insert(s, v);
+            }
+        }
+    }
+    out.insert(session.to_string(), json!({ "at": now, "ids": done }));
+    Value::Object(out)
 }
 
 /// The answer for Codex, or None when there is nothing to say.
@@ -276,7 +334,7 @@ pub fn run_hook(event: &str) -> i32 {
         note_place(&project, &terminal, &terminal_label);
     }
 
-    let mut config = load_config();
+    let config = load_config();
     let tool = str_of(&e, "tool_name").to_string();
     let second_pass = CONTINUES.contains(&event) && e.get("stop_hook_active").and_then(Value::as_bool) == Some(true);
     let can_speak = CONTEXT.contains(&event) || CONTINUES.contains(&event);
@@ -284,13 +342,17 @@ pub fn run_hook(event: &str) -> i32 {
     let empty = json!({});
     let codex = config.get("codex").unwrap_or(&empty);
     let chosen = pick(codex, event, &project, &terminal);
-    let (scope, key) = chosen.as_ref().map(|(s, k, _)| (*s, k.clone())).unwrap_or(("global", String::new()));
+    let scope = chosen.as_ref().map(|(s, _, _)| *s).unwrap_or("global");
+    // A "once" item this chat already ran stays out until the next chat.
+    let once_path = data_dir().join("once-codex.json");
+    let done = once_done(&read_json(&once_path), &session_id);
     let items: Vec<Value> = chosen
         .map(|(_, _, list)| list.into_iter().cloned().collect::<Vec<Value>>())
         .unwrap_or_default()
         .into_iter()
         .filter(|i| i.get("enabled").and_then(Value::as_bool) != Some(false))
         .filter(|i| !TOOL_EVENTS.contains(&event) || tool_matches(str_of(i, "tools"), &tool))
+        .filter(|i| !(is_once(i) && done.contains(&str_of(i, "id").to_string())))
         .collect();
 
     let at = now_ms();
@@ -310,6 +372,10 @@ pub fn run_hook(event: &str) -> i32 {
                     "Use the \"{}\" skill for this before you go on.",
                     str_of(item, "skill")
                 )),
+                "rules" if can_speak => match rules_text(item) {
+                    Some(text) => parts.push(text),
+                    None => continue,
+                },
                 "text" if can_speak && !str_of(item, "text").trim().is_empty() => {
                     parts.push(str_of(item, "text").to_string())
                 }
@@ -320,26 +386,16 @@ pub fn run_hook(event: &str) -> i32 {
         }
     }
 
-    // "Once" items switch themselves off in the scope they came from.
+    // "Once" items are noted for this chat; they stay on for the next one.
     let once: Vec<String> = items
         .iter()
-        .filter(|i| i.get("once").and_then(Value::as_bool) == Some(true) && ran.contains(&str_of(i, "id").to_string()))
+        .filter(|i| is_once(i) && ran.contains(&str_of(i, "id").to_string()))
         .map(|i| str_of(i, "id").to_string())
         .collect();
     if !once.is_empty() {
-        let list = match scope {
-            "terminal" => config.pointer_mut(&format!("/codex/terminals/{}", escape(&key))),
-            "project" => config.pointer_mut(&format!("/codex/projects/{}", escape(&key))),
-            _ => config.pointer_mut("/codex/global"),
-        };
-        if let Some(Value::Array(list)) = list {
-            for item in list.iter_mut() {
-                if once.contains(&str_of(item, "id").to_string()) {
-                    item["enabled"] = json!(false);
-                }
-            }
-            let _ = write_json(&data_dir().join("config.json"), &config);
-        }
+        // Read again just before writing: other chats note theirs in the same file.
+        let log = note_once(read_json(&once_path), &session_id, &once, at);
+        let _ = write_json(&once_path, &log);
     }
 
     // What just happened, for the window to light up.
@@ -370,11 +426,6 @@ pub fn run_hook(event: &str) -> i32 {
         println!("{out}");
     }
     0
-}
-
-/// JSON pointer escaping for a key.
-fn escape(key: &str) -> String {
-    key.replace('~', "~0").replace('/', "~1")
 }
 
 fn codex_hooks_path() -> PathBuf {
@@ -492,6 +543,32 @@ mod tests {
         assert_eq!(ctx["hookSpecificOutput"]["additionalContext"], "in English");
         assert!(answer("PreCompact", &["x".into()]).is_none());
         assert!(answer("Stop", &[]).is_none());
+    }
+
+    #[test]
+    fn rules_list_each_skill_with_when() {
+        let rules = json!({ "kind": "rules", "rules": [
+            { "when": "기능 추가할 때", "skill": "tdd" },
+            { "when": " 리뷰할\n때 ", "skill": "code-review" },
+            { "when": "no skill yet", "skill": "" }
+        ] });
+        assert_eq!(
+            rules_text(&rules).unwrap(),
+            "When the task matches one of these, use that skill before you go on:\n- 기능 추가할 때 → \"tdd\"\n- 리뷰할 때 → \"code-review\""
+        );
+        assert_eq!(label_of(&rules), "/tdd /code-review");
+        assert!(rules_text(&json!({ "kind": "rules", "rules": [{ "when": "", "skill": "tdd" }] })).is_none());
+        assert!(rules_text(&json!({ "kind": "rules" })).is_none());
+    }
+
+    #[test]
+    fn once_is_per_chat() {
+        let day = 24 * 60 * 60 * 1000;
+        let log = json!({ "old": { "at": 0, "ids": ["x"] }, "a": { "at": 40 * day, "ids": ["i1"] } });
+        let log = note_once(log, "a", &["i2".into(), "i1".into()], 45 * day);
+        assert_eq!(once_done(&log, "a"), vec!["i1", "i2"]);
+        assert!(once_done(&log, "b").is_empty());
+        assert!(log.get("old").is_none());
     }
 
     #[test]

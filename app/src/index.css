@@ -162,14 +162,6 @@ body {
   padding-left: 16px;
 }
 
-/* what you put in for this moment elsewhere, listed under the cards */
-.hw-elsewhere {
-  display: grid;
-  gap: 4px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--hw-line-strong);
-}
-
 /* Save and the buttons beside it, at the card's end */
 .hw-item-actions {
   display: flex;
@@ -248,6 +240,13 @@ input {
 .hw-field {
   display: grid;
   gap: 6px;
+}
+
+.hw-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+  gap: 6px;
+  align-items: center;
 }
 
 .hw-field-label {
@@ -581,7 +580,8 @@ button.hw-existing-text:hover b {
   background: rgba(91, 141, 239, 0.16);
   color: #2f5fc4;
 }
-.hw-chip[data-kind='skill'] {
+.hw-chip[data-kind='skill'],
+.hw-chip[data-kind='rules'] {
   background: rgba(167, 123, 243, 0.18);
   color: #6d3fc9;
 }
@@ -591,7 +591,8 @@ button.hw-existing-text:hover b {
 .dark .hw-chip[data-kind='command'] {
   color: #9dbcff;
 }
-.dark .hw-chip[data-kind='skill'] {
+.dark .hw-chip[data-kind='skill'],
+.dark .hw-chip[data-kind='rules'] {
   color: #c9a9ff;
 }
 

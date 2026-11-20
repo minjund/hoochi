@@ -12,6 +12,7 @@ import type {
   Item,
   Place,
   Scope,
+  SkillRule,
 } from '../types'
 
 // hookwich: put text, commands or skills before or after any Claude Code hook
@@ -24,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.22'
+export const APP_VERSION = '0.1.23'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -92,7 +93,7 @@ function parseItems(list: unknown): Item[] {
     if (!v || typeof v !== 'object') continue
     const o = v as Loose
     const str = (k: string) => (typeof o[k] === 'string' ? (o[k] as string) : '')
-    const kind = o.kind === 'command' || o.kind === 'skill' ? o.kind : 'text'
+    const kind = o.kind === 'command' || o.kind === 'skill' || o.kind === 'rules' ? o.kind : 'text'
     if (str('id') === '' || str('event') === '') continue
     items.push({
       id: str('id'),
@@ -102,6 +103,7 @@ function parseItems(list: unknown): Item[] {
       command: str('command'),
       mode: o.mode === 'onFail' ? 'onFail' : 'always',
       skill: str('skill'),
+      rules: parseRules(o.rules),
       tools: str('tools'),
       enabled: o.enabled !== false,
       once: o.once === true,
@@ -109,6 +111,16 @@ function parseItems(list: unknown): Item[] {
     })
   }
   return items
+}
+
+function parseRules(list: unknown): SkillRule[] {
+  if (!Array.isArray(list)) return []
+  return list.flatMap(v => {
+    const o = (v && typeof v === 'object' ? v : {}) as Loose
+    const when = typeof o.when === 'string' ? o.when : ''
+    const skill = typeof o.skill === 'string' ? o.skill : ''
+    return when === '' && skill === '' ? [] : [{ when, skill }]
+  })
 }
 
 function parseScopes(raw: unknown): Record<string, Item[]> {
@@ -190,9 +202,34 @@ export function skillText(skill: string): string {
   return `Use the "${skill}" skill for this (call it with the Skill tool) before you go on.`
 }
 
+/** The rows of a "rules" item that say both when and which skill. */
+export function fullRules(rules: readonly SkillRule[]): SkillRule[] {
+  return rules
+    .map(r => ({ when: r.when.replace(/\s+/g, ' ').trim(), skill: r.skill.trim() }))
+    .filter(r => r.when !== '' && r.skill !== '')
+}
+
+/** What the model reads for a "rules" item; empty when no row is filled in. */
+export function rulesText(rules: readonly SkillRule[]): string {
+  const rows = fullRules(rules)
+  if (rows.length === 0) return ''
+  return [
+    'When the task matches one of these, call that skill with the Skill tool before you go on:',
+    ...rows.map(r => `- ${r.when} → "${r.skill}"`),
+  ].join('\n')
+}
+
 function labelOf(item: Item): string {
   const raw =
-    item.kind === 'text' ? item.text : item.kind === 'command' ? `$ ${item.command}` : `/${item.skill}`
+    item.kind === 'text'
+      ? item.text
+      : item.kind === 'command'
+        ? `$ ${item.command}`
+        : item.kind === 'rules'
+          ? fullRules(item.rules)
+              .map(r => `/${r.skill}`)
+              .join(' ')
+          : `/${item.skill}`
   const one = raw.replace(/\s+/g, ' ').trim()
   return one.length > 60 ? `${one.slice(0, 59)}…` : one
 }
@@ -594,14 +631,39 @@ export async function reloadIfUpdated($: EngineInterface): Promise<boolean> {
   return true
 }
 
-/** Switches "once" items off in the scope they came from. */
-function spend(config: Config, scope: Scope, key: string, ids: Set<string>): Config {
-  const off = (list: Item[] = []) => list.map(i => (ids.has(i.id) ? { ...i, enabled: false } : i))
-  const claude = { ...config.claude }
-  if (scope === 'global') claude.global = off(claude.global)
-  if (scope === 'project') claude.projects = { ...claude.projects, [key]: off(claude.projects[key]) }
-  if (scope === 'terminal') claude.terminals = { ...claude.terminals, [key]: off(claude.terminals[key]) }
-  return { ...config, claude }
+/**
+ * The "once" items each chat has already run, by its session id: a chat runs each one once, and
+ * a new one (a new chat, or /clear) runs it again. Compacting or resuming keeps the session id.
+ */
+export type OnceLog = Record<string, { at: number; ids: string[] }>
+
+/** A chat untouched this long is forgotten, so the file stays small. */
+const ONCE_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+
+export function parseOnce(raw: string | undefined): OnceLog {
+  let data: unknown
+  try {
+    data = JSON.parse(raw ?? '{}')
+  } catch {
+    return {}
+  }
+  const out: OnceLog = {}
+  if (!data || typeof data !== 'object') return out
+  for (const [session, v] of Object.entries(data as Loose)) {
+    const o = (v && typeof v === 'object' ? v : {}) as Loose
+    const ids = Array.isArray(o.ids) ? o.ids.filter((id): id is string => typeof id === 'string') : []
+    out[session] = { at: typeof o.at === 'number' ? o.at : 0, ids }
+  }
+  return out
+}
+
+/** The log with `ids` run in `session` now, and chats gone quiet for a month dropped. */
+export function noteOnce(log: OnceLog, session: string, ids: readonly string[], now: number): OnceLog {
+  const out: OnceLog = {}
+  for (const [s, v] of Object.entries(log)) if (now - v.at < ONCE_KEEP_MS) out[s] = v
+  const had = out[session]?.ids ?? []
+  out[session] = { at: now, ids: [...new Set([...had, ...ids])] }
+  return out
 }
 
 /** Puts the enabled items for this event into its answer. */
@@ -611,9 +673,14 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
   const place = await placeOf($)
   const chosen = pick(config.claude, event, place)
   const tool = toolOf(e)
-  const items = (chosen?.items ?? []).filter(
+  const session = typeof (e as Loose).session_id === 'string' ? ((e as Loose).session_id as string) : ''
+  const oncePath = `${dir}/once-claude.json`
+  const wanted = (chosen?.items ?? []).filter(
     i => i.enabled && (!TOOL_EVENTS.has(event) || toolMatches(i.tools, tool)),
   )
+  // A "once" item this chat already ran stays out until the next chat.
+  const done = wanted.some(i => i.once) ? new Set(parseOnce(await readText($, oncePath))[session]?.ids) : new Set()
+  const items = wanted.filter(i => !(i.once && done.has(i.id)))
   const scope: Scope = chosen?.scope ?? 'global'
 
   const at = await $.clock.now()
@@ -632,7 +699,8 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
       ranIds.add(item.id)
       if (out !== undefined && canInject) parts.push(out)
     } else if (canInject) {
-      const words = item.kind === 'skill' ? skillText(item.skill) : item.text
+      const words =
+        item.kind === 'skill' ? skillText(item.skill) : item.kind === 'rules' ? rulesText(item.rules) : item.text
       if (words.trim() === '') continue
       parts.push(words)
       fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope, id: item.id })
@@ -640,10 +708,11 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     }
   }
 
-  const spent = new Set(items.filter(i => i.once && ranIds.has(i.id)).map(i => i.id))
-  if (spent.size > 0 && chosen) {
-    const next2 = spend(config, chosen.scope, chosen.key, spent)
-    await $.fs.write(`${dir}/config.json`, JSON.stringify(next2, null, 2)).catch(() => undefined)
+  const spent = items.filter(i => i.once && ranIds.has(i.id)).map(i => i.id)
+  if (spent.length > 0) {
+    // Read again just before writing: other chats note theirs in the same file.
+    const log = noteOnce(parseOnce(await readText($, oncePath)), session, spent, at)
+    await $.fs.write(oncePath, JSON.stringify(log)).catch(() => undefined)
   }
 
   if (HERE.has(event) && interactive) await notePlace($, dir, place).catch(() => undefined)

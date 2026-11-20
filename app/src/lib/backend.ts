@@ -65,6 +65,12 @@ if (browserFlags.demo) {
           [place.project]: [
             item('c', 'Stop', 'command', { command: 'npm test', mode: 'onFail' }),
             item('d', 'Stop', 'skill', { skill: 'code-review', enabled: false }),
+            item('h', 'UserPromptSubmit', 'rules', {
+              rules: [
+                { when: 'adding a feature or fixing a bug', skill: 'tdd' },
+                { when: 'asked for a review', skill: 'code-review' },
+              ],
+            }),
           ],
         },
         terminals: {

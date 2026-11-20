@@ -7,6 +7,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
     thread,
     time::{Duration, SystemTime},
 };
@@ -268,7 +269,24 @@ fn list_skills() -> Vec<Skill> {
     out
 }
 
-/// Grows into the editor or shrinks to the bubble, keeping the bottom-right corner put.
+/// Where the bubble sat when it opened into the panel, so folding puts it back right there.
+static BUBBLE_AT: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// Where the bubble goes when the panel folds: back where it was before it opened (pulled onto a
+/// display if that one is gone), else at the panel's bottom-right corner, as when it never opened.
+pub fn fold_to(areas: &[Area], was: Option<(f64, f64)>, panel: Rect) -> (f64, f64) {
+    let (w, h) = BUBBLE;
+    match was {
+        Some((x, y)) => keep_on_screen(areas, (x, y, w, h), x, y, w, h),
+        None => {
+            let (px, py, pw, ph) = panel;
+            keep_on_screen(areas, panel, px + pw - w, py + ph - h, w, h)
+        }
+    }
+}
+
+/// Grows into the editor (its bottom-right corner on the bubble's) or shrinks back to the bubble,
+/// which returns to exactly where it was before it opened, wherever the panel was moved or pushed.
 #[tauri::command]
 fn set_expanded(window: WebviewWindow, expanded: bool) -> Result<(), String> {
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
@@ -281,9 +299,22 @@ fn set_expanded(window: WebviewWindow, expanded: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .to_logical::<f64>(scale);
     let (w, h) = if expanded { PANEL } else { BUBBLE };
-    // Keep the bottom-right corner where it was, but never off the display.
     let now = (pos.x, pos.y, size.width, size.height);
-    let (x, y) = keep_on_screen(&areas(&window), now, pos.x + size.width - w, pos.y + size.height - h, w, h);
+    let is_bubble = (size.width - BUBBLE.0).abs() < 1.0 && (size.height - BUBBLE.1).abs() < 1.0;
+    let mut at = BUBBLE_AT.lock().unwrap_or_else(|e| e.into_inner());
+    let (x, y) = if expanded {
+        // Only the bubble's own spot is remembered: opening again while open keeps the first one.
+        if is_bubble {
+            *at = Some((pos.x, pos.y));
+        }
+        // The panel's bottom-right corner on the bubble's, but never off the display.
+        keep_on_screen(&areas(&window), now, pos.x + size.width - w, pos.y + size.height - h, w, h)
+    } else if is_bubble {
+        (pos.x, pos.y)
+    } else {
+        fold_to(&areas(&window), at.take(), now)
+    };
+    drop(at);
     window
         .set_size(LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
@@ -526,7 +557,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{context_file, keep_on_screen};
+    use super::{context_file, fold_to, keep_on_screen};
 
     // A 2560×1440 display with a 25-point menu bar and a Dock, and a portrait one to its right.
     const MAIN: (f64, f64, f64, f64) = (0.0, 25.0, 2560.0, 1335.0);
@@ -553,6 +584,18 @@ mod tests {
         assert_eq!(keep_on_screen(&[MAIN], bubble, 2036.0, 566.0, 440.0, 760.0), (2036.0, 566.0));
         assert_eq!(keep_on_screen(&[MAIN], bubble, 2400.0, 1000.0, 440.0, 760.0), (2120.0, 600.0));
         assert_eq!(keep_on_screen(&[MAIN], (10.0, 30.0, 76.0, 76.0), -100.0, 10.0, 440.0, 760.0), (0.0, 25.0));
+    }
+
+    #[test]
+    fn folding_puts_the_bubble_back_where_it_was() {
+        // opened near the top-left: the panel was pushed down and right, yet the bubble returns
+        assert_eq!(fold_to(&[MAIN], Some((40.0, 60.0)), (0.0, 25.0, 500.0, 760.0)), (40.0, 60.0));
+        // the panel dragged across to the other display: the bubble still returns
+        assert_eq!(fold_to(&[MAIN, SIDE], Some((2400.0, 1200.0)), (2800.0, 300.0, 500.0, 760.0)), (2400.0, 1200.0));
+        // its display unplugged since: onto the nearest one
+        assert_eq!(fold_to(&[MAIN], Some((3000.0, 400.0)), (2000.0, 300.0, 500.0, 760.0)), (2484.0, 400.0));
+        // nothing remembered: the panel's bottom-right corner, as before
+        assert_eq!(fold_to(&[MAIN], None, (2000.0, 300.0, 500.0, 760.0)), (2424.0, 984.0));
     }
 
     #[test]

@@ -62,6 +62,7 @@ import {
 import {
   decidingScope,
   emptyAgent,
+  itemFilled,
   itemLabel,
   listOf,
   mergeItems,
@@ -733,9 +734,7 @@ export default function App() {
       ...Object.values(a.terminals).flat(),
     ]
     // Only what does something: switched on and not left empty.
-    const filled = (i: Item) =>
-      i.kind === 'text' ? i.text.trim() !== '' : i.kind === 'command' ? i.command.trim() !== '' : i.skill !== ''
-    return [...all(config.claude), ...all(config.codex)].filter(i => i.enabled && filled(i)).length
+    return [...all(config.claude), ...all(config.codex)].filter(i => i.enabled && itemFilled(i)).length
   }, [config])
 
   // Which place the scope notes talk about: the chosen project/terminal, else the last active one.
@@ -1147,12 +1146,6 @@ export default function App() {
                 .catch(failed)
             }
             lastRun={lastRun}
-            elsewhere={(() => {
-              const others = mine.filter(
-                m => m.item.event === slot.event && !(m.scope === scope && m.key === key),
-              )
-              return { count: others.length, rows: others.map(m => mineRow(m)) }
-            })()}
             extra={
               slot.event === 'SessionStart' && agent === 'claude' && context?.skills ? (
                 <Button size="sm" variant="secondary" onClick={() => setModal('skills')}>

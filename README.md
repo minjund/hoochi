@@ -53,7 +53,7 @@ goes in, press Save. It applies from the next moment on.
 | Explaining the branch every time a chat opens | **Chat starts** → Command `git status -sb` | Claude starts knowing where things stand |
 | Rules that apply to one repo only | Add them on the **This project** tab | Only that project's chats get them |
 | One terminal kept for reviews | **This terminal** tab → **Answer ends** → Skill `code-review` | In that terminal only, a review runs once more after each answer |
-| A reminder you need exactly once | Turn on **Just once** | It runs once, then switches itself off |
+| A reminder you need once per chat | Turn on **Once per chat** | It runs once in a chat; a new chat or /clear runs it again |
 | Not knowing what hooks a plugin installed | Tap a moment with a gray number | See the command it runs and when, and switch it off |
 | Wondering when the chat will be compacted | Look at **Chat starts** and **Before the chat is shortened** in the picture | How full the chat is, and how far to auto-compact, live |
 | Skills you never use taking up room | **Turn skills on and off** | A skill you switch off leaves the list Claude is shown |
@@ -121,7 +121,7 @@ Type `/hookwich` to show or hide the window. `×` folds it into the bubble; righ
 </p>
 
 - The files, all in `~/.hookwich`: `config.json` (what you put in), `activity-*.json` (what just happened), `places.json` (projects and
-  terminals seen), `parked.json` (hooks switched off), `context/` (/context per terminal). Any settings file hookwich changes is backed up
+  terminals seen), `parked.json` (hooks switched off), `once-*.json` (once-per-chat items each chat already ran), `context/` (/context per terminal). Any settings file hookwich changes is backed up
   first in `~/.hookwich/backups/`.
 
 ## FAQ

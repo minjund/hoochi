@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
+import { noteOnce, parseOnce } from '../hooks/register'
 
 type On = Parameters<TestBody>[1]
 
@@ -92,6 +93,39 @@ test('a skill item asks the model to use the skill', async ($, on) => {
   expect(r.additionalContext?.[0]).toContain('"code-review" skill')
 })
 
+test('a rules item lists each skill with when to use it, leaving half-filled rows out', async ($, on) => {
+  const { fs } = machine(on, {
+    [CONFIG]: config(
+      item({
+        kind: 'rules',
+        rules: [
+          { when: '기능 추가·버그 수정할 때', skill: 'tdd' },
+          { when: '  리뷰해 달라고\n할 때 ', skill: 'code-review' },
+          { when: 'no skill yet', skill: '' },
+          { when: '', skill: 'no-when' },
+        ],
+      }),
+    ),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  expect(r.additionalContext).toEqual([
+    'When the task matches one of these, call that skill with the Skill tool before you go on:\n' +
+      '- 기능 추가·버그 수정할 때 → "tdd"\n' +
+      '- 리뷰해 달라고 할 때 → "code-review"',
+  ])
+  expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').recent[0]).toMatchObject({ kind: 'rules', label: '/tdd /code-review' })
+})
+
+test('a rules item with no full row puts nothing in', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ kind: 'rules', rules: [{ when: 'later', skill: '' }] })) })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  expect(r.additionalContext).toBeUndefined()
+})
+
 test('a tool item goes only to the tools named', async ($, on) => {
   machine(on, {
     [CONFIG]: config(item({ event: 'PostToolUse', text: 'Summarise it.', tools: 'Bash, Edit' })),
@@ -144,13 +178,45 @@ test('a command at an event the model cannot hear still runs', async ($, on) => 
   expect(ran).toContain('echo bye >> log')
 })
 
-test('a "once" item switches itself off after it ran', async ($, on) => {
+test('a "once" item runs once per chat, stays on, and runs again in the next chat', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: config(item({ text: 'Just this once.', once: true })) })
   on('classic.UserPromptSubmit', () => ({}))
+  const say = (session_id: string, prompt: string) => $.classic.UserPromptSubmit({ prompt, session_id })
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['Just this once.'])
-  expect(JSON.parse(fs.get(CONFIG) ?? '{}').claude.global[0].enabled).toBe(false)
-  expect((await $.classic.UserPromptSubmit({ prompt: 'b' })).additionalContext).toBeUndefined()
+  expect((await say('chat-1', 'a')).additionalContext).toEqual(['Just this once.'])
+  expect((await say('chat-1', 'b')).additionalContext).toBeUndefined()
+  expect(JSON.parse(fs.get(CONFIG) ?? '{}').items[0].once).toBe(true)
+  expect(fs.get(CONFIG)).not.toContain('"enabled": false')
+
+  // /clear or a new chat: a new session id, so it runs again there.
+  expect((await say('chat-2', 'c')).additionalContext).toEqual(['Just this once.'])
+  expect((await say('chat-2', 'd')).additionalContext).toBeUndefined()
+  expect(Object.keys(JSON.parse(fs.get('/home/me/.hookwich/once-claude.json') ?? '{}'))).toEqual([
+    'chat-1',
+    'chat-2',
+  ])
+})
+
+test('a "once" item next to others: only it waits for the next chat', async ($, on) => {
+  machine(on, {
+    [CONFIG]: config(item({ text: 'once', once: true }), item({ id: 'i2', text: 'every time' })),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'a', session_id: 's' })).additionalContext).toEqual([
+    'once\n\nevery time',
+  ])
+  expect((await $.classic.UserPromptSubmit({ prompt: 'b', session_id: 's' })).additionalContext).toEqual([
+    'every time',
+  ])
+})
+
+test('chats quiet for a month leave the once log', async () => {
+  const day = 24 * 60 * 60 * 1000
+  const log = noteOnce({ old: { at: 0, ids: ['x'] }, recent: { at: 40 * day, ids: ['y'] } }, 'new', ['z'], 45 * day)
+  expect(Object.keys(log)).toEqual(['recent', 'new'])
+  expect(noteOnce(log, 'new', ['z', 'w'], 46 * day).new?.ids).toEqual(['z', 'w'])
+  expect(parseOnce('{ broken')).toEqual({})
 })
 
 test('a broken config never breaks the hook', async ($, on) => {
@@ -277,7 +343,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.22/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.23/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -295,7 +361,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.22'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.23'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
