@@ -2,6 +2,7 @@
 
 - `plugin/` is the Claude Code plugin (a mod: `hooks/register.ts`). It writes what the window reads under `~/.hookwich/`.
 - `app/` is the window: React in `app/src`, Tauri (Rust) in `app/src-tauri`.
+- The main moments (chat start/end, prompt, before/after a tool, Stop, SubagentStop) are served from Claude Code's own events (`prompt.submit`, `tool.call`, `turn.complete`, `session.start`/`end`/`compact`), listed in `NATIVE` in `register.ts`. On Team and Enterprise accounts the built-in `sec-default` plugin passes every `classic.*` event on beneath a person's plugins, so the classic hook only serves the other moments, and skips the native ones so nothing goes in twice.
 
 ## The window's states
 

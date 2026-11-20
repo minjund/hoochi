@@ -25,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.23'
+export const APP_VERSION = '0.1.24'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -666,14 +666,47 @@ export function noteOnce(log: OnceLog, session: string, ids: readonly string[], 
   return out
 }
 
-/** Puts the enabled items for this event into its answer. */
-async function sandwich($: EngineInterface, event: string, e: unknown, result: unknown): Promise<unknown> {
+/**
+ * The moments hookwich serves from Claude Code's own events (prompt.submit, tool.call,
+ * turn.complete, session.start/end) rather than the settings hooks' classic ones. An
+ * organization's policy plugin (sec-default, on Team and Enterprise plans) passes every
+ * classic event on beneath a person's plugins, so these would never reach hookwich there.
+ * The classic hook skips them, so nothing goes in twice where both arrive.
+ */
+export const NATIVE: ReadonlySet<string> = new Set([
+  'SessionStart',
+  'SessionEnd',
+  'UserPromptSubmit',
+  'UserPromptExpansion',
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'Stop',
+  'SubagentStop',
+])
+
+/** What one moment needs to know besides its name. */
+type Moment = {
+  tool: string
+  /** this chat's session id, which "once per chat" goes by */
+  session: string
+  /** where its commands run; the project when not given */
+  cwd?: string
+  /** Stop's second pass: Claude already kept going once */
+  secondPass?: boolean
+  /** a chat opened here (not compacted): it becomes "where you last chatted" */
+  opened?: boolean
+  /** false where nothing can reach the model: commands still run, words are left out */
+  speak?: boolean
+}
+
+/** Runs the enabled items for this moment and records it; returns what goes to the model. */
+async function gather($: EngineInterface, event: string, m: Moment): Promise<string[]> {
   const dir = `${await home($)}/.hookwich`
   const config = await readConfig($, dir)
   const place = await placeOf($)
   const chosen = pick(config.claude, event, place)
-  const tool = toolOf(e)
-  const session = typeof (e as Loose).session_id === 'string' ? ((e as Loose).session_id as string) : ''
+  const { tool, session } = m
   const oncePath = `${dir}/once-claude.json`
   const wanted = (chosen?.items ?? []).filter(
     i => i.enabled && (!TOOL_EVENTS.has(event) || toolMatches(i.tools, tool)),
@@ -687,9 +720,9 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
   const fired: Fired[] = []
   const ranIds = new Set<string>()
   const parts: string[] = []
-  const canInject = INJECTABLE.has(event)
-  const isSecondPass = CONTINUES.has(event) && (e as Loose).stop_hook_active === true
-  const cwd = typeof (e as Loose).cwd === 'string' ? ((e as Loose).cwd as string) : place.project
+  const canInject = INJECTABLE.has(event) && m.speak !== false
+  const isSecondPass = m.secondPass === true
+  const cwd = m.cwd || place.project
 
   for (const item of items) {
     if (isSecondPass) break
@@ -722,8 +755,7 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     // Other Claude Code chats write this file too: keep the newest "where you last chatted",
     // so a chat working in the background never takes it back from the one you are typing in.
     // A chat opened here (not one compacting on its own); a message is counted by prompt.submit.
-    const opened = event === 'SessionStart' && (e as Loose).source !== 'compact'
-    const mine = opened && interactive ? { at, place } : before0.lastChat
+    const mine = m.opened === true && interactive ? { at, place } : before0.lastChat
     const seen: Activity = {
       lastEvent: event,
       lastAt: at,
@@ -736,6 +768,19 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
     await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen)).catch(() => undefined)
   }
 
+  return parts
+}
+
+/** A classic settings hook's moment: its items go into its answer. */
+async function sandwich($: EngineInterface, event: string, e: unknown, result: unknown): Promise<unknown> {
+  const o = (e ?? {}) as Loose
+  const parts = await gather($, event, {
+    tool: toolOf(e),
+    session: typeof o.session_id === 'string' ? o.session_id : '',
+    cwd: typeof o.cwd === 'string' ? o.cwd : undefined,
+    secondPass: CONTINUES.has(event) && o.stop_hook_active === true,
+    opened: event === 'SessionStart' && o.source !== 'compact',
+  })
   if (parts.length === 0) return result
   const answer = (result ?? {}) as Loose
   const body = parts.join('\n\n')
@@ -745,6 +790,37 @@ async function sandwich($: EngineInterface, event: string, e: unknown, result: u
   }
   const before = Array.isArray(answer.additionalContext) ? answer.additionalContext : []
   return { ...answer, additionalContext: [...before, body] }
+}
+
+/** This chat's session id, from the engine; empty when it cannot say. */
+async function sessionId($: EngineInterface): Promise<string> {
+  return $.session.id().catch(() => '')
+}
+
+/** The chat whose chat-start moment already ran: a reload runs session.start again, not it. */
+const startedChat = atom({ plugin: 'hookwich', key: 'started' } as const, '')
+
+/** What the chat-start moment said, waiting for the first prompt to carry it to the model. */
+let startWords: string[] = []
+/** A new chat began without a session.start (/clear): its chat-start moment runs at the next prompt. */
+let startOwed = false
+/** hookwich made Claude keep going after a turn: that turn's end does not ask again. */
+let keptGoing = false
+
+/** Runs a moment and gives back the one block it says, if any; never throws. */
+async function say($: EngineInterface, event: string, m: Moment): Promise<string | undefined> {
+  try {
+    const parts = await gather($, event, m)
+    return parts.length > 0 ? parts.join('\n\n') : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** A prompt hookwich itself sent to keep Claude going. */
+function fromHookwich(origin: unknown): boolean {
+  const o = origin as { kind?: unknown; name?: unknown } | undefined
+  return o?.kind === 'plugin' && o.name === 'hookwich'
 }
 
 export const register: Register = on => {
@@ -769,6 +845,13 @@ export const register: Register = on => {
         .catch(() => undefined)
     void ensureApp($, dir).then(trouble => showTrouble($, trouble))
     void noteContext($, true).catch(() => undefined)
+    // Once per chat: a reload or a worker respawn runs session.start again.
+    const session = await sessionId($)
+    if ((await read($, startedChat)) !== session) {
+      await update($, startedChat, () => session)
+      const words = await say($, 'SessionStart', { tool: '', session, opened: true })
+      startWords = words === undefined ? [] : [words]
+    }
     // A reload stops this timer, and the new version's session.start starts its own.
     if (interactive) $.clock.every(RELOAD_CHECK_MS, () => void reloadIfUpdated($).catch(() => undefined))
 
@@ -782,10 +865,56 @@ export const register: Register = on => {
     return result
   })
 
+  // Before and after a tool: PreToolUse's commands run first; what both say follows the result.
   on('tool.call', async ($, e, next) => {
+    const tool = typeof e.tool === 'string' ? e.tool : ''
+    const session = await sessionId($)
+    const before = await say($, 'PreToolUse', { tool, session })
     const result = await next(e)
     void noteContext($).catch(() => undefined)
+    if ('deny' in result && result.deny !== undefined) return result
+    const after = await say($, result.isError ? 'PostToolUseFailure' : 'PostToolUse', { tool, session })
+    const words = [before, after].filter((w): w is string => w !== undefined)
+    return words.length === 0 ? result : { ...result, context: [...(result.context ?? []), ...words] }
+  })
+
+  // The end of a turn: Stop (main) or SubagentStop. Stop's words make Claude keep going, once.
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    if (e.reason !== 'answer') return result
+    const session = await sessionId($)
+    if (e.agentId !== undefined) {
+      // A subagent's turn is over: nothing more reaches it, so only commands run.
+      await say($, 'SubagentStop', { tool: '', session, speak: false })
+      return result
+    }
+    const second = keptGoing
+    keptGoing = false
+    const words = await say($, 'Stop', { tool: '', session, secondPass: second })
+    if (words !== undefined) {
+      keptGoing = true
+      void $.prompt.submit({ text: words }).catch(() => {
+        keptGoing = false
+      })
+    }
     return result
+  })
+
+  // A compacted chat forgets what chat start said: it goes in again with the next prompt.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId !== undefined) return result
+    const words = await say($, 'SessionStart', { tool: '', session: await sessionId($) })
+    if (words !== undefined) startWords = [words]
+    return result
+  })
+
+  on('session.end', async ($, e, next) => {
+    await say($, 'SessionEnd', { tool: '', session: await sessionId($), speak: false })
+    // After /clear the same process goes on with a new chat and no session.start.
+    if (e.reason === 'clear') startOwed = true
+    startWords = []
+    return next(e)
   })
 
   on('command.run', { command: 'hookwich' }, async ($, e) => {
@@ -808,7 +937,26 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const entered = await next(e)
+    const words: string[] = []
+    // Engine notices and hookwich's own "keep going" are not your prompt.
+    if (e.isMeta !== true && !fromHookwich(e.origin)) {
+      const session = await sessionId($)
+      if (startOwed) {
+        startOwed = false
+        await update($, startedChat, () => session)
+        const fresh = await say($, 'SessionStart', { tool: '', session, opened: true })
+        if (fresh !== undefined) startWords = [fresh]
+      }
+      words.push(...startWords)
+      startWords = []
+      const typed = await say($, 'UserPromptSubmit', { tool: '', session })
+      if (typed !== undefined) words.push(typed)
+      if (e.command) {
+        const expanded = await say($, 'UserPromptExpansion', { tool: '', session })
+        if (expanded !== undefined) words.push(expanded)
+      }
+    }
+    const entered = await next(words.length === 0 ? e : { ...e, context: [...(e.context ?? []), ...words] })
     if (interactive && byYou(e.origin) && !('drop' in entered)) void noteSent($).catch(() => undefined)
     return entered
   })
@@ -816,6 +964,8 @@ export const register: Register = on => {
   on('classic.*', async ($, e, next) => {
     const event = next.event.slice('classic.'.length)
     const result = await next(e)
+    // Served from the engine's own events above; here it would go in twice.
+    if (NATIVE.has(event)) return result
     try {
       return (await sandwich($, event, e, result)) as typeof result
     } catch {

@@ -119,6 +119,7 @@ export type SkillGroup = {
 
 declare module 'claude-code' {
   interface PluginState {
-    hookwich: { activity: Shaped<Activity>; reloaded: string }
+    /** started: the chat (session id) whose chat-start moment already ran, kept across a reload */
+    hookwich: { activity: Shaped<Activity>; reloaded: string; started: string }
   }
 }

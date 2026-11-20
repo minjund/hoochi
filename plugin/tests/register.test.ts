@@ -40,7 +40,59 @@ function machine(
   })
   let now = 1_000
   if (clock) on('clock.now', () => ({ value: (now += 10) }))
-  return { fs, ran }
+  // The engine beneath: this chat's id, and the native events hookwich serves its moments from.
+  const chat = { id: 's1' }
+  const submitted: string[] = []
+  on('session.id', () => ({ value: chat.id }))
+  on('prompt.submit', (_, e) => {
+    submitted.push(e.text)
+    return { text: e.text, ...(e.context ? { context: e.context } : {}) }
+  })
+  on('tool.call', (_, e) => {
+    const failed = (e as { input?: { fail?: boolean } }).input?.fail === true
+    return { result: { content: 'ok' }, ...(failed ? { isError: true } : {}) } as never
+  })
+  on('turn.complete', () => ({ text: 'done' }))
+  on('session.end', (_, e) => ({ sessionId: e.sessionId }))
+  return { fs, ran, chat, submitted }
+}
+
+/** A prompt you send; resolves to what went beside it for the model (none: undefined). */
+async function prompt($: Parameters<TestBody>[0], text = 'hi', extra: Record<string, unknown> = {}) {
+  const r = await ($.prompt as unknown as { submit(e: unknown): Promise<{ context?: string[] }> }).submit({
+    text,
+    origin: { kind: 'composer' },
+    wait: false,
+    ...extra,
+  })
+  return r.context
+}
+
+/** A tool the model calls; resolves to what follows its result for the model. */
+async function tool($: Parameters<TestBody>[0], name: string, input: Record<string, unknown> = {}) {
+  const r = await ($.tool as unknown as { call(e: unknown): Promise<{ context?: string[] }> }).call({
+    tool: name,
+    input,
+  })
+  return r.context
+}
+
+/** Lets work a hook left running (not awaited) finish. */
+const tick = () =>
+  new Promise<void>(r => (globalThis as unknown as { setTimeout(f: () => void, ms: number): void }).setTimeout(r, 5))
+
+/** The main loop's turn ends with an answer (or a subagent's, with `agentId`). */
+async function turnEnds($: Parameters<TestBody>[0], extra: Record<string, unknown> = {}) {
+  await ($.turn as unknown as { complete(e: unknown): Promise<unknown> }).complete({
+    reason: 'answer',
+    answer: 'done',
+    durationMs: 10,
+    isAborted: false,
+    turnId: 't1',
+    ...extra,
+  })
+  // hookwich sends its "keep going" without waiting for it
+  await tick()
 }
 
 const CONFIG = '/home/me/.hookwich/config.json'
@@ -62,12 +114,10 @@ const item = (over: Record<string, unknown>) => ({
 
 const config = (...items: Record<string, unknown>[]) => JSON.stringify({ version: 1, items })
 
-test('text before a prompt reaches the model, after the settings hooks', async ($, on) => {
+test('text before a prompt reaches the model beside it', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: config(item({ text: 'Answer in English.' })) })
-  on('classic.UserPromptSubmit', () => ({ additionalContext: ['from settings'] }))
 
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(r.additionalContext).toEqual(['from settings', 'Answer in English.'])
+  expect(await prompt($)).toEqual(['Answer in English.'])
 
   const seen = JSON.parse(fs.get(ACTIVITY) ?? '{}')
   expect(seen.lastEvent).toBe('UserPromptSubmit')
@@ -79,18 +129,14 @@ test('a disabled item and another event put nothing in', async ($, on) => {
   machine(on, {
     [CONFIG]: config(item({ text: 'off', enabled: false }), item({ id: 'i2', event: 'Stop', text: 'later' })),
   })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(r.additionalContext).toBeUndefined()
+  expect(await prompt($)).toBeUndefined()
 })
 
 test('a skill item asks the model to use the skill', async ($, on) => {
   machine(on, { [CONFIG]: config(item({ kind: 'skill', skill: 'code-review' })) })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(r.additionalContext?.[0]).toContain('"code-review" skill')
+  expect((await prompt($))?.[0]).toContain('"code-review" skill')
 })
 
 test('a rules item lists each skill with when to use it, leaving half-filled rows out', async ($, on) => {
@@ -107,10 +153,8 @@ test('a rules item lists each skill with when to use it, leaving half-filled row
       }),
     ),
   })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(r.additionalContext).toEqual([
+  expect(await prompt($)).toEqual([
     'When the task matches one of these, call that skill with the Skill tool before you go on:\n' +
       '- 기능 추가·버그 수정할 때 → "tdd"\n' +
       '- 리뷰해 달라고 할 때 → "code-review"',
@@ -120,77 +164,92 @@ test('a rules item lists each skill with when to use it, leaving half-filled row
 
 test('a rules item with no full row puts nothing in', async ($, on) => {
   machine(on, { [CONFIG]: config(item({ kind: 'rules', rules: [{ when: 'later', skill: '' }] })) })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(r.additionalContext).toBeUndefined()
+  expect(await prompt($)).toBeUndefined()
 })
 
 test('a tool item goes only to the tools named', async ($, on) => {
   machine(on, {
     [CONFIG]: config(item({ event: 'PostToolUse', text: 'Summarise it.', tools: 'Bash, Edit' })),
   })
-  on('classic.PostToolUse', () => ({}))
-  const base = { tool_input: {}, tool_response: {}, tool_use_id: 't1' }
 
-  expect((await $.classic.PostToolUse({ ...base, tool_name: 'Bash' })).additionalContext).toEqual([
-    'Summarise it.',
-  ])
-  expect((await $.classic.PostToolUse({ ...base, tool_name: 'Read' })).additionalContext).toBeUndefined()
+  expect(await tool($, 'Bash')).toEqual(['Summarise it.'])
+  expect(await tool($, 'Read')).toBeUndefined()
+})
+
+test('before a tool its command runs first; after a failed one only the failure items speak', async ($, on) => {
+  const { ran } = machine(
+    on,
+    {
+      [CONFIG]: config(
+        item({ event: 'PreToolUse', kind: 'command', command: 'echo before' }),
+        item({ id: 'i2', event: 'PostToolUse', text: 'It worked.' }),
+        item({ id: 'i3', event: 'PostToolUseFailure', text: 'It failed: say why.' }),
+      ),
+    },
+    { 'echo before': { exitCode: 0, stdout: 'checked' } },
+  )
+
+  expect(await tool($, 'Bash')).toEqual(['$ echo before (exit 0)\nchecked', 'It worked.'])
+  expect(await tool($, 'Bash', { fail: true })).toEqual(['$ echo before (exit 0)\nchecked', 'It failed: say why.'])
+  expect(ran.filter(l => l === 'echo before')).toHaveLength(2)
 })
 
 test('a failing test command after the turn makes Claude keep going once', async ($, on) => {
-  const { ran } = machine(
+  const { ran, submitted: sent } = machine(
     on,
     { [CONFIG]: config(item({ event: 'Stop', kind: 'command', command: 'npm test', mode: 'onFail' })) },
     { 'npm test': { exitCode: 1, stdout: '1 failing' } },
   )
-  on('classic.Stop', () => ({}))
 
-  const first = await $.classic.Stop({ stop_hook_active: false })
-  expect(first.block).toContain('$ npm test (exit 1)')
-  expect(first.block).toContain('1 failing')
+  const { submitted } = { submitted: sent }
+  await turnEnds($)
+  expect(submitted).toHaveLength(1)
+  expect(submitted[0]).toContain('$ npm test (exit 1)')
+  expect(submitted[0]).toContain('1 failing')
 
-  // The second stop of the same turn is let through: no loop.
-  const second = await $.classic.Stop({ stop_hook_active: true })
-  expect(second.block).toBeUndefined()
+  // The turn it started ends too: let through, no loop.
+  await turnEnds($)
+  expect(submitted).toHaveLength(1)
   expect(ran.filter(l => l === 'npm test').length).toBe(1)
+
+  // A subagent's end runs commands, but cannot keep going.
+  await turnEnds($, { agentId: 'a1' })
+  expect(submitted).toHaveLength(1)
 })
 
 test('a passing command set to "only on failure" puts nothing in', async ($, on) => {
-  machine(
+  const { submitted } = machine(
     on,
     { [CONFIG]: config(item({ event: 'Stop', kind: 'command', command: 'npm test', mode: 'onFail' })) },
     { 'npm test': { exitCode: 0, stdout: 'ok' } },
   )
-  on('classic.Stop', () => ({}))
 
-  expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
+  await turnEnds($)
+  expect(submitted).toHaveLength(0)
 })
 
 test('a command at an event the model cannot hear still runs', async ($, on) => {
   const { ran } = machine(on, {
     [CONFIG]: config(item({ event: 'SessionEnd', kind: 'command', command: 'echo bye >> log' })),
   })
-  on('classic.SessionEnd', () => ({}))
 
-  await $.classic.SessionEnd({ reason: 'other' })
+  await ($.session as unknown as { end(e: unknown): Promise<unknown> }).end({ reason: 'other', sessionId: 's1' })
   expect(ran).toContain('echo bye >> log')
 })
 
 test('a "once" item runs once per chat, stays on, and runs again in the next chat', async ($, on) => {
-  const { fs } = machine(on, { [CONFIG]: config(item({ text: 'Just this once.', once: true })) })
-  on('classic.UserPromptSubmit', () => ({}))
-  const say = (session_id: string, prompt: string) => $.classic.UserPromptSubmit({ prompt, session_id })
+  const { fs, chat } = machine(on, { [CONFIG]: config(item({ text: 'Just this once.', once: true })) })
+  const say = (id: string, text: string) => ((chat.id = id), prompt($, text))
 
-  expect((await say('chat-1', 'a')).additionalContext).toEqual(['Just this once.'])
-  expect((await say('chat-1', 'b')).additionalContext).toBeUndefined()
+  expect(await say('chat-1', 'a')).toEqual(['Just this once.'])
+  expect(await say('chat-1', 'b')).toBeUndefined()
   expect(JSON.parse(fs.get(CONFIG) ?? '{}').items[0].once).toBe(true)
   expect(fs.get(CONFIG)).not.toContain('"enabled": false')
 
   // /clear or a new chat: a new session id, so it runs again there.
-  expect((await say('chat-2', 'c')).additionalContext).toEqual(['Just this once.'])
-  expect((await say('chat-2', 'd')).additionalContext).toBeUndefined()
+  expect(await say('chat-2', 'c')).toEqual(['Just this once.'])
+  expect(await say('chat-2', 'd')).toBeUndefined()
   expect(Object.keys(JSON.parse(fs.get('/home/me/.hookwich/once-claude.json') ?? '{}'))).toEqual([
     'chat-1',
     'chat-2',
@@ -201,14 +260,9 @@ test('a "once" item next to others: only it waits for the next chat', async ($, 
   machine(on, {
     [CONFIG]: config(item({ text: 'once', once: true }), item({ id: 'i2', text: 'every time' })),
   })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'a', session_id: 's' })).additionalContext).toEqual([
-    'once\n\nevery time',
-  ])
-  expect((await $.classic.UserPromptSubmit({ prompt: 'b', session_id: 's' })).additionalContext).toEqual([
-    'every time',
-  ])
+  expect(await prompt($, 'a')).toEqual(['once\n\nevery time'])
+  expect(await prompt($, 'b')).toEqual(['every time'])
 })
 
 test('chats quiet for a month leave the once log', async () => {
@@ -221,9 +275,8 @@ test('chats quiet for a month leave the once log', async () => {
 
 test('a broken config never breaks the hook', async ($, on) => {
   machine(on, { [CONFIG]: '{ not json' })
-  on('classic.UserPromptSubmit', () => ({ additionalContext: ['from settings'] }))
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'a' })).additionalContext).toEqual(['from settings'])
+  expect(await prompt($, 'a', { context: ['from another plugin'] })).toEqual(['from another plugin'])
 })
 
 test('a command on a frequent event still runs, and only then is it logged', async ($, on) => {
@@ -248,9 +301,8 @@ test('this terminal beats this project, which beats everywhere', async ($, on) =
       terminals: { 'whitebox:terminal:t1': [item({ id: 't', text: 'terminal' })] },
     }),
   })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toEqual(['terminal'])
+  expect((await prompt($))).toEqual(['terminal'])
 })
 
 test('another terminal of the same project gets the project items', async ($, on) => {
@@ -266,9 +318,8 @@ test('another terminal of the same project gets the project items', async ($, on
     {},
     { WHITEBOX_SURFACE_ID: 'terminal:t2' },
   )
-  on('classic.UserPromptSubmit', () => ({}))
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toEqual(['project'])
+  expect((await prompt($))).toEqual(['project'])
 })
 
 test('a switched-off item in the project silences the global one there', async ($, on) => {
@@ -278,19 +329,17 @@ test('a switched-off item in the project silences the global one there', async (
       projects: { '/work/app': [item({ id: 'p', text: 'quiet here', enabled: false })] },
     }),
   })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toBeUndefined()
+  expect((await prompt($))).toBeUndefined()
 })
 
 test('the window learns this project and terminal, and where the last event was', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: v2({}) })
   on('command.register', () => ({ value: { command: 'hookwich' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('classic.UserPromptSubmit', () => ({}))
 
   await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  await prompt($)
 
   const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
   expect(Object.keys(places.projects)).toEqual(['/work/app'])
@@ -300,19 +349,16 @@ test('the window learns this project and terminal, and where the last event was'
 
 test('typing a chat marks where you are, and later moments keep that mark', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: v2({}) })
-  on('classic.UserPromptSubmit', () => ({}))
-  on('classic.PostToolUse', () => ({}))
 
-  on('prompt.submit', (_, e) => ({ text: e.text }))
   await send($, 'composer')
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  await tick()
   const typed = JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat
   expect(typed.place.terminal).toBe('whitebox:terminal:t1')
   expect(typed.place.project).toBe('/work/app')
   const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
   expect(places.terminals['whitebox:terminal:t1'].agent).toBe('claude')
 
-  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {}, tool_use_id: 't1' })
+  await tool($, 'Bash')
   const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
   expect(after.lastEvent).toBe('PostToolUse')
   expect(after.lastChat).toEqual(typed)
@@ -343,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.23/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.24/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -361,7 +407,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.23'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.24'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -445,9 +491,8 @@ test('a failed update keeps the old window running and says so', async ($, on) =
 
 test('each record names the item it came from, so a deleted item can be told apart', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: v2({ global: [item({ id: 'g1', text: 'answer in English' })] }) })
-  on('classic.UserPromptSubmit', () => ({}))
 
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  await prompt($)
   const recent = JSON.parse(fs.get(ACTIVITY) ?? '{}').recent
   expect(recent.at(-1)).toMatchObject({ id: 'g1', label: 'answer in English', scope: 'global' })
 })
@@ -498,9 +543,8 @@ test('typing where the chat already is writes nothing', async ($, on) => {
 test('a chat working in the background does not take "where you are chatting" back', async ($, on) => {
   // Another Claude Code chat (t9) was typed in later than this one's own last chat.
   const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: elsewhere(5_000_000) })
-  on('classic.PostToolUse', () => ({}))
 
-  await $.classic.PostToolUse({ tool_name: 'Bash', tool_input: {}, tool_response: {}, tool_use_id: 't1' })
+  await tool($, 'Bash')
   const after = JSON.parse(fs.get(ACTIVITY) ?? '{}')
   expect(after.lastEvent).toBe('PostToolUse')
   expect(after.lastChat.place.terminal).toBe('whitebox:terminal:t9')
@@ -636,7 +680,6 @@ test('while tools run, /context is written at most every two seconds', async ($,
     asked += 1
     return { value: usage(10_000 + asked * 1000) }
   })
-  on('tool.call', () => ({ result: { content: 'ok' } }) as never)
 
   const call = () =>
     ($.tool as unknown as { call(e: unknown): Promise<unknown> }).call({ tool: 'Read', input: {} })
@@ -667,10 +710,9 @@ test('a claude -p run in the same terminal is not where you chat', async ($, on)
     return { value: usage(10_000) }
   })
   on('session.measure', (_, e) => ({ changed: e.changed }))
-  on('classic.UserPromptSubmit', () => ({}))
 
   await $.session.start({ cwd: '/tmp/scratch', surface: null, isInteractive: false })
-  await $.classic.UserPromptSubmit({ prompt: 'reply ok' })
+  await prompt($, 'reply ok')
   await measure($)
 
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat).toEqual(earlier)
@@ -737,13 +779,10 @@ function send($: Parameters<TestBody>[0], kind: string) {
 test('only your own Enter makes this "where you are chatting"', async ($, on) => {
   const clock = mock.clock(on, { now: 9_000_000 })
   const { fs } = machine(on, { [CONFIG]: v2({}), [ACTIVITY]: elsewhere(5_000) }, {}, undefined, { clock: false })
-  on('prompt.submit', (_, e) => ({ text: e.text }))
-  on('classic.UserPromptSubmit', () => ({}))
 
   // a terminal app's request, a notification, a scheduled run: the window stays on t9
   for (const kind of ['unclassified', 'task-notification', 'peer', 'scheduled-trigger']) {
     await send($, kind)
-    await $.classic.UserPromptSubmit({ prompt: 'hi' })
     await clock.settle()
     expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat.place.terminal).toBe('whitebox:terminal:t9')
   }
@@ -760,4 +799,70 @@ test('a chat compacting on its own does not take "where you are chatting"', asyn
 
   await $.classic.SessionStart({ source: 'compact' })
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat.place.terminal).toBe('whitebox:terminal:t9')
+})
+
+test('chat start: its words go in with the first prompt only, and again after /clear', async ($, on) => {
+  const { chat, ran } = machine(on, {
+    [CONFIG]: config(
+      item({ event: 'SessionStart', text: 'Read NOTES.md first.' }),
+      item({ id: 'i2', event: 'SessionStart', kind: 'command', command: 'git pull' }),
+    ),
+  })
+  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  expect(ran.filter(l => l === 'git pull')).toHaveLength(1)
+  expect((await prompt($))?.[0]).toContain('Read NOTES.md first.')
+  expect(await prompt($)).toBeUndefined()
+
+  // a reload runs session.start again in the same chat: nothing runs twice
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  expect(ran.filter(l => l === 'git pull')).toHaveLength(1)
+  expect(await prompt($)).toBeUndefined()
+
+  // /clear: the chat ends, a new one goes on in this process with no session.start
+  await ($.session as unknown as { end(e: unknown): Promise<unknown> }).end({ reason: 'clear', sessionId: 's1' })
+  chat.id = 's2'
+  expect((await prompt($))?.[0]).toContain('Read NOTES.md first.')
+  expect(ran.filter(l => l === 'git pull')).toHaveLength(2)
+})
+
+test('a slash command also gets what goes in when a command expands', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'UserPromptExpansion', text: 'Expanded.' })) })
+
+  expect(await prompt($, 'hi')).toBeUndefined()
+  expect(await prompt($, '/review', { command: { name: 'review', args: '' } })).toEqual(['Expanded.'])
+})
+
+test('engine notices and hookwich\'s own "keep going" get nothing', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ text: 'Answer in English.' })) })
+
+  expect(await prompt($, 'a notice', { isMeta: true })).toBeUndefined()
+  expect(await prompt($, 'keep going', { origin: { kind: 'plugin', name: 'hookwich' } })).toBeUndefined()
+  expect(await prompt($, 'mine')).toEqual(['Answer in English.'])
+})
+
+test('a classic hook for a moment served natively puts nothing in, so nothing goes in twice', async ($, on) => {
+  machine(on, {
+    [CONFIG]: config(
+      item({ text: 'Answer in English.' }),
+      item({ id: 'i2', event: 'PostToolUse', text: 'Summarise it.' }),
+      item({ id: 'i3', event: 'Stop', text: 'Run the tests.' }),
+      item({ id: 'i4', event: 'PostModelSwitch', text: 'Say which model you are now.' }),
+    ),
+  })
+  on('classic.UserPromptSubmit', () => ({}))
+  on('classic.PostToolUse', () => ({}))
+  on('classic.Stop', () => ({}))
+  on('classic.PostModelSwitch', () => ({}))
+
+  expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toBeUndefined()
+  const base = { tool_input: {}, tool_response: {}, tool_use_id: 't1' }
+  expect((await $.classic.PostToolUse({ ...base, tool_name: 'Bash' })).additionalContext).toBeUndefined()
+  expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
+  // a moment with no native event still goes through its classic hook
+  expect(
+    (await $.classic.PostModelSwitch({ previous_model: 'a', model: 'b' } as never)).additionalContext,
+  ).toEqual(['Say which model you are now.'])
 })
