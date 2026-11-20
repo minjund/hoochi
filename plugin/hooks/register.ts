@@ -25,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.24'
+export const APP_VERSION = '0.1.25'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -685,6 +685,37 @@ export const NATIVE: ReadonlySet<string> = new Set([
   'SubagentStop',
 ])
 
+/**
+ * The moments the window offers that have no native event: served by their classic hook alone,
+ * so they work where the classic hooks reach hookwich (not under sec-default).
+ */
+export const CLASSIC_ONLY = [
+  'Setup',
+  'InstructionsLoaded',
+  'PreModelSwitch',
+  'PostModelSwitch',
+  'SubagentStart',
+  'PostToolBatch',
+  'PermissionRequest',
+  'PermissionDenied',
+  'Notification',
+  'PreCompact',
+  'PostCompact',
+  'ConfigChange',
+  'CwdChanged',
+  'FileChanged',
+  'DirectoryAdded',
+  'Elicitation',
+  'ElicitationResult',
+  'MessageDisplay',
+  'StopFailure',
+  'TaskCreated',
+  'TaskCompleted',
+  'TeammateIdle',
+  'WorktreeCreate',
+  'WorktreeRemove',
+] as const
+
 /** What one moment needs to know besides its name. */
 type Moment = {
   tool: string
@@ -821,6 +852,22 @@ async function say($: EngineInterface, event: string, m: Moment): Promise<string
 function fromHookwich(origin: unknown): boolean {
   const o = origin as { kind?: unknown; name?: unknown } | undefined
   return o?.kind === 'plugin' && o.name === 'hookwich'
+}
+
+/** A classic settings hook's moment, for the moments in CLASSIC_ONLY. */
+async function classicMoment(
+  $: EngineInterface,
+  e: object,
+  next: ((e: never) => Promise<unknown>) & { readonly event: string },
+): Promise<never> {
+  const event = next.event.slice('classic.'.length)
+  const result = (await next(e as never)) as never
+  try {
+    return (await sandwich($, event, e, result)) as never
+  } catch {
+    // hookwich never breaks a hook: on any trouble, the answer stays as it was
+    return result
+  }
 }
 
 export const register: Register = on => {
@@ -961,16 +1008,30 @@ export const register: Register = on => {
     return entered
   })
 
-  on('classic.*', async ($, e, next) => {
-    const event = next.event.slice('classic.'.length)
-    const result = await next(e)
-    // Served from the engine's own events above; here it would go in twice.
-    if (NATIVE.has(event)) return result
-    try {
-      return (await sandwich($, event, e, result)) as typeof result
-    } catch {
-      // hookwich never breaks a hook: on any trouble, the answer stays as it was
-      return result
-    }
-  })
+  // Only the moments with no native event, each named (on() takes a literal): hooking every classic
+  // event would round-trip each one, and where sec-default passes them by, each says so.
+  on('classic.Setup', classicMoment)
+  on('classic.InstructionsLoaded', classicMoment)
+  on('classic.PreModelSwitch', classicMoment)
+  on('classic.PostModelSwitch', classicMoment)
+  on('classic.SubagentStart', classicMoment)
+  on('classic.PostToolBatch', classicMoment)
+  on('classic.PermissionRequest', classicMoment)
+  on('classic.PermissionDenied', classicMoment)
+  on('classic.Notification', classicMoment)
+  on('classic.PreCompact', classicMoment)
+  on('classic.PostCompact', classicMoment)
+  on('classic.ConfigChange', classicMoment)
+  on('classic.CwdChanged', classicMoment)
+  on('classic.FileChanged', classicMoment)
+  on('classic.DirectoryAdded', classicMoment)
+  on('classic.Elicitation', classicMoment)
+  on('classic.ElicitationResult', classicMoment)
+  on('classic.MessageDisplay', classicMoment)
+  on('classic.StopFailure', classicMoment)
+  on('classic.TaskCreated', classicMoment)
+  on('classic.TaskCompleted', classicMoment)
+  on('classic.TeammateIdle', classicMoment)
+  on('classic.WorktreeCreate', classicMoment)
+  on('classic.WorktreeRemove', classicMoment)
 }
