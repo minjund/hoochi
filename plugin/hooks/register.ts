@@ -25,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hookwich.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.25'
+export const APP_VERSION = '0.1.26'
 const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -668,10 +668,14 @@ export function noteOnce(log: OnceLog, session: string, ids: readonly string[], 
 
 /**
  * The moments hookwich serves from Claude Code's own events (prompt.submit, tool.call,
- * turn.complete, session.start/end) rather than the settings hooks' classic ones. An
- * organization's policy plugin (sec-default, on Team and Enterprise plans) passes every
- * classic event on beneath a person's plugins, so these would never reach hookwich there.
- * The classic hook skips them, so nothing goes in twice where both arrive.
+ * turn.complete, agent.spawn, session.start/end/compact) rather than the settings hooks'
+ * classic ones. An organization's policy plugin (sec-default, on Team and Enterprise plans)
+ * passes every classic event on beneath a person's plugins, so these would never reach hookwich
+ * there. hookwich does not hook their classic events, so nothing goes in twice where both arrive.
+ *
+ * After changing model has no native event of its own: hookwich sees the model differ from the
+ * last prompt's and puts its words in with the next prompt, where the classic hook's words would
+ * have reached the model too.
  */
 export const NATIVE: ReadonlySet<string> = new Set([
   'SessionStart',
@@ -682,25 +686,27 @@ export const NATIVE: ReadonlySet<string> = new Set([
   'PostToolUse',
   'PostToolUseFailure',
   'Stop',
+  'StopFailure',
+  'SubagentStart',
   'SubagentStop',
+  'PreCompact',
+  'PostCompact',
+  'PostModelSwitch',
 ])
 
 /**
  * The moments the window offers that have no native event: served by their classic hook alone,
- * so they work where the classic hooks reach hookwich (not under sec-default).
+ * so they work where the classic hooks reach hookwich (not under sec-default). The window keeps
+ * the same list (CLASSIC_ONLY in app/src/lib/lifecycle.ts) to dim them where they cannot run.
  */
 export const CLASSIC_ONLY = [
   'Setup',
   'InstructionsLoaded',
   'PreModelSwitch',
-  'PostModelSwitch',
-  'SubagentStart',
   'PostToolBatch',
   'PermissionRequest',
   'PermissionDenied',
   'Notification',
-  'PreCompact',
-  'PostCompact',
   'ConfigChange',
   'CwdChanged',
   'FileChanged',
@@ -708,7 +714,6 @@ export const CLASSIC_ONLY = [
   'Elicitation',
   'ElicitationResult',
   'MessageDisplay',
-  'StopFailure',
   'TaskCreated',
   'TaskCompleted',
   'TeammateIdle',
@@ -854,6 +859,47 @@ function fromHookwich(origin: unknown): boolean {
   return o?.kind === 'plugin' && o.name === 'hookwich'
 }
 
+/**
+ * Whether the classic hooks reach hookwich on this computer: `~/.hookwich/classic-claude.json`,
+ * read by the window to dim the moments in CLASSIC_ONLY where they cannot run.
+ */
+export type ClassicReach = { reach: 'open' | 'blocked'; at: number }
+
+/** Answered turns with no classic event at all before hookwich calls the classic hooks blocked. */
+export const QUIET_TURNS = 2
+
+/** A classic event reached hookwich in this process. */
+let classicSeen = false
+/** Answered turns in a row with no classic event; MessageDisplay comes with every answer. */
+let quietTurns = 0
+/** What this process last wrote, so it writes only a change. */
+let reachWritten: ClassicReach['reach'] | undefined
+
+/** Notes whether classic events reach hookwich, when that differs from what the file says. */
+async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Promise<void> {
+  if (reachWritten === reach) return
+  reachWritten = reach
+  const path = `${await home($)}/.hookwich/classic-claude.json`
+  let had: unknown
+  try {
+    had = JSON.parse((await readText($, path)) ?? '{}')
+  } catch {
+    had = {}
+  }
+  if ((had as Partial<ClassicReach>).reach === reach) return
+  const body: ClassicReach = { reach, at: await $.clock.now() }
+  await $.fs.write(path, JSON.stringify(body))
+}
+
+/** The main loop's model when the last prompt went in; undefined until hookwich first asks. */
+let lastModel: string | undefined
+
+/** The main loop's model, or undefined when the engine cannot say. */
+async function modelNow($: EngineInterface): Promise<string | undefined> {
+  const m = await $.session.model().catch(() => '')
+  return m === '' ? undefined : m
+}
+
 /** A classic settings hook's moment, for the moments in CLASSIC_ONLY. */
 async function classicMoment(
   $: EngineInterface,
@@ -862,6 +908,9 @@ async function classicMoment(
 ): Promise<never> {
   const event = next.event.slice('classic.'.length)
   const result = (await next(e as never)) as never
+  classicSeen = true
+  quietTurns = 0
+  if (interactive) void noteReach($, 'open').catch(() => undefined)
   try {
     return (await sandwich($, event, e, result)) as never
   } catch {
@@ -892,6 +941,7 @@ export const register: Register = on => {
         .catch(() => undefined)
     void ensureApp($, dir).then(trouble => showTrouble($, trouble))
     void noteContext($, true).catch(() => undefined)
+    lastModel = await modelNow($)
     // Once per chat: a reload or a worker respawn runs session.start again.
     const session = await sessionId($)
     if ((await read($, startedChat)) !== session) {
@@ -928,7 +978,18 @@ export const register: Register = on => {
   // The end of a turn: Stop (main) or SubagentStop. Stop's words make Claude keep going, once.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+    if (e.reason === 'error' && e.agentId === undefined) {
+      // An API error ended the turn: nothing reaches the model, so only commands run.
+      await say($, 'StopFailure', { tool: '', session: await sessionId($), speak: false })
+      return result
+    }
     if (e.reason !== 'answer') return result
+    // Every answer shown comes with classic MessageDisplay events: none at all, twice running,
+    // means an organization's policy plugin passes the classic hooks by.
+    if (interactive && e.agentId === undefined && !classicSeen && e.answer.trim() !== '') {
+      quietTurns += 1
+      if (quietTurns >= QUIET_TURNS) void noteReach($, 'blocked').catch(() => undefined)
+    }
     const session = await sessionId($)
     if (e.agentId !== undefined) {
       // A subagent's turn is over: nothing more reaches it, so only commands run.
@@ -947,13 +1008,26 @@ export const register: Register = on => {
     return result
   })
 
-  // A compacted chat forgets what chat start said: it goes in again with the next prompt.
+  // Before and after compacting (commands only). A compacted chat forgets what chat start said:
+  // it goes in again with the next prompt.
   on('session.compact', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    const session = await sessionId($)
+    // A compaction worked out ahead of time is not the chat being compacted yet.
+    const now = e.trigger !== 'precompute'
+    if (now) await say($, 'PreCompact', { tool: '', session, speak: false })
     const result = await next(e)
-    if (e.agentId !== undefined) return result
-    const words = await say($, 'SessionStart', { tool: '', session: await sessionId($) })
+    if (now && !('skip' in result && result.skip !== undefined))
+      await say($, 'PostCompact', { tool: '', session, speak: false })
+    const words = await say($, 'SessionStart', { tool: '', session })
     if (words !== undefined) startWords = [words]
     return result
+  })
+
+  // A subagent starts: what goes in follows the task it was given.
+  on('agent.spawn', async ($, e, next) => {
+    const words = await say($, 'SubagentStart', { tool: '', session: await sessionId($) })
+    return next(words === undefined ? e : { ...e, prompt: `${e.prompt}\n\n${words}` })
   })
 
   on('session.end', async ($, e, next) => {
@@ -996,6 +1070,16 @@ export const register: Register = on => {
       }
       words.push(...startWords)
       startWords = []
+      // The model changed since the last prompt (/model, the picker, a fallback): say so now.
+      const model = await modelNow($)
+      if (model !== undefined) {
+        const switched = lastModel !== undefined && model !== lastModel
+        lastModel = model
+        if (switched) {
+          const after = await say($, 'PostModelSwitch', { tool: '', session })
+          if (after !== undefined) words.push(after)
+        }
+      }
       const typed = await say($, 'UserPromptSubmit', { tool: '', session })
       if (typed !== undefined) words.push(typed)
       if (e.command) {
@@ -1013,14 +1097,10 @@ export const register: Register = on => {
   on('classic.Setup', classicMoment)
   on('classic.InstructionsLoaded', classicMoment)
   on('classic.PreModelSwitch', classicMoment)
-  on('classic.PostModelSwitch', classicMoment)
-  on('classic.SubagentStart', classicMoment)
   on('classic.PostToolBatch', classicMoment)
   on('classic.PermissionRequest', classicMoment)
   on('classic.PermissionDenied', classicMoment)
   on('classic.Notification', classicMoment)
-  on('classic.PreCompact', classicMoment)
-  on('classic.PostCompact', classicMoment)
   on('classic.ConfigChange', classicMoment)
   on('classic.CwdChanged', classicMoment)
   on('classic.FileChanged', classicMoment)
@@ -1028,7 +1108,6 @@ export const register: Register = on => {
   on('classic.Elicitation', classicMoment)
   on('classic.ElicitationResult', classicMoment)
   on('classic.MessageDisplay', classicMoment)
-  on('classic.StopFailure', classicMoment)
   on('classic.TaskCreated', classicMoment)
   on('classic.TaskCompleted', classicMoment)
   on('classic.TeammateIdle', classicMoment)

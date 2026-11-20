@@ -237,6 +237,25 @@ input {
   color: var(--hw-soft);
 }
 
+.hw-tag-blocked {
+  border-style: dashed;
+}
+
+/* A moment Claude Code never hands to hookwich on this account (sec-default). */
+.hw-blocked {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--hw-line);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--hw-soft);
+}
+
+.hw-tip-blocked {
+  color: var(--hw-soft);
+  font-style: italic;
+}
+
 .hw-field {
   display: grid;
   gap: 6px;

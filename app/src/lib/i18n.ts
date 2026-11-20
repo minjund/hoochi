@@ -311,6 +311,10 @@ export const UI = {
     leaveAnyway: 'Leave without saving',
     keepEditing: 'Keep editing',
     onlyCommandsTag: 'commands only',
+    blockedTag: "doesn't run here",
+    blockedNote:
+      "On this account (Team or Enterprise), Claude Code's built-in guard (sec-default) passes this moment by, so hookwich never hears of it and nothing here runs. What you put in stays, and runs on an account without the guard.",
+    blockedShort: "Doesn't run on this account: Claude Code's built-in guard passes it by.",
     empty: 'Nothing here yet.',
     add: 'Add something here',
     kindLabel: 'What to add',
@@ -517,6 +521,10 @@ export const UI = {
     leaveAnyway: '저장 안 하고 나가기',
     keepEditing: '계속 편집',
     onlyCommandsTag: '명령만',
+    blockedTag: '이 계정에선 안 돌아요',
+    blockedNote:
+      '이 계정(Team · Enterprise)에서는 Claude Code에 들어 있는 보호 장치(sec-default)가 이 순간을 hookwich에 넘겨주지 않아서, 여기 넣은 것은 실행되지 않아요. 넣어 둔 것은 그대로 남아 있고, 보호 장치가 없는 계정에서는 실행돼요.',
+    blockedShort: '이 계정에선 안 돌아요: Claude Code의 보호 장치가 넘겨주지 않아요.',
     empty: '아직 넣은 게 없어요.',
     add: '여기에 넣기',
     kindLabel: '넣을 것',
@@ -735,6 +743,10 @@ export const UI = {
     leaveAnyway: '保存せずに戻る',
     keepEditing: '編集を続ける',
     onlyCommandsTag: 'コマンドのみ',
+    blockedTag: 'このアカウントでは動きません',
+    blockedNote:
+      'このアカウント（Team・Enterprise）では、Claude Code に組み込まれた保護（sec-default）がこのタイミングを hookwich に渡さないため、ここに入れたものは実行されません。入れたものはそのまま残り、保護のないアカウントでは実行されます。',
+    blockedShort: 'このアカウントでは動きません：Claude Code の保護が渡しません。',
     empty: 'まだ何もありません。',
     add: 'ここに追加',
     kindLabel: '入れるもの',
@@ -956,6 +968,10 @@ export const UI = {
     leaveAnyway: '不保存就离开',
     keepEditing: '继续编辑',
     onlyCommandsTag: '仅命令',
+    blockedTag: '此账号下不运行',
+    blockedNote:
+      '在这个账号（Team · Enterprise）下，Claude Code 内置的保护（sec-default）不会把这个时刻交给 hookwich，所以这里加入的内容不会运行。已加入的内容会保留，在没有该保护的账号下会运行。',
+    blockedShort: '此账号下不运行：Claude Code 的内置保护不会转交它。',
     empty: '这里还没有内容。',
     add: '在这里添加',
     kindLabel: '添加什么',

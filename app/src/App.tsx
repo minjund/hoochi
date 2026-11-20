@@ -67,9 +67,11 @@ import {
   listOf,
   mergeItems,
   slotOf,
+  unreachable,
   withList,
   type Activity,
   type Agent,
+  type ClassicReach,
   type Config,
   type Item,
   type Place,
@@ -250,6 +252,8 @@ export default function App() {
     codex: EMPTY_ACTIVITY,
   })
   const [places, setPlaces] = useState<Places>({ projects: {}, terminals: {} })
+  // Where sec-default passes Claude Code's classic hooks by, the moments only they serve are dimmed.
+  const [classic, setClassic] = useState<ClassicReach>('unknown')
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   const [skills, setSkills] = useState<Skill[]>([])
   const [lang, setLang] = useState<Lang>(detectLang)
@@ -320,6 +324,7 @@ export default function App() {
         const s = await readState()
         if (!alive) return
         setActivity({ claude: s.claude, codex: s.codex })
+        setClassic(s.classic)
         setPlaces(s.places)
         if (saver.fromDisk(JSON.stringify(s.config))) setConfig(s.config)
       } catch {
@@ -1138,6 +1143,7 @@ export default function App() {
           <SlotEditor
             slot={slot}
             agent={agent}
+            blocked={unreachable(agent, classic).has(slot.event)}
             note={noteFor(slot.event)}
             existing={existing[agent].filter(h => h.event === slot.event)}
             onToggleExisting={(hook, on) =>
@@ -1179,6 +1185,7 @@ export default function App() {
               lang={lang}
               existing={existingCounts}
               context={contextFill}
+              unreachable={unreachable(agent, classic)}
               describe={event => {
                 const added = list.filter(i => i.event === event)
                 const already = existing[agent].filter(h => h.event === event)
@@ -1189,6 +1196,7 @@ export default function App() {
                       <b>{eventName(event, lang, agent)}</b>
                       {fired > 0 && <span className="hw-tip-count">{t.fired(fired)}</span>}
                     </div>
+                    {unreachable(agent, classic).has(event) && <p className="hw-tip-blocked">{t.blockedShort}</p>}
                     {added.length === 0 && already.length === 0 && !contextFill && <p>{t.tipEmpty}</p>}
                     {contextTip(event)}
                     {added.length > 0 && (

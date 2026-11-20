@@ -28,6 +28,8 @@ type Props = {
   lastRun?: Readonly<Record<string, number>>
   /** more about this moment, shown under its explanation */
   extra?: ReactNode
+  /** Claude Code never hands this moment to hookwich here (sec-default passes its classic hook by) */
+  blocked?: boolean
   /** a saved item changed: its content by Save, its switch at once */
   onChange(item: Item): void
   onRemove(id: string): void
@@ -76,6 +78,7 @@ export function SlotEditor({
   onToggleExisting,
   lastRun = {},
   extra,
+  blocked = false,
   onChange,
   onRemove,
   makeItem,
@@ -136,8 +139,14 @@ export function SlotEditor({
         <strong>{eventName(slot.event, lang, agent)}</strong>
         <code>{slot.event}</code>
         {!slot.canInject && <span className="hw-tag">{t.onlyCommandsTag}</span>}
+        {blocked && <span className="hw-tag hw-tag-blocked">{t.blockedTag}</span>}
       </div>
       <p className="hw-editor-hint">{eventHint(slot.event, lang, agent)}</p>
+      {blocked && (
+        <p className="hw-blocked" data-blocked>
+          {t.blockedNote}
+        </p>
+      )}
       {note && <p className="hw-note">{note}</p>}
       {extra}
 

@@ -18,6 +18,8 @@ export type LifecycleDiagramProps = {
   describe?(event: string): ReactNode
   /** what /context shows for the chat in view, drawn at the moments it fills up */
   context?: ContextFill
+  /** moments that cannot run on this account (sec-default passes their classic hook by): dimmed */
+  unreachable?: ReadonlySet<string>
 }
 
 /** The context window at a glance: what is in it, what came in at the start, what the talk took. */
@@ -323,6 +325,7 @@ const styles = `
 .ui-lcd-flash { fill: none; stroke: var(--ui-lcd-glow); stroke-width: 3; pointer-events: none; animation: ui-lcd-fired 2500ms linear both; }
 .ui-lcd-badge { fill: var(--ui-lcd-ink); stroke: var(--ui-lcd-bg); stroke-width: 1.5; pointer-events: none; }
 .ui-lcd-badge-disabled { fill: var(--ui-lcd-bg); stroke: var(--ui-lcd-subtle); }
+.ui-lcd-off { opacity: .38; }
 .ui-lcd-wrap { position: relative; }
 .ui-lcd-card {
   position: fixed; box-sizing: border-box; z-index: 30; width: min(300px, calc(100vw - 16px)); padding: 10px 12px; border-radius: 12px;
@@ -397,6 +400,8 @@ export function wrapLabel(text: string, width: number, size: number, max = 2): s
   return kept
 }
 
+const NONE: ReadonlySet<string> = new Set()
+
 export function LifecycleDiagram({
   layout,
   items,
@@ -408,6 +413,7 @@ export function LifecycleDiagram({
   existing = {},
   describe,
   context,
+  unreachable: off = NONE,
 }: LifecycleDiagramProps) {
   // The hover card floats over the whole window (not inside the scrolling picture), so it is
   // never cut off and never scrolls: it is measured, then put where all of it fits.
@@ -505,6 +511,7 @@ export function LifecycleDiagram({
       eventHint(event, lang, agent),
       t.fired(activity.counts[event] ?? 0),
       existing[event] ? `${t.existingTitle}: ${existing[event]}` : '',
+      off.has(event) ? t.blockedShort : '',
     ]
       .filter(Boolean)
       .join('\n')
@@ -520,7 +527,7 @@ export function LifecycleDiagram({
     return (
       <g
         key={event}
-        className="ui-lcd-target"
+        className={`ui-lcd-target${off.has(event) ? ' ui-lcd-off' : ''}`}
         role="button"
         tabIndex={0}
         aria-label={title}
@@ -644,7 +651,7 @@ export function LifecycleDiagram({
             ? events.map((event, index) => (
                 <text
                   key={event}
-                  className="ui-lcd-label"
+                  className={`ui-lcd-label${off.has(event) ? ' ui-lcd-off' : ''}`}
                   style={{ fontSize: 10.5 }}
                   x={center}
                   y={y + 11 + index * 12.5}
@@ -665,7 +672,7 @@ export function LifecycleDiagram({
               : events.map((event, index) => {
                   const w = width / events.length
                   return (
-                    <g key={event}>
+                    <g key={event} className={off.has(event) ? 'ui-lcd-off' : undefined}>
                       {labelLines(
                         eventName(event, lang, agent),
                         x + w * index + w / 2,

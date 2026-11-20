@@ -2,7 +2,8 @@
 
 - `plugin/` is the Claude Code plugin (a mod: `hooks/register.ts`). It writes what the window reads under `~/.hookwich/`.
 - `app/` is the window: React in `app/src`, Tauri (Rust) in `app/src-tauri`.
-- The main moments (chat start/end, prompt, before/after a tool, Stop, SubagentStop) are served from Claude Code's own events (`prompt.submit`, `tool.call`, `turn.complete`, `session.start`/`end`/`compact`), listed in `NATIVE` in `register.ts`. On Team and Enterprise accounts the built-in `sec-default` plugin passes every `classic.*` event on beneath a person's plugins, so the classic hook only serves the other moments, and skips the native ones so nothing goes in twice.
+- The main moments (chat start/end, prompt, before/after a tool, Stop, StopFailure, SubagentStart/Stop, Pre/PostCompact, PostModelSwitch) are served from Claude Code's own events (`prompt.submit`, `tool.call`, `turn.complete`, `agent.spawn`, `session.start`/`end`/`compact`), listed in `NATIVE` in `register.ts`. After changing model has no event of its own: the plugin compares the model at each prompt and puts its words in with the next one. On Team and Enterprise accounts the built-in `sec-default` plugin passes every `classic.*` event on beneath a person's plugins, so the classic hook only serves the moments in `CLASSIC_ONLY`, and hookwich does not hook the native ones so nothing goes in twice.
+- Where the classic hooks never arrive (two answers in a row with no `classic.MessageDisplay`), the plugin writes `~/.hookwich/classic-claude.json` as `blocked`, and the window dims the `CLASSIC_ONLY` moments (kept in `app/src/lib/lifecycle.ts` too; `app/tests/reach.test.ts` checks the two lists match).
 
 ## The window's states
 
@@ -41,4 +42,4 @@ The browser demo runs without Tauri and keeps everything in localStorage:
 
 - `npx vite build`, then `python3 -m http.server <port> -d dist`
 - Open `/?demo&panel&lang=ko`.
-- Add flags as needed: `&update`, `&select=SessionStart`, `&agent=codex`, `&scope=project`.
+- Add flags as needed: `&update`, `&select=SessionStart`, `&agent=codex`, `&scope=project`, `&blocked` (classic hooks blocked, as on a Team account).

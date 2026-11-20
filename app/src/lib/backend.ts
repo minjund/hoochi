@@ -4,13 +4,28 @@
 
 import { invoke, isTauri } from '@tauri-apps/api/core'
 
-import { emptyAgent, type Activity, type AgentConfig, type Config, type Item, type Places } from './lifecycle'
+import {
+  emptyAgent,
+  type Activity,
+  type AgentConfig,
+  type ClassicReach,
+  type Config,
+  type Item,
+  type Places,
+} from './lifecycle'
 
 export type Skill = { name: string; description: string }
 
 export type CodexStatus = { installed: boolean; connected: boolean; path: string }
 
-export type Snapshot = { config: Config; claude: Activity; codex: Activity; places: Places }
+export type Snapshot = {
+  config: Config
+  claude: Activity
+  codex: Activity
+  places: Places
+  /** whether Claude Code's classic hooks reach hookwich here (sec-default passes them by) */
+  classic: ClassicReach
+}
 
 export const EMPTY_ACTIVITY: Activity = { lastEvent: '', lastAt: 0, counts: {}, recent: [] }
 
@@ -26,6 +41,8 @@ export const browserFlags = {
   chat: inApp ? null : new URLSearchParams(location.search).get('chat'),
   /** `?scope=project|terminal`: open on that tab */
   scope: inApp ? null : new URLSearchParams(location.search).get('scope'),
+  /** `?blocked`: the classic hooks never reach hookwich, as on a Team or Enterprise account */
+  blocked: !inApp && location.search.includes('blocked'),
 }
 
 if (browserFlags.demo) {
@@ -132,6 +149,10 @@ if (browserFlags.demo) {
     activity('PreModelRequest', { at: codexLast ? now - 2000 : now - 120_000, place: other }),
   )
   localStorage.setItem(
+    'hookwich.classic.claude',
+    JSON.stringify({ reach: browserFlags.blocked ? 'blocked' : 'open', at: now }),
+  )
+  localStorage.setItem(
     'hookwich.places',
     JSON.stringify({
       projects: {
@@ -203,7 +224,23 @@ function parsePlaces(text: string): Places {
   }
 }
 
-type RawSnapshot = { config: string; activityClaude: string; activityCodex: string; places: string }
+type RawSnapshot = {
+  config: string
+  activityClaude: string
+  activityCodex: string
+  places: string
+  classicClaude: string
+}
+
+/** `~/.hookwich/classic-claude.json` as the plugin writes it; unknown until it has found out. */
+export function parseReach(text: string): ClassicReach {
+  try {
+    const reach = (JSON.parse(text) as { reach?: unknown }).reach
+    return reach === 'open' || reach === 'blocked' ? reach : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
 
 export async function readState(): Promise<Snapshot> {
   const raw: RawSnapshot = inApp
@@ -213,12 +250,14 @@ export async function readState(): Promise<Snapshot> {
         activityClaude: localStorage.getItem('hookwich.activity.claude') ?? '{}',
         activityCodex: localStorage.getItem('hookwich.activity.codex') ?? '{}',
         places: localStorage.getItem('hookwich.places') ?? '{}',
+        classicClaude: localStorage.getItem('hookwich.classic.claude') ?? '{}',
       }
   return {
     config: parseConfig(raw.config),
     claude: parseActivity(raw.activityClaude),
     codex: parseActivity(raw.activityCodex),
     places: parsePlaces(raw.places),
+    classic: parseReach(raw.classicClaude),
   }
 }
 

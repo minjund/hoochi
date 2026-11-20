@@ -53,6 +53,9 @@ struct Snapshot {
     #[serde(rename = "activityCodex")]
     activity_codex: String,
     places: String,
+    /// whether Claude Code's classic hooks reach the plugin here, as it last found
+    #[serde(rename = "classicClaude")]
+    classic_claude: String,
 }
 
 /// The config the user edits, what each agent just did, and the known projects and terminals.
@@ -86,6 +89,7 @@ fn read_state() -> Snapshot {
         activity_claude: read_or(&dir.join("activity-claude.json"), "{}"),
         activity_codex: read_or(&dir.join("activity-codex.json"), "{}"),
         places: with_git(&read_or(&dir.join("places.json"), "{}")),
+        classic_claude: read_or(&dir.join("classic-claude.json"), "{}"),
     }
 }
 

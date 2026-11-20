@@ -389,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.25/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.26/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -407,7 +407,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.25'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.26'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -856,13 +856,96 @@ test('a classic hook for a moment served natively puts nothing in, so nothing go
   on('classic.PostToolUse', () => ({}))
   on('classic.Stop', () => ({}))
   on('classic.PostModelSwitch', () => ({}))
+  on('classic.PostToolBatch', () => ({}))
 
   expect((await $.classic.UserPromptSubmit({ prompt: 'hi' })).additionalContext).toBeUndefined()
   const base = { tool_input: {}, tool_response: {}, tool_use_id: 't1' }
   expect((await $.classic.PostToolUse({ ...base, tool_name: 'Bash' })).additionalContext).toBeUndefined()
   expect((await $.classic.Stop({ stop_hook_active: false })).block).toBeUndefined()
-  // a moment with no native event still goes through its classic hook
   expect(
     (await $.classic.PostModelSwitch({ previous_model: 'a', model: 'b' } as never)).additionalContext,
-  ).toEqual(['Say which model you are now.'])
+  ).toBeUndefined()
+})
+
+test('a moment with no native event still goes through its classic hook', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'PostToolBatch', text: 'Check the batch.' })) })
+  on('classic.PostToolBatch', () => ({}))
+
+  expect((await $.classic.PostToolBatch({ tool_calls: [] } as never)).additionalContext).toEqual([
+    'Check the batch.',
+  ])
+})
+
+test('after changing model, its words go in with the next prompt, once', async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'PostModelSwitch', text: 'Say which model you are now.' })) })
+  let model = 'claude-sonnet-5'
+  on('session.model', () => ({ value: model }))
+
+  expect(await prompt($)).toBeUndefined()
+  model = 'claude-opus-5'
+  expect(await prompt($)).toEqual(['Say which model you are now.'])
+  expect(await prompt($)).toBeUndefined()
+})
+
+test('before and after compacting, commands run; a compaction worked out ahead does not count', async ($, on) => {
+  const { ran } = machine(on, {
+    [CONFIG]: config(
+      item({ event: 'PreCompact', kind: 'command', command: 'echo pre' }),
+      item({ id: 'i2', event: 'PostCompact', kind: 'command', command: 'echo post' }),
+    ),
+  })
+  on('session.compact', (_, e) => ({ messages: e.messages }))
+  const compact = (trigger: string) =>
+    ($.session as unknown as { compact(e: unknown): Promise<unknown> }).compact({ trigger, messages: [{ role: 'user', text: 'hi', toolUses: [] }] })
+
+  await compact('precompute')
+  expect(ran.filter(l => l.startsWith('echo'))).toEqual([])
+  await compact('manual')
+  expect(ran.filter(l => l.startsWith('echo'))).toEqual(['echo pre', 'echo post'])
+})
+
+test('a turn an API error ended runs the failure commands, and nothing keeps it going', async ($, on) => {
+  const { ran, submitted } = machine(on, {
+    [CONFIG]: config(
+      item({ event: 'StopFailure', kind: 'command', command: 'say failed' }),
+      item({ id: 'i2', event: 'Stop', text: 'Run the tests.' }),
+    ),
+  })
+
+  await turnEnds($, { reason: 'error' })
+  expect(ran).toContain('say failed')
+  expect(submitted).toEqual([])
+})
+
+test("a subagent's words follow the task it was given", async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'SubagentStart', text: 'Reply in Korean.' })) })
+  const given: string[] = []
+  on('agent.spawn', (_, e) => {
+    given.push(e.prompt)
+    return { model: 'claude-haiku-5' }
+  })
+
+  await ($.agent as unknown as { spawn(e: unknown): Promise<unknown> }).spawn({
+    prompt: 'Find the bug.',
+    description: 'find',
+    subagentType: 'general-purpose',
+    parentModel: 'claude-opus-5',
+  })
+  expect(given).toEqual(['Find the bug.\n\nReply in Korean.'])
+})
+
+test('answers with no classic event at all mark the classic hooks blocked; one arriving opens them', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: config() })
+  on('classic.MessageDisplay', () => ({}))
+  const REACH = '/home/me/.hookwich/classic-claude.json'
+  const reach = () => JSON.parse(fs.get(REACH) ?? '{}').reach
+
+  await turnEnds($, { answer: 'one' })
+  expect(reach()).toBeUndefined()
+  await turnEnds($, { answer: 'two' })
+  expect(reach()).toBe('blocked')
+
+  await $.classic.MessageDisplay({ turn_id: 't1', message_id: 'm1', index: 0 } as never)
+  await tick()
+  expect(reach()).toBe('open')
 })

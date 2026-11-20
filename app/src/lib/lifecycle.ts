@@ -145,6 +145,41 @@ export const CODEX_SLOTS: Slot[] = [
 
 export const SLOTS: Record<Agent, Slot[]> = { claude: CLAUDE_SLOTS, codex: CODEX_SLOTS }
 
+/**
+ * Claude's moments the plugin can serve only from their classic hook (CLASSIC_ONLY in
+ * plugin/hooks/register.ts): where an organization's policy plugin (sec-default) passes the
+ * classic hooks by, they never run, and the window dims them.
+ */
+export const CLASSIC_ONLY: ReadonlySet<string> = new Set([
+  'Setup',
+  'InstructionsLoaded',
+  'PreModelSwitch',
+  'PostToolBatch',
+  'PermissionRequest',
+  'PermissionDenied',
+  'Notification',
+  'ConfigChange',
+  'CwdChanged',
+  'FileChanged',
+  'DirectoryAdded',
+  'Elicitation',
+  'ElicitationResult',
+  'MessageDisplay',
+  'TaskCreated',
+  'TaskCompleted',
+  'TeammateIdle',
+  'WorktreeCreate',
+  'WorktreeRemove',
+])
+
+/** Whether the classic hooks reach hookwich on this computer, as the plugin last found. */
+export type ClassicReach = 'open' | 'blocked' | 'unknown'
+
+/** The moments that cannot run here: none unless the plugin found the classic hooks blocked. */
+export function unreachable(agent: Agent, reach: ClassicReach): ReadonlySet<string> {
+  return agent === 'claude' && reach === 'blocked' ? CLASSIC_ONLY : new Set()
+}
+
 /** Kept for code that only knows Claude's moments. */
 export const ALL_SLOTS = CLAUDE_SLOTS
 
