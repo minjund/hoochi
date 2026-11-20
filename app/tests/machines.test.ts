@@ -4,12 +4,14 @@ import { test } from 'node:test'
 
 import {
   afterChange,
+  askFlow,
   createSaver,
   followState,
   noticePlace,
   pluginNote,
   updateFlow,
   versionAtLeast,
+  type Ask,
   type Notice,
   type SaveStatus,
   type Timers,
@@ -216,4 +218,29 @@ test('a model id reads as its family and version', () => {
   assert.equal(modelName('claude-fable-5-2[1m]'), 'Fable 5.2')
   assert.equal(modelName('claude-haiku-4'), 'Haiku 4')
   assert.equal(modelName('gpt-5-codex'), 'gpt-5-codex')
+})
+
+test('a change to many items waits for a yes, and runs only on it, once', () => {
+  let ran = 0
+  const ask: Ask = { message: 'Delete 3?', yes: 'Delete', danger: true, near: 'modal', run: () => (ran += 1) }
+
+  const asking = askFlow(null, { kind: 'ask', ask })
+  assert.equal(asking.state, ask)
+  assert.equal(asking.run, undefined)
+
+  const yes = askFlow(asking.state, { kind: 'yes' })
+  assert.equal(yes.state, null)
+  yes.run?.()
+  assert.equal(ran, 1)
+  // a second yes (a double click) has nothing left to run
+  assert.equal(askFlow(yes.state, { kind: 'yes' }).run, undefined)
+
+  for (const kind of ['no', 'changed'] as const) {
+    const ended = askFlow(ask, { kind })
+    assert.equal(ended.state, null, kind)
+    assert.equal(ended.run, undefined, kind)
+  }
+  // a new ask takes the place of one still open
+  const other: Ask = { ...ask, message: 'Apply to 2 projects?', danger: false, near: 'controls' }
+  assert.equal(askFlow(ask, { kind: 'ask', ask: other }).state, other)
 })

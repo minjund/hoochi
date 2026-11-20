@@ -49,6 +49,7 @@ import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
 import { modelName } from './lib/names'
 import {
   afterChange,
+  askFlow,
   createSaver,
   followState,
   NOTICE_MS,
@@ -56,6 +57,7 @@ import {
   pluginNote,
   REOPEN_MS,
   updateFlow,
+  type Ask,
   type Notice,
   type SaveStatus,
 } from './lib/machines'
@@ -269,6 +271,8 @@ export default function App() {
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
   const [notice, setNotice] = useState<Notice<Config> | null>(null)
   const [modal, setModal] = useState<Modal>(null)
+  // A change to many items at once waits here for a yes (askFlow in machines.ts).
+  const [asking, setAsking] = useState<Ask | null>(null)
   const [context, setContext] = useState<ContextSnapshot | null>(null)
   const [update, dispatchUpdate] = useReducer(updateFlow, { step: 'unknown' })
   const [justUpdated, setJustUpdated] = useState<UpdateState['updated']>(null)
@@ -281,7 +285,10 @@ export default function App() {
       void skillState()
         .then(setSkillsNow)
         .catch(() => undefined)
-    const close = (e: KeyboardEvent) => e.key === 'Escape' && setModal(null)
+    const close = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('.hw-confirm[data-asking]')) return
+      setModal(null)
+    }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [modal])
@@ -630,6 +637,23 @@ export default function App() {
     save(next)
     setNotice({ kind: 'undo', message, before: config, near })
   }
+  const ask = (a: Ask) => setAsking(s => askFlow(s, { kind: 'ask', ask: a }).state)
+  const answer = (yes: boolean) => {
+    const r = askFlow(asking, { kind: yes ? 'yes' : 'no' })
+    setAsking(r.state)
+    r.run?.()
+  }
+  // What an ask would do was worked out on the config and place as they were: any change ends it.
+  useEffect(() => setAsking(s => askFlow(s, { kind: 'changed' }).state), [config, agent, scope, key, modal])
+  useEffect(() => {
+    if (!asking) return
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setAsking(null)
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [asking])
+  /** Copying into a place waits for a yes: a wrong tap would fill every project. */
+  const askCopy = (n: number, where: string, run: () => void) =>
+    ask({ message: t.askApply(n, where), yes: t.applyYes, danger: false, near: 'controls', run })
   const loadFrom = (from: Scope) => {
     const fromKey = from === 'project' ? terminalProject : ''
     const merged = mergeItems(list, listOf(config[agent], from, fromKey), newId)
@@ -653,20 +677,40 @@ export default function App() {
   // Only what can be done here is shown.
   const targetProjects = allProjects.filter(p => !(scope === 'project' && p === projectKey))
   const actions: { label: string; title?: string; strong?: boolean; run(): void }[] = [
-    ...(scope !== 'global' ? [{ label: t.setFromGlobal, strong: true, run: () => loadFrom('global') }] : []),
+    ...(scope !== 'global'
+      ? [
+          {
+            label: t.setFromGlobal,
+            strong: true,
+            run: () => askCopy(config[agent].global.length, t.scopes[scope], () => loadFrom('global')),
+          },
+        ]
+      : []),
     ...(scope === 'terminal' && terminalHasProject
-      ? [{ label: t.setFromProject, title: terminalProject, strong: true, run: () => loadFrom('project') }]
+      ? [
+          {
+            label: t.setFromProject,
+            title: terminalProject,
+            strong: true,
+            run: () =>
+              askCopy(listOf(config[agent], 'project', terminalProject).length, t.scopes.terminal, () =>
+                loadFrom('project'),
+              ),
+          },
+        ]
       : []),
     ...(list.length > 0 && targetProjects.length > 0
       ? [
           {
             label: t.applyAllProjects,
             title: targetProjects.map(folderName).join(', '),
-            run: applyAllProjects,
+            run: () => askCopy(list.length, t.allProjects(targetProjects.length), applyAllProjects),
           },
         ]
       : []),
-    ...(scope !== 'global' && list.length > 0 ? [{ label: t.applyGlobal, run: applyGlobal }] : []),
+    ...(scope !== 'global' && list.length > 0
+      ? [{ label: t.applyGlobal, run: () => askCopy(list.length, t.scopes.global, applyGlobal) }]
+      : []),
   ]
 
   const noticeBanner = notice && (
@@ -681,6 +725,19 @@ export default function App() {
           {t.close}
         </Button>
       )}
+    </div>
+  )
+  const askBanner = asking && (
+    <div className="hw-confirm" role="alertdialog" data-asking={asking.danger ? 'delete' : 'copy'}>
+      <span>{asking.message}</span>
+      <div>
+        <Button size="sm" variant="ghost" onClick={() => answer(false)}>
+          {t.cancel}
+        </Button>
+        <Button size="sm" variant={asking.danger ? 'destructive' : 'primary'} onClick={() => answer(true)}>
+          {asking.yes}
+        </Button>
+      </div>
     </div>
   )
   function undo() {
@@ -829,6 +886,24 @@ export default function App() {
       t.mineDeleted(eventName(m.item.event, lang, agent)),
       'list',
     )
+  /** Everything put in at one place (everywhere, a project or a terminal), after a yes. */
+  const askDeleteGroup = (g: { name: string; scope: Scope; key: string; rows: Mine[] }) =>
+    ask({
+      message: t.askDeleteGroup(g.rows.length, g.name),
+      yes: t.deleteYes,
+      danger: true,
+      near: 'modal',
+      run: () => act(withList(config, agent, g.scope, g.key, []), t.deletedN(g.rows.length), 'list'),
+    })
+  /** Everything put in for this agent, everywhere, after a yes. */
+  const askDeleteAll = () =>
+    ask({
+      message: t.askDeleteAll(mine.length, t.agents[agent]),
+      yes: t.deleteYes,
+      danger: true,
+      near: 'modal',
+      run: () => act({ ...config, [agent]: emptyAgent() }, t.deletedN(mine.length), 'list'),
+    })
   const goTo = (m: Mine) => {
     setModal(null)
     setScope(m.scope)
@@ -871,13 +946,17 @@ export default function App() {
     )
   }
   const groups = [
-    { name: t.scopes.global, rows: mine.filter(m => m.scope === 'global') },
+    { name: t.scopes.global, scope: 'global' as const, key: '', rows: mine.filter(m => m.scope === 'global') },
     ...[...new Set(mine.filter(m => m.scope === 'project').map(m => m.key))].map(key => ({
       name: placeName({ scope: 'project', key }),
+      scope: 'project' as const,
+      key,
       rows: mine.filter(m => m.scope === 'project' && m.key === key),
     })),
     ...[...new Set(mine.filter(m => m.scope === 'terminal').map(m => m.key))].map(key => ({
       name: placeName({ scope: 'terminal', key }),
+      scope: 'terminal' as const,
+      key,
       rows: mine.filter(m => m.scope === 'terminal' && m.key === key),
     })),
   ].filter(g => g.rows.length > 0)
@@ -1098,6 +1177,7 @@ export default function App() {
             ))}
           </div>
         )}
+        {asking?.near === 'controls' && askBanner}
         {noticeAt === 'controls' && noticeBanner}
         {agent === 'codex' && codex && (
           <div className="hw-codex">
@@ -1258,7 +1338,7 @@ export default function App() {
           <span>
             {t.mine} · {mine.length}
           </span>
-          {mine.length > 3 && (
+          {mine.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
               {t.seeAll(mine.length)}
             </Button>
@@ -1297,6 +1377,11 @@ export default function App() {
               <b>
                 {t.mine} · {mine.length}
               </b>
+              {mine.length > 0 && (
+                <Button size="sm" variant="ghost" className="hw-delete-all" onClick={askDeleteAll}>
+                  {t.deleteAll}
+                </Button>
+              )}
               <IconButton
                 size="sm"
                 variant="ghost"
@@ -1306,11 +1391,21 @@ export default function App() {
               />
             </div>
             <p className="hw-editor-hint">{t.mineHint}</p>
+            {asking?.near === 'modal' && askBanner}
             {inModal}
             <div className="hw-modal-list">
               {groups.map(g => (
-                <section key={g.name}>
-                  <h4>{g.name}</h4>
+                <section key={`${g.scope}-${g.key}`}>
+                  <h4>
+                    <span>{g.name}</span>
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      icon={TrashIcon}
+                      label={t.deleteGroup(g.name)}
+                      onClick={() => askDeleteGroup(g)}
+                    />
+                  </h4>
                   {g.rows.map(m => mineRow(m, false))}
                 </section>
               ))}

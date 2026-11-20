@@ -206,6 +206,37 @@ export function noticePlace<T>(
   return notice.kind === 'undo' ? notice.near : 'controls'
 }
 
+// ---------- Asking before a change to many items ----------
+
+/**
+ * none   → nothing waits for a yes
+ * asking → a change that copies or deletes many items at once (applying to every project,
+ *          deleting a project's items or all of them) waits for a yes; nothing is done yet
+ *
+ * Yes runs it once and ends the ask. No, Esc, closing the popup, another ask, a scope change or
+ * any change to the config ends it unrun: what it would do was worked out on the config as it was.
+ */
+export type Ask = {
+  /** what will happen, in a sentence that names how many and where */
+  message: string
+  /** the yes button's label */
+  yes: string
+  /** deleting: the yes button is red */
+  danger: boolean
+  /** shown under the scope buttons, or inside the "what you put in" popup */
+  near: 'controls' | 'modal'
+  run(): void
+}
+
+export type AskEvent = { kind: 'ask'; ask: Ask } | { kind: 'yes' } | { kind: 'no' } | { kind: 'changed' }
+
+/** The ask after `event`, and what to run now (only on a yes to an open ask). */
+export function askFlow(state: Ask | null, event: AskEvent): { state: Ask | null; run?: () => void } {
+  if (event.kind === 'ask') return { state: event.ask }
+  if (event.kind === 'yes' && state) return { state: null, run: state.run }
+  return { state: null }
+}
+
 // ---------- Following where you chat ----------
 
 /**

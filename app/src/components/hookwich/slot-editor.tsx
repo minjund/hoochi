@@ -262,7 +262,13 @@ export function SlotEditor({
           onDirty={() => undefined}
         />
       ) : (
-        <Button variant="secondary" size="sm" onClick={() => setFresh(makeItem())}>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={blocked}
+          title={blocked ? t.blockedShort : undefined}
+          onClick={() => setFresh(makeItem())}
+        >
           + {t.add}
         </Button>
       )}

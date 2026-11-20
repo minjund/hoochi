@@ -319,6 +319,8 @@ const styles = `
 .ui-lcd-hit { fill: transparent; pointer-events: all; }
 .ui-lcd-hover { fill: var(--ui-lcd-hover); opacity: 0; transition: opacity 120ms ease; pointer-events: none; }
 .ui-lcd-target:hover .ui-lcd-hover { opacity: .13; }
+.ui-lcd-locked { cursor: not-allowed; }
+.ui-lcd-locked:hover .ui-lcd-hover { opacity: 0; }
 .ui-lcd-selection { fill: none; stroke: var(--ui-lcd-ink); stroke-width: 2; pointer-events: none; }
 .ui-lcd-focus { fill: none; stroke: var(--ui-lcd-blue); stroke-width: 2.5; opacity: 0; pointer-events: none; }
 .ui-lcd-target:focus-visible .ui-lcd-focus { opacity: 1; }
@@ -516,6 +518,8 @@ export function LifecycleDiagram({
       .filter(Boolean)
       .join('\n')
     const disabledOnly = count?.enabled === 0
+    // A moment that cannot run here takes nothing new; one already holding items opens to remove them.
+    const locked = off.has(event) && count === undefined
     const badgeText = String(count?.enabled ?? 0)
     const badgeRadius = compact ? 5 : Math.max(7, badgeText.length * 2.7 + 2)
     const badgeX = x + width - (compact ? 6 : 7)
@@ -527,13 +531,16 @@ export function LifecycleDiagram({
     return (
       <g
         key={event}
-        className={`ui-lcd-target${off.has(event) ? ' ui-lcd-off' : ''}`}
+        className={`ui-lcd-target${off.has(event) ? ' ui-lcd-off' : ''}${locked ? ' ui-lcd-locked' : ''}`}
         role="button"
-        tabIndex={0}
+        tabIndex={locked ? -1 : 0}
+        aria-disabled={locked || undefined}
         aria-label={title}
         aria-pressed={selectedEvent === event}
         data-event={event}
-        onClick={() => onSelect(event)}
+        onClick={() => {
+          if (!locked) onSelect(event)
+        }}
         onMouseEnter={e => showCard(event, e.currentTarget)}
         onMouseLeave={() => closeCard(event)}
         onFocus={e => showCard(event, e.currentTarget)}
@@ -541,7 +548,7 @@ export function LifecycleDiagram({
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            if (!e.repeat) onSelect(event)
+            if (!e.repeat && !locked) onSelect(event)
           }
         }}
       >

@@ -389,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.26/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.27/Hookwich-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -407,7 +407,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.26'
+const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.27'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hookwich/Hookwich.app'
@@ -884,6 +884,31 @@ test('after changing model, its words go in with the next prompt, once', async (
   expect(await prompt($)).toBeUndefined()
   model = 'claude-opus-5'
   expect(await prompt($)).toEqual(['Say which model you are now.'])
+  expect(await prompt($)).toBeUndefined()
+})
+
+test('after /clear, changing model puts a "once" item in again for the new chat', async ($, on) => {
+  const { chat } = machine(on, {
+    [CONFIG]: config(item({ event: 'PostModelSwitch', text: 'Say which model you are now.', once: true })),
+  })
+  let model = 'claude-opus-5'
+  on('session.model', () => ({ value: model }))
+
+  expect(await prompt($)).toBeUndefined()
+  model = 'claude-sonnet-5'
+  expect(await prompt($)).toEqual(['Say which model you are now.'])
+  // once per chat: switching again in the same chat says nothing
+  model = 'claude-opus-5'
+  expect(await prompt($)).toBeUndefined()
+
+  // /clear starts a new chat in this process; then the model changes before the first prompt
+  await ($.session as unknown as { end(e: unknown): Promise<unknown> }).end({ reason: 'clear', sessionId: 's1' })
+  chat.id = 's2'
+  model = 'claude-haiku-5'
+  expect(await prompt($)).toEqual(['Say which model you are now.'])
+  // a /clear with no model change says nothing
+  await ($.session as unknown as { end(e: unknown): Promise<unknown> }).end({ reason: 'clear', sessionId: 's2' })
+  chat.id = 's3'
   expect(await prompt($)).toBeUndefined()
 })
 

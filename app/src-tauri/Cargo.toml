@@ -1,6 +1,6 @@
 [package]
 name = "hookwich"
-version = "0.1.26"
+version = "0.1.27"
 description = "Sandwich anything around Claude Code's lifecycle"
 authors = ["minjund"]
 license = "MIT"

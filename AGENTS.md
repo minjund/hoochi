@@ -14,6 +14,7 @@ The window's flows are written out as pure functions in `app/src/lib/machines.ts
 | Saving your edits (`createSaver`) | saved, waiting, writing, failed | `.hw-panel[data-save]` |
 | Updating hookwich (`updateFlow`) | unknown, current, available (+error), installing, reopening | `.hw-panel[data-update]` |
 | The notice (`Notice`) | undo, error | `[data-notice]` |
+| Asking before a change to many items (`askFlow`): every scope button, deleting a place's items or all | none, asking | `.hw-confirm[data-asking]` (`copy` or `delete`) |
 | Following where you chat (`followState`), always on with no switch | on, paused, held; the tab goes to "this project" or "everywhere" | `[data-follow]` |
 | Which screen | bubble, picture, editor | `[data-view]` |
 | The popup (`Modal` in App.tsx) | mine, skills, none | `.hw-panel[data-modal]` |
@@ -24,6 +25,7 @@ Rules these flows keep:
 - One write at a time.
 - A failed save stays on screen: the file on disk does not replace it until a retry writes it.
 - An undo ends as soon as anything else changes the config.
+- A change to many items waits for a yes; any change to the config, the place or the popup ends the ask unrun.
 - Only one popup is open at a time, and a notice shows inside it.
 
 To add a state, change `machines.ts` first and add its case to `app/tests/machines.test.ts`.
