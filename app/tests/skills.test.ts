@@ -7,13 +7,13 @@ import { switchableGroups, switchablePlugin } from '../src/lib/skills.ts'
 
 const plugins = [
   { name: 'Notion', key: 'Notion@official', on: true },
-  { name: 'hookwich', key: 'hookwich@hookwich', on: true },
+  { name: 'hoochi', key: 'hoochi@hoochi', on: true },
 ]
 
 test('only skills the window can switch are counted', () => {
   const groups: SkillGroup[] = [
     { kind: 'plugin', name: 'notion', skills: 5, tokens: 500 },
-    { kind: 'plugin', name: 'hookwich', skills: 1, tokens: 50 },
+    { kind: 'plugin', name: 'hoochi', skills: 1, tokens: 50 },
     { kind: 'plugin', name: 'not-installed', skills: 3, tokens: 300 },
     { kind: 'user', name: '', skills: 4, tokens: 400 },
     { kind: 'project', name: '', skills: 2, tokens: 200 },
@@ -32,8 +32,8 @@ test('only skills the window can switch are counted', () => {
   )
 })
 
-test('a plugin is matched without case, and hookwich is never one to switch', () => {
+test('a plugin is matched without case, and hoochi is never one to switch', () => {
   assert.equal(switchablePlugin('NOTION', plugins)?.key, 'Notion@official')
-  assert.equal(switchablePlugin('hookwich', plugins), undefined)
+  assert.equal(switchablePlugin('hoochi', plugins), undefined)
   assert.equal(switchablePlugin('missing', plugins), undefined)
 })

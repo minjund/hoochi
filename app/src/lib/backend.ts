@@ -23,7 +23,7 @@ export type Snapshot = {
   claude: Activity
   codex: Activity
   places: Places
-  /** whether Claude Code's classic hooks reach hookwich here (sec-default passes them by) */
+  /** whether Claude Code's classic hooks reach hoochi here (sec-default passes them by) */
   classic: ClassicReach
 }
 
@@ -41,7 +41,7 @@ export const browserFlags = {
   chat: inApp ? null : new URLSearchParams(location.search).get('chat'),
   /** `?scope=project|terminal`: open on that tab */
   scope: inApp ? null : new URLSearchParams(location.search).get('scope'),
-  /** `?blocked`: the classic hooks never reach hookwich, as on a Team or Enterprise account */
+  /** `?blocked`: the classic hooks never reach hoochi, as on a Team or Enterprise account */
   blocked: !inApp && location.search.includes('blocked'),
 }
 
@@ -66,7 +66,7 @@ if (browserFlags.demo) {
     terminalLabel: 'Whitebox a1',
   }
   localStorage.setItem(
-    'hookwich.config',
+    'hoochi.config',
     JSON.stringify({
       version: 2,
       claude: {
@@ -76,7 +76,7 @@ if (browserFlags.demo) {
             text: 'Explain any destructive command before running it.',
             tools: 'Bash',
           }),
-          item('e', 'SessionEnd', 'command', { command: 'date >> ~/.hookwich/sessions.log' }),
+          item('e', 'SessionEnd', 'command', { command: 'date >> ~/.hoochi/sessions.log' }),
         ],
         projects: {
           [place.project]: [
@@ -138,22 +138,22 @@ if (browserFlags.demo) {
       lastChat,
     })
   localStorage.setItem(
-    'hookwich.activity.claude',
+    'hoochi.activity.claude',
     activity(
       'PreToolUse',
       homeLast ? { at: now - 1000, place: home } : { at: codexLast ? now - 60_000 : now - 9000, place },
     ),
   )
   localStorage.setItem(
-    'hookwich.activity.codex',
+    'hoochi.activity.codex',
     activity('PreModelRequest', { at: codexLast ? now - 2000 : now - 120_000, place: other }),
   )
   localStorage.setItem(
-    'hookwich.classic.claude',
+    'hoochi.classic.claude',
     JSON.stringify({ reach: browserFlags.blocked ? 'blocked' : 'open', at: now }),
   )
   localStorage.setItem(
-    'hookwich.places',
+    'hoochi.places',
     JSON.stringify({
       projects: {
         [place.project]: { lastSeen: now, git: true },
@@ -232,7 +232,7 @@ type RawSnapshot = {
   classicClaude: string
 }
 
-/** `~/.hookwich/classic-claude.json` as the plugin writes it; unknown until it has found out. */
+/** `~/.hoochi/classic-claude.json` as the plugin writes it; unknown until it has found out. */
 export function parseReach(text: string): ClassicReach {
   try {
     const reach = (JSON.parse(text) as { reach?: unknown }).reach
@@ -246,11 +246,11 @@ export async function readState(): Promise<Snapshot> {
   const raw: RawSnapshot = inApp
     ? await invoke('read_state')
     : {
-        config: localStorage.getItem('hookwich.config') ?? '{}',
-        activityClaude: localStorage.getItem('hookwich.activity.claude') ?? '{}',
-        activityCodex: localStorage.getItem('hookwich.activity.codex') ?? '{}',
-        places: localStorage.getItem('hookwich.places') ?? '{}',
-        classicClaude: localStorage.getItem('hookwich.classic.claude') ?? '{}',
+        config: localStorage.getItem('hoochi.config') ?? '{}',
+        activityClaude: localStorage.getItem('hoochi.activity.claude') ?? '{}',
+        activityCodex: localStorage.getItem('hoochi.activity.codex') ?? '{}',
+        places: localStorage.getItem('hoochi.places') ?? '{}',
+        classicClaude: localStorage.getItem('hoochi.classic.claude') ?? '{}',
       }
   return {
     config: parseConfig(raw.config),
@@ -264,7 +264,7 @@ export async function readState(): Promise<Snapshot> {
 export async function writeConfig(config: Config): Promise<void> {
   const text = `${JSON.stringify(config, null, 2)}\n`
   if (inApp) await invoke('write_config', { text })
-  else localStorage.setItem('hookwich.config', text)
+  else localStorage.setItem('hoochi.config', text)
 }
 
 export async function listSkills(): Promise<Skill[]> {
@@ -287,11 +287,11 @@ export type Running = {
   hasProject: boolean
   /** when the chat started (ms) */
   started?: number
-  /** Claude Code only: false when hookwich is not running in that chat (opened before it was installed) */
-  hookwich?: boolean | null
+  /** Claude Code only: false when hoochi is not running in that chat (opened before it was installed) */
+  hoochi?: boolean | null
 }
 
-/** A hook set up outside hookwich: in Claude Code's settings, a plugin, or Codex's hooks.json. */
+/** A hook set up outside hoochi: in Claude Code's settings, a plugin, or Codex's hooks.json. */
 export type ExistingHook = {
   event: string
   matcher: string
@@ -327,7 +327,7 @@ export async function existingHooks(project: string): Promise<ExistingHooks> {
   if (!browserFlags.demo) return { claude: [], codex: [] }
   const hook = (event: string, name: string, from: string, matcher = ''): ExistingHook => ({
     id: `${event}-${name}`,
-    off: localStorage.getItem(`hookwich.demo.off.${event}-${name}`) === '1',
+    off: localStorage.getItem(`hoochi.demo.off.${event}-${name}`) === '1',
     toggle: from.startsWith('plugin:') ? 'plugin' : 'park',
     plugin: from.startsWith('plugin:') ? `${from.slice(7)}@demo` : '',
     event,
@@ -369,13 +369,13 @@ export async function runningChats(): Promise<Running[]> {
     project,
     hasProject: project !== '/Users/me',
     started: 1_795_000_000_000,
-    hookwich: agent === 'claude' ? true : null,
+    hoochi: agent === 'claude' ? true : null,
   })
   return [
     chat('claude', 'a1', '/Users/me/Projects/shop'),
     chat('codex', 'b2', '/Users/me/Projects/shop'),
-    // `?unhooked`: one Claude Code chat opened before hookwich was installed
-    { ...chat('claude', 'c3', '/Users/me/Projects/notes'), hookwich: !location.search.includes('unhooked') },
+    // `?unhooked`: one Claude Code chat opened before hoochi was installed
+    { ...chat('claude', 'c3', '/Users/me/Projects/notes'), hoochi: !location.search.includes('unhooked') },
     chat('codex', 'd4', '/Users/me/Projects/api'),
     chat('claude', 'e5', '/Users/me'),
   ]
@@ -384,7 +384,7 @@ export async function runningChats(): Promise<Running[]> {
 /** One row of the /context breakdown. */
 export type ContextRow = { name: string; tokens: number; kind: 'used' | 'free' | 'buffer' | 'deferred' }
 
-/** What /context shows for one terminal's Claude Code chat: ~/.hookwich/context/<terminal>.json */
+/** What /context shows for one terminal's Claude Code chat: ~/.hoochi/context/<terminal>.json */
 export type ContextSnapshot = {
   at: number
   model: string
@@ -498,8 +498,8 @@ export async function contextUsage(terminal: string): Promise<ContextSnapshot | 
 export type SkillState = { off: string[]; plugins: { name: string; key: string; on: boolean }[] }
 
 function demoSkillState(): SkillState {
-  const off = JSON.parse(localStorage.getItem('hookwich.demo.skillsOff') ?? '[]') as string[]
-  const pluginOff = localStorage.getItem('hookwich.demo.pluginOff') === '1'
+  const off = JSON.parse(localStorage.getItem('hoochi.demo.skillsOff') ?? '[]') as string[]
+  const pluginOff = localStorage.getItem('hoochi.demo.pluginOff') === '1'
   return { off, plugins: [{ name: 'review-kit', key: 'review-kit@demo', on: !pluginOff }] }
 }
 
@@ -514,18 +514,18 @@ export async function setSkill(name: string, on: boolean): Promise<SkillState> {
   const off = new Set(demoSkillState().off)
   if (on) off.delete(name)
   else off.add(name)
-  localStorage.setItem('hookwich.demo.skillsOff', JSON.stringify([...off]))
+  localStorage.setItem('hoochi.demo.skillsOff', JSON.stringify([...off]))
   return demoSkillState()
 }
 
 /** Switches a whole plugin off or back on, for its skills. */
 export async function setPlugin(key: string, on: boolean): Promise<SkillState> {
   if (inApp) return invoke('set_plugin', { key, on })
-  localStorage.setItem('hookwich.demo.pluginOff', on ? '0' : '1')
+  localStorage.setItem('hoochi.demo.pluginOff', on ? '0' : '1')
   return demoSkillState()
 }
 
-/** Whether a newer hookwich is out, and what the last update did (told once). */
+/** Whether a newer hoochi is out, and what the last update did (told once). */
 export type UpdateState = {
   current: string
   latest: string | null
@@ -557,8 +557,8 @@ export async function applyUpdate(version: string): Promise<{ version: string; p
 /** Switches one existing hook off or back on, and returns the fresh list. */
 export async function setExistingHook(project: string, id: string, on: boolean): Promise<ExistingHooks> {
   if (inApp) return invoke('set_existing_hook', { project, id, on })
-  if (on) localStorage.removeItem(`hookwich.demo.off.${id}`)
-  else localStorage.setItem(`hookwich.demo.off.${id}`, '1')
+  if (on) localStorage.removeItem(`hoochi.demo.off.${id}`)
+  else localStorage.setItem(`hoochi.demo.off.${id}`, '1')
   return existingHooks(project)
 }
 
@@ -566,20 +566,20 @@ export async function codexStatus(): Promise<CodexStatus> {
   if (inApp) return invoke('codex_status')
   return {
     installed: true,
-    connected: localStorage.getItem('hookwich.codex') === 'on',
+    connected: localStorage.getItem('hoochi.codex') === 'on',
     path: '~/.codex/hooks.json',
   }
 }
 
 export async function codexConnect(): Promise<CodexStatus> {
   if (inApp) return invoke('codex_connect')
-  localStorage.setItem('hookwich.codex', 'on')
+  localStorage.setItem('hoochi.codex', 'on')
   return codexStatus()
 }
 
 export async function codexDisconnect(): Promise<CodexStatus> {
   if (inApp) return invoke('codex_disconnect')
-  localStorage.removeItem('hookwich.codex')
+  localStorage.removeItem('hoochi.codex')
   return codexStatus()
 }
 

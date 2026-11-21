@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
-import { noteOnce, parseOnce } from '../hooks/register'
+import { noteOnce, oldPluginInstalled, parseOnce } from '../hooks/register'
 
 type On = Parameters<TestBody>[1]
 
@@ -40,7 +40,7 @@ function machine(
   })
   let now = 1_000
   if (clock) on('clock.now', () => ({ value: (now += 10) }))
-  // The engine beneath: this chat's id, and the native events hookwich serves its moments from.
+  // The engine beneath: this chat's id, and the native events hoochi serves its moments from.
   const chat = { id: 's1' }
   const submitted: string[] = []
   on('session.id', () => ({ value: chat.id }))
@@ -91,12 +91,12 @@ async function turnEnds($: Parameters<TestBody>[0], extra: Record<string, unknow
     turnId: 't1',
     ...extra,
   })
-  // hookwich sends its "keep going" without waiting for it
+  // hoochi sends its "keep going" without waiting for it
   await tick()
 }
 
-const CONFIG = '/home/me/.hookwich/config.json'
-const ACTIVITY = '/home/me/.hookwich/activity-claude.json'
+const CONFIG = '/home/me/.hoochi/config.json'
+const ACTIVITY = '/home/me/.hoochi/activity-claude.json'
 
 const item = (over: Record<string, unknown>) => ({
   id: 'i1',
@@ -250,7 +250,7 @@ test('a "once" item runs once per chat, stays on, and runs again in the next cha
   // /clear or a new chat: a new session id, so it runs again there.
   expect(await say('chat-2', 'c')).toEqual(['Just this once.'])
   expect(await say('chat-2', 'd')).toBeUndefined()
-  expect(Object.keys(JSON.parse(fs.get('/home/me/.hookwich/once-claude.json') ?? '{}'))).toEqual([
+  expect(Object.keys(JSON.parse(fs.get('/home/me/.hoochi/once-claude.json') ?? '{}'))).toEqual([
     'chat-1',
     'chat-2',
   ])
@@ -335,13 +335,13 @@ test('a switched-off item in the project silences the global one there', async (
 
 test('the window learns this project and terminal, and where the last event was', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: v2({}) })
-  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
 
   await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
   await prompt($)
 
-  const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
+  const places = JSON.parse(fs.get('/home/me/.hoochi/places.json') ?? '{}')
   expect(Object.keys(places.projects)).toEqual(['/work/app'])
   expect(places.terminals['whitebox:terminal:t1'].label).toBe('Whitebox t1')
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').place.project).toBe('/work/app')
@@ -355,7 +355,7 @@ test('typing a chat marks where you are, and later moments keep that mark', asyn
   const typed = JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat
   expect(typed.place.terminal).toBe('whitebox:terminal:t1')
   expect(typed.place.project).toBe('/work/app')
-  const places = JSON.parse(fs.get('/home/me/.hookwich/places.json') ?? '{}')
+  const places = JSON.parse(fs.get('/home/me/.hoochi/places.json') ?? '{}')
   expect(places.terminals['whitebox:terminal:t1'].agent).toBe('claude')
 
   await tool($, 'Bash')
@@ -364,10 +364,10 @@ test('typing a chat marks where you are, and later moments keep that mark', asyn
   expect(after.lastChat).toEqual(typed)
 })
 
-test('with the window app in place, /hookwich opens it and clears an old message', async ($, on) => {
+test('with the window app in place, /hoochi opens it and clears an old message', async ($, on) => {
   const { ran } = machine(
     on,
-    { [CONFIG]: v2({}), '/home/me/.hookwich/Hookwich.app': '' },
+    { [CONFIG]: v2({}), '/home/me/.hoochi/Hoochi.app': '' },
     { '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' } },
   )
   const statuses: (string | undefined)[] = []
@@ -376,9 +376,9 @@ test('with the window app in place, /hookwich opens it and clears an old message
     return { value: undefined }
   })
 
-  const out = await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
-  expect((out as { text: string }).text).toBe('hookwich: toggle')
-  expect(ran).toContain('/usr/bin/open -g /home/me/.hookwich/Hookwich.app')
+  const out = await $.command.run({ command: 'hoochi', args: '', origin: 'composer' } as never)
+  expect((out as { text: string }).text).toBe('hoochi: toggle')
+  expect(ran).toContain('/usr/bin/open -g /home/me/.hoochi/Hoochi.app')
   expect(statuses).toEqual([undefined])
 })
 
@@ -389,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip https://github.com/minjund/hookwich/releases/download/v0.1.27/Hookwich-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.28/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -399,7 +399,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     return { value: undefined }
   })
 
-  const out = await $.command.run({ command: 'hookwich', args: 'show', origin: 'composer' } as never)
+  const out = await $.command.run({ command: 'hoochi', args: 'show', origin: 'composer' } as never)
   expect((out as { text: string }).text).toContain('could not download the window app')
   expect(statuses[0]).toContain('could not download the window app')
   expect(ran.some(l => l.startsWith('/usr/bin/open'))).toBe(false)
@@ -407,11 +407,11 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hookwich/releases/download/v0.1.27'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.28'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
-  const app = '/home/me/.hookwich/Hookwich.app'
-  const zip = '/home/me/.hookwich/Hookwich-macos-arm64.zip'
+  const app = '/home/me/.hoochi/Hoochi.app'
+  const zip = '/home/me/.hoochi/Hoochi-macos-arm64.zip'
   const { ran } = machine(
     on,
     { [CONFIG]: v2({}), [app]: '' },
@@ -419,24 +419,24 @@ test("an older window app is replaced by this plugin's version, checked first", 
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
       [PLIST(app)]: { exitCode: 0, stdout: '0.1.1\n' },
-      [`/usr/bin/curl -fsSL ${V}/Hookwich-macos-arm64.zip.sha256`]: {
+      [`/usr/bin/curl -fsSL ${V}/Hoochi-macos-arm64.zip.sha256`]: {
         exitCode: 0,
-        stdout: 'abc123  Hookwich-macos-arm64.zip\n',
+        stdout: 'abc123  Hoochi-macos-arm64.zip\n',
       },
       [`/usr/bin/shasum -a 256 ${zip}`]: { exitCode: 0, stdout: `abc123  ${zip}\n` },
     },
   )
   on('ui.status', () => ({ value: undefined }))
 
-  const out = await $.command.run({ command: 'hookwich', args: 'show', origin: 'composer' } as never)
-  expect((out as { text: string }).text).toBe('hookwich: show')
+  const out = await $.command.run({ command: 'hoochi', args: 'show', origin: 'composer' } as never)
+  expect((out as { text: string }).text).toBe('hoochi: show')
   const order = [
-    `/usr/bin/curl -fsSL -o ${zip} ${V}/Hookwich-macos-arm64.zip`,
-    `/usr/bin/ditto -x -k ${zip} /home/me/.hookwich/.update`,
-    '/usr/bin/codesign --verify --deep --strict /home/me/.hookwich/.update/Hookwich.app',
-    `/usr/bin/pkill -f ${app}/Contents/MacOS/hookwich`,
-    `/bin/mv ${app} /home/me/.hookwich/.old-Hookwich.app`,
-    `/bin/mv /home/me/.hookwich/.update/Hookwich.app ${app}`,
+    `/usr/bin/curl -fsSL -o ${zip} ${V}/Hoochi-macos-arm64.zip`,
+    `/usr/bin/ditto -x -k ${zip} /home/me/.hoochi/.update`,
+    '/usr/bin/codesign --verify --deep --strict /home/me/.hoochi/.update/Hoochi.app',
+    `/usr/bin/pkill -f ${app}/Contents/MacOS/hoochi`,
+    `/bin/mv ${app} /home/me/.hoochi/.old-Hoochi.app`,
+    `/bin/mv /home/me/.hoochi/.update/Hoochi.app ${app}`,
     `/usr/bin/open -g ${app}`,
   ]
   const at = order.map(line => ran.indexOf(line))
@@ -445,7 +445,7 @@ test("an older window app is replaced by this plugin's version, checked first", 
 })
 
 test('the same or a newer window app is left alone', async ($, on) => {
-  const app = '/home/me/.hookwich/Hookwich.app'
+  const app = '/home/me/.hoochi/Hoochi.app'
   const { ran } = machine(
     on,
     { [CONFIG]: v2({}), [app]: '' },
@@ -456,13 +456,13 @@ test('the same or a newer window app is left alone', async ($, on) => {
   )
   on('ui.status', () => ({ value: undefined }))
 
-  await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
+  await $.command.run({ command: 'hoochi', args: '', origin: 'composer' } as never)
   expect(ran.some(l => l.includes('curl'))).toBe(false)
   expect(ran).toContain(`/usr/bin/open -g ${app}`)
 })
 
 test('a failed update keeps the old window running and says so', async ($, on) => {
-  const app = '/home/me/.hookwich/Hookwich.app'
+  const app = '/home/me/.hoochi/Hoochi.app'
   const { ran, fs } = machine(
     on,
     { [CONFIG]: v2({}), [app]: '' },
@@ -470,7 +470,7 @@ test('a failed update keeps the old window running and says so', async ($, on) =
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
       [PLIST(app)]: { exitCode: 0, stdout: '0.1.1\n' },
-      [`/usr/bin/curl -fsSL -o /home/me/.hookwich/Hookwich-macos-arm64.zip ${V}/Hookwich-macos-arm64.zip`]: {
+      [`/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip ${V}/Hoochi-macos-arm64.zip`]: {
         exitCode: 22,
         stdout: '',
       },
@@ -482,7 +482,7 @@ test('a failed update keeps the old window running and says so', async ($, on) =
     return { value: undefined }
   })
 
-  await $.command.run({ command: 'hookwich', args: '', origin: 'composer' } as never)
+  await $.command.run({ command: 'hoochi', args: '', origin: 'composer' } as never)
   expect(ran.some(l => l.startsWith('/usr/bin/pkill') || l.startsWith('/bin/mv'))).toBe(false)
   expect(ran).toContain(`/usr/bin/open -g ${app}`)
   expect(statuses[0]).toContain('could not update the window app')
@@ -497,7 +497,7 @@ test('each record names the item it came from, so a deleted item can be told apa
   expect(recent.at(-1)).toMatchObject({ id: 'g1', label: 'answer in English', scope: 'global' })
 })
 
-const CODEX_ACTIVITY = '/home/me/.hookwich/activity-codex.json'
+const CODEX_ACTIVITY = '/home/me/.hoochi/activity-codex.json'
 /** One key typed in the prompt box, raised as the engine raises it. */
 const edit = ($: Parameters<TestBody>[0]) =>
   ($.prompt as unknown as { edit(e: unknown): Promise<unknown> }).edit({
@@ -550,7 +550,7 @@ test('a chat working in the background does not take "where you are chatting" ba
   expect(after.lastChat.place.terminal).toBe('whitebox:terminal:t9')
 })
 
-const CONTEXT = '/home/me/.hookwich/context/whitebox_terminal_t1.json'
+const CONTEXT = '/home/me/.hoochi/context/whitebox_terminal_t1.json'
 
 /** What `$.session.usage({ breakdown })` answers: /context's figures. */
 const usage = (used: number) => ({
@@ -631,7 +631,7 @@ test('after a turn, what /context shows is written for this terminal', async ($,
   await measure($)
 
   expect(asked).toEqual([{ breakdown: 'summary' }])
-  expect(ran).toContain('/bin/mkdir -p /home/me/.hookwich/context')
+  expect(ran).toContain('/bin/mkdir -p /home/me/.hoochi/context')
   const snap = JSON.parse(fs.get(CONTEXT) ?? '{}')
   expect(snap).toMatchObject({ v: 1, used: 40_000, max: 200_000, percent: 20, compactAt: 167_000 })
   expect(snap.place.terminal).toBe('whitebox:terminal:t1')
@@ -703,7 +703,7 @@ test('a claude -p run in the same terminal is not where you chat', async ($, on)
     [ACTIVITY]: JSON.stringify({ lastEvent: '', lastAt: 0, counts: {}, recent: [], lastChat: earlier }),
   })
   let asked = 0
-  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.usage', () => {
     asked += 1
@@ -716,18 +716,18 @@ test('a claude -p run in the same terminal is not where you chat', async ($, on)
   await measure($)
 
   expect(JSON.parse(fs.get(ACTIVITY) ?? '{}').lastChat).toEqual(earlier)
-  expect(fs.has('/home/me/.hookwich/places.json')).toBe(false)
+  expect(fs.has('/home/me/.hoochi/places.json')).toBe(false)
   expect(asked).toBe(0)
   expect(fs.has(CONTEXT)).toBe(false)
 })
 
 const INSTALLED = '/home/me/.claude/plugins/installed_plugins.json'
 const installed = (version: string) =>
-  JSON.stringify({ version: 2, plugins: { 'hookwich@hookwich': [{ scope: 'user', version }] } })
+  JSON.stringify({ version: 2, plugins: { 'hoochi@hoochi': [{ scope: 'user', version }] } })
 
 function reloadsSeen(on: On) {
   const reloads: unknown[] = []
-  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('ui.toast', () => ({ value: undefined }))
   on('command.run', { command: 'reload-plugins' }, (_, e) => {
@@ -737,7 +737,7 @@ function reloadsSeen(on: On) {
   return reloads
 }
 
-test('a newer hookwich installed: the open chat reloads its plugins, once', async ($, on) => {
+test('a newer hoochi installed: the open chat reloads its plugins, once', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000 })
   const { fs } = machine(on, { [CONFIG]: v2({}), [INSTALLED]: installed('0.0.1') }, {}, undefined, {
     clock: false,
@@ -808,7 +808,7 @@ test('chat start: its words go in with the first prompt only, and again after /c
       item({ id: 'i2', event: 'SessionStart', kind: 'command', command: 'git pull' }),
     ),
   })
-  on('command.register', () => ({ value: { command: 'hookwich' } }))
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
 
   await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
@@ -835,11 +835,11 @@ test('a slash command also gets what goes in when a command expands', async ($, 
   expect(await prompt($, '/review', { command: { name: 'review', args: '' } })).toEqual(['Expanded.'])
 })
 
-test('engine notices and hookwich\'s own "keep going" get nothing', async ($, on) => {
+test('engine notices and hoochi\'s own "keep going" get nothing', async ($, on) => {
   machine(on, { [CONFIG]: config(item({ text: 'Answer in English.' })) })
 
   expect(await prompt($, 'a notice', { isMeta: true })).toBeUndefined()
-  expect(await prompt($, 'keep going', { origin: { kind: 'plugin', name: 'hookwich' } })).toBeUndefined()
+  expect(await prompt($, 'keep going', { origin: { kind: 'plugin', name: 'hoochi' } })).toBeUndefined()
   expect(await prompt($, 'mine')).toEqual(['Answer in English.'])
 })
 
@@ -962,7 +962,7 @@ test("a subagent's words follow the task it was given", async ($, on) => {
 test('answers with no classic event at all mark the classic hooks blocked; one arriving opens them', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: config() })
   on('classic.MessageDisplay', () => ({}))
-  const REACH = '/home/me/.hookwich/classic-claude.json'
+  const REACH = '/home/me/.hoochi/classic-claude.json'
   const reach = () => JSON.parse(fs.get(REACH) ?? '{}').reach
 
   await turnEnds($, { answer: 'one' })
@@ -973,4 +973,49 @@ test('answers with no classic event at all mark the classic hooks blocked; one a
   await $.classic.MessageDisplay({ turn_id: 't1', message_id: 'm1', index: 0 } as never)
   await tick()
   expect(reach()).toBe('open')
+})
+
+/** Starts a chat on the fake machine; returns the toasts it showed. */
+async function startChat($: Parameters<TestBody>[0], on: On): Promise<string[]> {
+  const toasts: string[] = []
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  return toasts
+}
+
+const OLD_MOVE = [
+  '/usr/bin/pkill -f /home/me/.hookwich/Hookwich.app/Contents/MacOS/hookwich',
+  '/bin/mv /home/me/.hookwich /home/me/.hoochi',
+  '/bin/rm -rf /home/me/.hoochi/Hookwich.app /home/me/.hoochi/.update',
+]
+
+test('the folder kept under the old name (hookwich) moves to ~/.hoochi once, its old window stopped', async ($, on) => {
+  const { ran } = machine(on, { '/home/me/.hookwich': '' })
+  const toasts = await startChat($, on)
+  expect(ran.slice(0, 3)).toEqual(OLD_MOVE)
+  expect(toasts).toEqual([])
+})
+
+test('once ~/.hoochi is there, the old folder is left alone', async ($, on) => {
+  const { ran } = machine(on, { '/home/me/.hookwich': '', '/home/me/.hoochi': '', [CONFIG]: v2({}) })
+  await startChat($, on)
+  expect(ran.filter(l => l.includes('.hookwich'))).toEqual([])
+})
+
+test('the plugin still installed under the old name is noticed, to remove', async ($, on) => {
+  machine(on, {
+    [CONFIG]: v2({}),
+    '/home/me/.claude/plugins/installed_plugins.json': JSON.stringify({
+      plugins: { 'hookwich@hookwich': [{ version: '0.1.27' }], 'hoochi@hoochi': [{ version: '0.1.28' }] },
+    }),
+  })
+  const toasts = await startChat($, on)
+  expect(toasts).toEqual(['hookwich is now hoochi: remove the old plugin with  claude plugin uninstall hookwich@hookwich'])
+  expect(oldPluginInstalled(JSON.stringify({ plugins: { 'hoochi@hoochi': [] } }))).toBe(false)
+  expect(oldPluginInstalled('not json')).toBe(false)
 })

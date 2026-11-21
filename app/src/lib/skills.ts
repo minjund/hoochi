@@ -5,18 +5,18 @@ export const ONE_BY_ONE: ReadonlySet<SkillGroup['kind']> = new Set(['user', 'pro
 
 /**
  * The installed plugin a group of skills belongs to, when it can be switched from the window:
- * a plugin found in the settings that is not hookwich itself. Names match without case
+ * a plugin found in the settings that is not hoochi itself. Names match without case
  * (a manifest may say "Notion" and the settings "notion").
  */
 export function switchablePlugin(name: string, plugins: SkillState['plugins']) {
   const plugin = plugins.find(p => p.name.toLowerCase() === name.toLowerCase())
-  return plugin && plugin.name !== 'hookwich' && !plugin.key.startsWith('hookwich@') ? plugin : undefined
+  return plugin && plugin.name !== 'hoochi' && !plugin.key.startsWith('hoochi@') ? plugin : undefined
 }
 
 /**
  * Only the skills the window can turn on and off: yours, the project's and built-in ones one by
  * one, and installed plugins as a whole. Skills synced from claude.ai, ones of unknown origin and
- * hookwich's own are left out, as the skills popup leaves them out.
+ * hoochi's own are left out, as the skills popup leaves them out.
  */
 export function switchableGroups(groups: SkillGroup[], plugins: SkillState['plugins']): SkillGroup[] {
   return groups.filter(g =>

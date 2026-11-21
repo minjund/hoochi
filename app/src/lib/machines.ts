@@ -107,7 +107,7 @@ export function createSaver<T>(o: {
   }
 }
 
-// ---------- Updating hookwich ----------
+// ---------- Updating hoochi ----------
 
 export type UpdateInfo = { current: string; latest: string | null; available: boolean }
 
@@ -167,7 +167,7 @@ export function versionAtLeast(a: string, b: string): boolean {
 }
 
 /**
- * The first plugin that reloads the chats already open once a newer hookwich is installed.
+ * The first plugin that reloads the chats already open once a newer hoochi is installed.
  * Updating from an older one, those chats still run code without it: /reload-plugins by hand, once.
  */
 export const AUTO_RELOAD_FROM = '0.1.16'

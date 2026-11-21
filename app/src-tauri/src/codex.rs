@@ -1,7 +1,7 @@
-//! Codex side of hookwich.
+//! Codex side of hoochi.
 //!
 //! Codex has no plugin hooks, so the window app's own binary doubles as the
-//! hook command: `hookwich hook codex <Event>`. Codex runs it with the event's
+//! hook command: `hoochi hook codex <Event>`. Codex runs it with the event's
 //! JSON on stdin; it picks the items for this moment (this terminal, else this
 //! project, else everywhere), runs commands, and prints the answer in Codex's
 //! hook format (https://learn.chatgpt.com/docs/hooks).
@@ -46,15 +46,17 @@ const CONTINUES: &[&str] = &["Stop", "SubagentStop"];
 const TOOL_EVENTS: &[&str] = &["PreToolUse", "PostToolUse", "PermissionRequest"];
 const MAX_OUTPUT: usize = 4000;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-/// What every hookwich command in hooks.json contains, after the quoted app path.
+/// What every hoochi command in hooks.json contains, after the quoted app path.
 const MARK: &str = " hook codex ";
+/// hoochi was called hookwich before 0.1.28; its entries still count as ours, to repoint or remove.
+const OLD_NAME: &str = "hookwich";
 
 pub fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default())
 }
 
 pub fn data_dir() -> PathBuf {
-    home().join(".hookwich")
+    home().join(".hoochi")
 }
 
 fn now_ms() -> u64 {
@@ -320,7 +322,7 @@ pub fn answer(event: &str, parts: &[String]) -> Option<Value> {
     None
 }
 
-/// `hookwich hook codex <Event>`: never fails the hook; prints nothing when there is nothing to add.
+/// `hoochi hook codex <Event>`: never fails the hook; prints nothing when there is nothing to add.
 pub fn run_hook(event: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
@@ -441,13 +443,13 @@ pub fn is_ours(group: &Value) -> bool {
             !hooks.is_empty()
                 && hooks.iter().all(|h| {
                     let c = str_of(h, "command");
-                    c.contains("hookwich") && c.contains(MARK)
+                    (c.contains("hoochi") || c.contains(OLD_NAME)) && c.contains(MARK)
                 })
         })
         .unwrap_or(false)
 }
 
-/// Whether Codex is installed here and whether hookwich is in its hooks.
+/// Whether Codex is installed here and whether hoochi is in its hooks.
 pub fn status() -> Value {
     let path = codex_hooks_path();
     let installed = path.parent().map(|p| p.exists()).unwrap_or(false);
@@ -462,12 +464,12 @@ pub fn status() -> Value {
     json!({ "installed": installed, "connected": connected, "path": path.to_string_lossy() })
 }
 
-/// Appends hookwich to the end of every event's list, after backing the file up.
+/// Appends hoochi to the end of every event's list, after backing the file up.
 pub fn connect(exe: &Path) -> Result<Value, String> {
     let path = codex_hooks_path();
     let mut hooks = read_json(&path);
     if path.exists() {
-        let backup = path.with_file_name(format!("hooks.json.hookwich-backup-{}", now_ms() / 1000));
+        let backup = path.with_file_name(format!("hooks.json.hoochi-backup-{}", now_ms() / 1000));
         fs::copy(&path, &backup).map_err(|e| format!("could not back up {}: {e}", path.display()))?;
     }
     if !hooks.is_object() {
@@ -476,7 +478,7 @@ pub fn connect(exe: &Path) -> Result<Value, String> {
     let root = hooks.as_object_mut().expect("object");
     let table = root.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
     let table = table.as_object_mut().ok_or("hooks.json has a \"hooks\" that is not an object")?;
-    let exe = exe.to_string_lossy().replace('\'', "'\\''");
+    let head = command_head(exe);
     for ev in EVENTS {
         let list = table.entry(ev.to_string()).or_insert_with(|| json!([]));
         let Some(groups) = list.as_array_mut() else { continue };
@@ -487,9 +489,9 @@ pub fn connect(exe: &Path) -> Result<Value, String> {
         groups.push(json!({
             "hooks": [{
                 "type": "command",
-                "command": format!("'{exe}' hook codex {ev}"),
+                "command": format!("{head}{ev}"),
                 "timeout": timeout,
-                "statusMessage": "hookwich"
+                "statusMessage": "hoochi"
             }]
         }));
     }
@@ -497,7 +499,36 @@ pub fn connect(exe: &Path) -> Result<Value, String> {
     Ok(status())
 }
 
-/// Removes every hookwich entry, leaving the rest of the file as it was.
+/// The command hooks.json runs for this window, up to the event name.
+fn command_head(exe: &Path) -> String {
+    format!("'{}'{MARK}", exe.to_string_lossy().replace('\'', "'\\''"))
+}
+
+/// Whether some of our entries run another copy of the window (an older name or place).
+fn stale(hooks: &Value, exe: &Path) -> bool {
+    let head = command_head(exe);
+    let Some(table) = hooks.get("hooks").and_then(Value::as_object) else { return false };
+    table
+        .values()
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter(|g| is_ours(g))
+        .flat_map(|g| g.get("hooks").and_then(Value::as_array).into_iter().flatten())
+        .any(|h| !str_of(h, "command").starts_with(&head))
+}
+
+/// Points our entries at this window when they run another copy (renamed, or moved): Codex
+/// would otherwise run a program that is gone. True when it changed the file.
+pub fn repoint(exe: &Path) -> Result<bool, String> {
+    if !stale(&read_json(&codex_hooks_path()), exe) {
+        return Ok(false);
+    }
+    disconnect()?;
+    connect(exe)?;
+    Ok(true)
+}
+
+/// Removes every hoochi entry, leaving the rest of the file as it was.
 pub fn disconnect() -> Result<Value, String> {
     let path = codex_hooks_path();
     let mut hooks = read_json(&path);
@@ -515,6 +546,9 @@ pub fn disconnect() -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tests that set CODEX_HOME take turns: the variable is the whole process's.
+    static CODEX_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn item(id: &str, event: &str, text: &str, enabled: bool) -> Value {
         json!({ "id": id, "event": event, "kind": "text", "text": text, "enabled": enabled })
@@ -587,13 +621,14 @@ mod tests {
 
     #[test]
     fn connect_appends_and_disconnect_removes_only_ours() {
-        let dir = std::env::temp_dir().join(format!("hookwich-test-{}", now_ms()));
+        let _env = CODEX_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("hoochi-test-{}", now_ms()));
         fs::create_dir_all(&dir).unwrap();
         std::env::set_var("CODEX_HOME", &dir);
         let mine = json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "my-stop" }] }] } });
         write_json(&dir.join("hooks.json"), &mine).unwrap();
 
-        let st = connect(Path::new("/Apps/Hookwich.app/Contents/MacOS/hookwich")).unwrap();
+        let st = connect(Path::new("/Apps/Hoochi.app/Contents/MacOS/hoochi")).unwrap();
         assert_eq!(st["connected"], true);
         let after = read_json(&dir.join("hooks.json"));
         let stop = after["hooks"]["Stop"].as_array().unwrap();
@@ -601,12 +636,34 @@ mod tests {
         assert!(stop[1]["hooks"][0]["command"].as_str().unwrap().ends_with("hook codex Stop"));
         assert!(fs::read_dir(&dir).unwrap().any(|f| f.unwrap().file_name().to_string_lossy().contains("backup")));
 
-        connect(Path::new("/Apps/Hookwich.app/Contents/MacOS/hookwich")).unwrap();
+        connect(Path::new("/Apps/Hoochi.app/Contents/MacOS/hoochi")).unwrap();
         assert_eq!(read_json(&dir.join("hooks.json"))["hooks"]["Stop"].as_array().unwrap().len(), 2, "no duplicates");
 
         let st = disconnect().unwrap();
         assert_eq!(st["connected"], false);
         assert_eq!(read_json(&dir.join("hooks.json")), mine);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hooks_set_up_under_the_old_name_are_pointed_at_this_window() {
+        let _env = CODEX_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("hoochi-repoint-{}", now_ms()));
+        fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("CODEX_HOME", &dir);
+        let old = Path::new("/Users/me/.hookwich/Hookwich.app/Contents/MacOS/hookwich");
+        let new = Path::new("/Users/me/.hoochi/Hoochi.app/Contents/MacOS/hoochi");
+        write_json(&dir.join("hooks.json"), &json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "my-stop" }] }] } })).unwrap();
+        connect(old).unwrap();
+        assert!(!repoint(old).unwrap(), "nothing to change for the copy they run");
+
+        assert!(repoint(new).unwrap());
+        let after = read_json(&dir.join("hooks.json"));
+        let stop = after["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2, "the old entry is replaced, not kept beside");
+        assert_eq!(stop[0]["hooks"][0]["command"], "my-stop");
+        assert_eq!(stop[1]["hooks"][0]["command"], "'/Users/me/.hoochi/Hoochi.app/Contents/MacOS/hoochi' hook codex Stop");
+        assert_eq!(status()["connected"], true);
+        assert!(!repoint(new).unwrap());
     }
 }

@@ -1,4 +1,4 @@
-//! Hooks that are already set up outside hookwich: in Claude Code's settings, in installed plugins
+//! Hooks that are already set up outside hoochi: in Claude Code's settings, in installed plugins
 //! (often a skill run by a hook) and in Codex's hooks.json. The window shows them read-only, so you
 //! can see everything that runs at a moment before adding to it.
 
@@ -70,7 +70,7 @@ fn short(text: &str) -> String {
 /// Where an existing hook lives, so it can be switched off and back on.
 #[derive(Clone)]
 enum Place {
-    /// In a Claude Code settings file: switched off by moving it to ~/.hookwich/parked.json.
+    /// In a Claude Code settings file: switched off by moving it to ~/.hoochi/parked.json.
     Settings { file: PathBuf, event: String, group: usize, hook: usize },
     /// In a Claude Code plugin: only the whole plugin can be switched (enabledPlugins).
     Plugin { key: String },
@@ -309,7 +309,8 @@ fn plugin_hooks(out: &mut Vec<Found>) {
     let Some(listed) = settings.get("enabledPlugins").and_then(Value::as_object) else { return };
     for (key, on) in listed {
         let name = key.split('@').next().unwrap_or(key);
-        if name == "hookwich" {
+        // this plugin, and itself under its old name
+        if name == "hoochi" || name == "hookwich" {
             continue;
         }
         let on = on.as_bool() == Some(true);
@@ -418,7 +419,7 @@ pub fn existing(project: &str) -> Value {
         if here {
             let mut info = p.get("info").cloned().unwrap_or(Value::Null);
             info["off"] = json!(true);
-            // Parked before hookwich told where hooks come from: say it now.
+            // Parked before hoochi told where hooks come from: say it now.
             info["file"] = json!(file.replace(&home().to_string_lossy().to_string(), "~"));
             info["origin"] = p.get("hook").and_then(crate::origin::origin).unwrap_or(Value::Null);
             claude.push(info);
@@ -427,7 +428,7 @@ pub fn existing(project: &str) -> Value {
     json!({ "claude": claude, "codex": codex.into_iter().map(|f| f.info).collect::<Vec<_>>() })
 }
 
-/// Copies a file into ~/.hookwich/backups/ before hookwich changes it.
+/// Copies a file into ~/.hoochi/backups/ before hoochi changes it.
 fn backup(file: &Path) -> Result<(), String> {
     if !file.exists() {
         return Ok(());
@@ -440,7 +441,7 @@ fn backup(file: &Path) -> Result<(), String> {
 }
 
 fn write_text(file: &Path, text: &str) -> Result<(), String> {
-    let tmp = file.with_extension("hookwich-tmp");
+    let tmp = file.with_extension("hoochi-tmp");
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, file).map_err(|e| e.to_string())
 }
@@ -448,7 +449,7 @@ fn write_text(file: &Path, text: &str) -> Result<(), String> {
 pub(crate) fn edit_json(file: &Path, change: impl FnOnce(&mut Value) -> Result<(), String>) -> Result<(), String> {
     let mut v = read_json(file);
     if !v.is_object() {
-        return Err(format!("{} is not a settings file hookwich can read", file.display()));
+        return Err(format!("{} is not a settings file hoochi can read", file.display()));
     }
     change(&mut v)?;
     backup(file)?;
@@ -457,7 +458,7 @@ pub(crate) fn edit_json(file: &Path, change: impl FnOnce(&mut Value) -> Result<(
 
 /// Switches one existing hook off (`on = false`) or back on.
 pub fn set_on(project: &str, id: &str, on: bool) -> Result<(), String> {
-    // Switching back on a hook hookwich moved out of a Claude settings file.
+    // Switching back on a hook hoochi moved out of a Claude settings file.
     if on {
         let mut list = parked();
         if let Some(i) = list.iter().position(|p| p["info"]["id"] == id) {
@@ -659,7 +660,7 @@ mod tests {
         let hooks = json!({ "Stop": [
             { "hooks": [{ "type": "command", "command": "a" }] },
             { "hooks": [{ "type": "command", "command": "b" }] },
-            { "hooks": [{ "type": "command", "command": "'/x/hookwich' hook codex Stop" }] }
+            { "hooks": [{ "type": "command", "command": "'/x/hoochi' hook codex Stop" }] }
         ]});
         let place = |e: &str, g: usize, h: usize| Some(Place::Codex { state_key: format!("/h.json:{}:{g}:{h}", snake(e)) });
         let is_off = |p: &Place| matches!(p, Place::Codex { state_key } if off.contains(state_key));
@@ -668,7 +669,7 @@ mod tests {
             .iter()
             .map(|f| match &f.place { Place::Codex { state_key } => (state_key.clone(), f.info["off"].as_bool().unwrap()), _ => unreachable!() })
             .collect();
-        assert_eq!(seen, vec![("/h.json:stop:0:0".into(), false), ("/h.json:stop:1:0".into(), true)], "hookwich's own group is left out");
+        assert_eq!(seen, vec![("/h.json:stop:0:0".into(), false), ("/h.json:stop:1:0".into(), true)], "hoochi's own group is left out");
     }
 }
 
@@ -696,11 +697,11 @@ mod round_trip {
     #[test]
     #[ignore]
     fn off_and_back_on_in_a_temp_home() {
-        let home = std::env::temp_dir().join(format!("hookwich-rt-{}", std::process::id()));
+        let home = std::env::temp_dir().join(format!("hoochi-rt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".claude/plugins/cache/p")).unwrap();
         std::fs::create_dir_all(home.join(".codex")).unwrap();
-        std::fs::create_dir_all(home.join(".hookwich")).unwrap();
+        std::fs::create_dir_all(home.join(".hoochi")).unwrap();
         std::env::set_var("HOME", &home);
         let settings = json!({
             "model": "x",
@@ -769,7 +770,7 @@ mod round_trip {
         let back = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
         assert!(!back.contains("enabled = false") && back.contains("trusted_hash = \"sha256:abc\""), "trust is kept");
         assert_eq!(read_json(&home.join(".codex/hooks.json"))["hooks"]["Stop"][0]["hooks"][0]["command"], "/opt/codex-stop.sh");
-        assert!(std::fs::read_dir(home.join(".hookwich/backups")).unwrap().count() >= 4, "a backup before each change");
+        assert!(std::fs::read_dir(home.join(".hoochi/backups")).unwrap().count() >= 4, "a backup before each change");
         let _ = std::fs::remove_dir_all(&home);
     }
 }

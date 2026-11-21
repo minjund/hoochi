@@ -102,7 +102,7 @@ mod tests {
         set_plugin("tools@m", false).unwrap();
         assert_eq!(state()["plugins"], json!([{ "name": "tools", "key": "tools@m", "on": false }]));
         assert!(set_plugin("other@m", false).is_err());
-        assert!(std::fs::read_dir(dir.join(".hookwich/backups")).unwrap().count() >= 3);
+        assert!(std::fs::read_dir(dir.join(".hoochi/backups")).unwrap().count() >= 3);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

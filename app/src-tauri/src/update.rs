@@ -2,9 +2,9 @@
 //! plugin through `claude plugin update`, and swaps in the newer window,
 //! checked (SHA-256, signature, version) before it replaces anything.
 //!
-//! Test overrides: HOOKWICH_LATEST_URL (the latest-release JSON),
-//! HOOKWICH_RELEASE_BASE (where `download/v<ver>/<file>` lives) and
-//! HOOKWICH_CLAUDE (the `claude` to run).
+//! Test overrides: HOOCHI_LATEST_URL (the latest-release JSON),
+//! HOOCHI_RELEASE_BASE (where `download/v<ver>/<file>` lives) and
+//! HOOCHI_CLAUDE (the `claude` to run).
 
 use std::{
     fs,
@@ -14,9 +14,9 @@ use std::{
 
 use serde_json::{json, Value};
 
-const LATEST: &str = "https://api.github.com/repos/minjund/hookwich/releases/latest";
-const RELEASES: &str = "https://github.com/minjund/hookwich/releases";
-const PLUGIN: &str = "hookwich@hookwich";
+const LATEST: &str = "https://api.github.com/repos/minjund/hoochi/releases/latest";
+const RELEASES: &str = "https://github.com/minjund/hoochi/releases";
+const PLUGIN: &str = "hoochi@hoochi";
 
 fn env_or(key: &str, fallback: &str) -> String {
     std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| fallback.to_string())
@@ -53,7 +53,7 @@ pub fn latest_version(reply: &str) -> Option<String> {
     ok.then_some(tag)
 }
 
-/// The .app bundle an executable sits in: …/Hookwich.app/Contents/MacOS/hookwich → …/Hookwich.app
+/// The .app bundle an executable sits in: …/Hoochi.app/Contents/MacOS/hoochi → …/Hoochi.app
 pub fn bundle_of(exe: &Path) -> Option<PathBuf> {
     let bundle = exe.parent()?.parent()?.parent()?;
     (bundle.extension()? == "app").then(|| bundle.to_path_buf())
@@ -73,12 +73,12 @@ fn run(argv: &[&str]) -> Result<String, String> {
 }
 
 fn data_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".hookwich")
+    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".hoochi")
 }
 
 /// Whether a newer release is out, and what the last update did (said once, then forgotten).
 pub fn check() -> Value {
-    let url = env_or("HOOKWICH_LATEST_URL", LATEST);
+    let url = env_or("HOOCHI_LATEST_URL", LATEST);
     let latest = run(&["/usr/bin/curl", "-fsSL", "--max-time", "15", "-H", "Accept: application/vnd.github+json", &url])
         .ok()
         .and_then(|reply| latest_version(&reply));
@@ -100,7 +100,7 @@ pub fn check() -> Value {
 
 /// The `claude` command: the usual places first, then whatever a login shell finds.
 fn claude() -> Option<String> {
-    if let Ok(path) = std::env::var("HOOKWICH_CLAUDE") {
+    if let Ok(path) = std::env::var("HOOCHI_CLAUDE") {
         return Some(path);
     }
     let home = std::env::var("HOME").unwrap_or_default();
@@ -138,8 +138,8 @@ pub fn apply(version: &str) -> Result<Value, String> {
     let plugin = update_plugin().unwrap_or(false);
 
     let arch = if run(&["/usr/bin/uname", "-m"])?.trim() == "arm64" { "arm64" } else { "x64" };
-    let file = format!("Hookwich-macos-{arch}.zip");
-    let base = env_or("HOOKWICH_RELEASE_BASE", RELEASES);
+    let file = format!("Hoochi-macos-{arch}.zip");
+    let base = env_or("HOOCHI_RELEASE_BASE", RELEASES);
     let url = format!("{base}/download/v{version}/{file}");
     let dir = data_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -158,7 +158,7 @@ pub fn apply(version: &str) -> Result<Value, String> {
     let fresh = dir.join(".update");
     let _ = fs::remove_dir_all(&fresh);
     run(&["/usr/bin/ditto", "-x", "-k", &zip_s, &fresh.to_string_lossy()])?;
-    let new_app = fresh.join("Hookwich.app");
+    let new_app = fresh.join("Hoochi.app");
     let new_s = new_app.to_string_lossy().to_string();
     run(&["/usr/bin/codesign", "--verify", "--deep", "--strict", &new_s])?;
     let plist = format!("{new_s}/Contents/Info.plist");
@@ -212,8 +212,8 @@ mod tests {
 
     #[test]
     fn finds_the_app_bundle() {
-        let exe = Path::new("/Users/me/.hookwich/Hookwich.app/Contents/MacOS/hookwich");
-        assert_eq!(bundle_of(exe), Some(PathBuf::from("/Users/me/.hookwich/Hookwich.app")));
-        assert_eq!(bundle_of(Path::new("/usr/local/bin/hookwich")), None);
+        let exe = Path::new("/Users/me/.hoochi/Hoochi.app/Contents/MacOS/hoochi");
+        assert_eq!(bundle_of(exe), Some(PathBuf::from("/Users/me/.hoochi/Hoochi.app")));
+        assert_eq!(bundle_of(Path::new("/usr/local/bin/hoochi")), None);
     }
 }

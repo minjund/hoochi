@@ -149,7 +149,7 @@ body {
   border-bottom: 1px solid var(--hw-line);
 }
 
-/* chats hookwich is not in, folded: the title says how many */
+/* chats hoochi is not in, folded: the title says how many */
 .hw-unhooked summary {
   cursor: pointer;
   font-weight: 600;
@@ -241,7 +241,7 @@ input {
   border-style: dashed;
 }
 
-/* A moment Claude Code never hands to hookwich on this account (sec-default). */
+/* A moment Claude Code never hands to hoochi on this account (sec-default). */
 .hw-blocked {
   margin: 0 0 8px;
   padding: 6px 8px;
@@ -940,7 +940,7 @@ button.hw-existing-text:hover b {
   margin-left: auto;
 }
 
-/* A newer hookwich is out, or the window was just updated */
+/* A newer hoochi is out, or the window was just updated */
 .hw-update {
   display: flex;
   align-items: center;

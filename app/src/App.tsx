@@ -5,11 +5,11 @@ import {
   CODEX_LAYOUT,
   LifecycleDiagram,
   type ContextFill,
-} from './components/hookwich/lifecycle-diagram'
-import { SandwichBubble } from './components/hookwich/sandwich-bubble'
-import { ContextGlance, type ContextFocus } from './components/hookwich/context-view'
-import { SkillsPanel } from './components/hookwich/skills-panel'
-import { SlotEditor } from './components/hookwich/slot-editor'
+} from './components/hoochi/lifecycle-diagram'
+import { SandwichBubble } from './components/hoochi/sandwich-bubble'
+import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
+import { SkillsPanel } from './components/hoochi/skills-panel'
+import { SlotEditor } from './components/hoochi/slot-editor'
 import { Button } from './components/ui/button'
 import { IconButton } from './components/ui/icon-button'
 import { SegmentedControl } from './components/ui/segmented-control'
@@ -91,7 +91,7 @@ const UPDATE_MIN_GAP_MS = 5 * 60_000
 const TIP_ROWS = 4
 
 type Theme = 'system' | 'light' | 'dark'
-const THEME_KEY = 'hookwich.theme'
+const THEME_KEY = 'hoochi.theme'
 const THEMES: Theme[] = ['system', 'light', 'dark']
 
 function loadTheme(): Theme {
@@ -209,7 +209,7 @@ type Modal = 'mine' | 'skills' | null
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
 
-const UNHOOKED_KEY = 'hookwich.unhookedSeen'
+const UNHOOKED_KEY = 'hoochi.unhookedSeen'
 function loadUnhookedSeen(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(UNHOOKED_KEY) ?? '[]') as unknown
@@ -353,7 +353,7 @@ export default function App() {
         .catch(() => undefined)
   }, [expanded, skills.length])
 
-  // Every chat open in a terminal, found from the process list, even before hookwich hears from it.
+  // Every chat open in a terminal, found from the process list, even before hoochi hears from it.
   useEffect(() => {
     if (!expanded || !visible) return
     let alive = true
@@ -413,7 +413,7 @@ export default function App() {
     setScope(s => (s === 'terminal' ? s : chatHasProject ? 'project' : 'global'))
   }, [held, selected, latest, chatHasProject])
 
-  // A newer hookwich: looked for when the window opens, each time you open the panel (at most every
+  // A newer hoochi: looked for when the window opens, each time you open the panel (at most every
   // five minutes), and every half hour while it is shown. About two GitHub requests an hour.
   const lastLook = useRef(0)
   const lookForUpdate = useCallback((force = false) => {
@@ -578,7 +578,7 @@ export default function App() {
     await setExpanded(false)
   }
 
-  /** Whether a folder is a git project: from the open chats, else from what hookwich has seen. */
+  /** Whether a folder is a git project: from the open chats, else from what hoochi has seen. */
   function isProject(path: string, terminal = ''): boolean {
     return (
       running.find(r => r.terminal === terminal)?.hasProject ??
@@ -601,11 +601,11 @@ export default function App() {
   const terminalAgent: Agent =
     running.find(r => r.terminal === terminalKey)?.agent ??
     (places.terminals[terminalKey]?.agent === 'codex' ? 'codex' : 'claude')
-  // Claude Code chats hookwich is not running in (opened before it was installed): the window
-  // cannot follow them or put anything in, so it says which, and how to bring hookwich in.
-  const unhooked = running.filter(r => r.agent === 'claude' && r.hookwich === false)
+  // Claude Code chats hoochi is not running in (opened before it was installed): the window
+  // cannot follow them or put anything in, so it says which, and how to bring hoochi in.
+  const unhooked = running.filter(r => r.agent === 'claude' && r.hoochi === false)
   // "Don't show again": the chats seen then are remembered (each by terminal and start), so only a
-  // new chat without hookwich brings the notice back.
+  // new chat without hoochi brings the notice back.
   const [unhookedSeen, setUnhookedSeen] = useState<string[]>(loadUnhookedSeen)
   const chatKey = (r: Running) => `${r.terminal}@${r.started ?? 0}`
   const unhookedNew = unhooked.filter(r => !unhookedSeen.includes(chatKey(r)))
@@ -767,7 +767,7 @@ export default function App() {
     </>
   )
 
-  // Hooks already set up outside hookwich at this place, read again now and then.
+  // Hooks already set up outside hoochi at this place, read again now and then.
   const existingProject = scope === 'global' ? '' : scope === 'project' ? projectKey : terminalProject
   useEffect(() => {
     if (!expanded || !visible) return
@@ -844,7 +844,7 @@ export default function App() {
         l.map(item => ({ item, scope: 'terminal' as const, key })),
       ),
     ]
-    // Items from before hookwich kept the time come after, newest in each list first.
+    // Items from before hoochi kept the time come after, newest in each list first.
     return all
       .map((m, i) => ({ mine: { ...m, at: m.item.added ?? 0 }, i }))
       .sort((x, y) => y.mine.at - x.mine.at || y.i - x.i)
@@ -997,7 +997,7 @@ export default function App() {
         }}
       >
         <div className="hw-head-title">
-          hookwich
+          hoochi
           <span title={t.onHint}>{t.on(activeCount)}</span>
         </div>
         <SegmentedControl

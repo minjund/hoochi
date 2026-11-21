@@ -1,7 +1,7 @@
 //! Who put a hook there: the app it runs from (a path inside `Something.app`), or, for a hook that
 //! calls an address on this computer (`http://127.0.0.1:23333/…`), the app that serves it — the one
 //! listening on that port now, else an installed app whose files name that address. Answers are
-//! remembered (in memory and in ~/.hookwich/origins.json), so the apps are searched once per address.
+//! remembered (in memory and in ~/.hoochi/origins.json), so the apps are searched once per address.
 
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;

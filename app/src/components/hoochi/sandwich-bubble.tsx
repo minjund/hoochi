@@ -15,7 +15,7 @@ export type SandwichBubbleProps = {
   onMenu?(): void
 }
 
-/** The floating, collapsed hookwich window. The host supplies the native window drag. */
+/** The floating, collapsed hoochi window. The host supplies the native window drag. */
 export function SandwichBubble({
   activeCount,
   pulseKey,
@@ -51,8 +51,8 @@ export function SandwichBubble({
       <button
         type="button"
         className="ui-swb"
-        aria-label={count ? `Open hookwich, ${count} enabled items` : 'Open hookwich'}
-        title="Open hookwich · drag to move"
+        aria-label={count ? `Open hoochi, ${count} enabled items` : 'Open hoochi'}
+        title="Open hoochi · drag to move"
         data-glowing={glowing ? '' : undefined}
         onPointerDown={event => {
           if (!event.isPrimary || event.button !== 0 || pointer.current) return

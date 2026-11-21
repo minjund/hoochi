@@ -1,5 +1,5 @@
 //! Claude Code and Codex chats open right now, found from the process list, so the window can list
-//! every terminal even before hookwich has heard from it.
+//! every terminal even before hoochi has heard from it.
 
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -177,16 +177,16 @@ mod kernel {
     }
 }
 
-/// When hookwich last wrote this terminal's /context record (ms), if ever: a chat running hookwich
-/// writes it as it starts and after each turn, so one older than the chat means hookwich is not in it.
-fn hookwich_seen(terminal: &str) -> Option<u64> {
-    let path = crate::codex::home().join(".hookwich/context").join(crate::context_file(terminal));
+/// When hoochi last wrote this terminal's /context record (ms), if ever: a chat running hoochi
+/// writes it as it starts and after each turn, so one older than the chat means hoochi is not in it.
+fn hoochi_seen(terminal: &str) -> Option<u64> {
+    let path = crate::codex::home().join(".hoochi/context").join(crate::context_file(terminal));
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     Some(modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis() as u64)
 }
 
-/// `[{ agent, pid, terminal, terminalLabel, cwd, project, hasProject, started, hookwich }]`;
-/// `hookwich` is false for a Claude Code chat that hookwich is not running in (opened before it was
+/// `[{ agent, pid, terminal, terminalLabel, cwd, project, hasProject, started, hoochi }]`;
+/// `hoochi` is false for a Claude Code chat that hoochi is not running in (opened before it was
 /// installed, and not reloaded since), null for Codex.
 pub fn running() -> Value {
     #[cfg(target_os = "macos")]
@@ -203,8 +203,8 @@ pub fn running() -> Value {
                 let cwd = String::new();
                 let project = if cwd.is_empty() { String::new() } else { detect_project(&cwd) };
                 let has_project = !project.is_empty() && std::path::Path::new(&project).join(".git").exists();
-                let hookwich = (agent == "claude").then(|| hookwich_seen(&terminal).is_some_and(|at| at >= started));
-                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project, "started": started, "hookwich": hookwich })
+                let hoochi = (agent == "claude").then(|| hoochi_seen(&terminal).is_some_and(|at| at >= started));
+                json!({ "agent": agent, "pid": pid, "terminal": terminal, "terminalLabel": label, "cwd": cwd, "project": project, "hasProject": has_project, "started": started, "hoochi": hoochi })
             })
             .collect(),
     )
@@ -281,7 +281,7 @@ mod live {
         }
         println!("scan: {:.1} ms on average over {runs} runs", start.elapsed().as_secs_f64() * 1000.0 / runs as f64);
         for c in super::running().as_array().unwrap() {
-            println!("{} {} {} hookwich={}", c["agent"], c["terminal"], c["project"], c["hookwich"]);
+            println!("{} {} {} hoochi={}", c["agent"], c["terminal"], c["project"], c["hoochi"]);
         }
     }
 }

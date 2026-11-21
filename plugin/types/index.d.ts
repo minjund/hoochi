@@ -4,7 +4,7 @@ export type ItemKind = 'text' | 'command' | 'skill' | 'rules'
 /** One row of a "rules" item: in this situation, use this skill. */
 export type SkillRule = { when: string; skill: string }
 
-/** One thing put into a moment, as ~/.hookwich/config.json holds it. */
+/** One thing put into a moment, as ~/.hoochi/config.json holds it. */
 export type Item = {
   id: string
   /** The hook event it goes into: PreToolUse, Stop, SessionStart, ... */
@@ -54,7 +54,7 @@ export type Place = {
   terminalLabel: string
 }
 
-/** One time hookwich put something in, for the window's feed. */
+/** One time hoochi put something in, for the window's feed. */
 export type Fired = {
   event: string
   at: number
@@ -66,7 +66,7 @@ export type Fired = {
   id?: string
 }
 
-/** What the window reads to light up the lifecycle: ~/.hookwich/activity-<agent>.json */
+/** What the window reads to light up the lifecycle: ~/.hoochi/activity-<agent>.json */
 export type Activity = {
   lastEvent: string
   lastAt: number
@@ -83,7 +83,7 @@ export type ContextRow = { name: string; tokens: number; kind: 'used' | 'free' |
 
 /**
  * What /context shows for one terminal's chat, kept fresh while it works:
- * ~/.hookwich/context/<terminal file>.json, read by the window.
+ * ~/.hoochi/context/<terminal file>.json, read by the window.
  */
 export type ContextSnapshot = {
   v: 1
@@ -120,6 +120,6 @@ export type SkillGroup = {
 declare module 'claude-code' {
   interface PluginState {
     /** started: the chat (session id) whose chat-start moment already ran, kept across a reload */
-    hookwich: { activity: Shaped<Activity>; reloaded: string; started: string }
+    hoochi: { activity: Shaped<Activity>; reloaded: string; started: string }
   }
 }

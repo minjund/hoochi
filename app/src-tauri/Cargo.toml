@@ -1,15 +1,15 @@
 [package]
-name = "hookwich"
-version = "0.1.27"
+name = "hoochi"
+version = "0.1.28"
 description = "Sandwich anything around Claude Code's lifecycle"
 authors = ["minjund"]
 license = "MIT"
-repository = "https://github.com/minjund/hookwich"
+repository = "https://github.com/minjund/hoochi"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "hookwich_lib"
+name = "hoochi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

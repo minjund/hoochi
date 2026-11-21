@@ -56,7 +56,7 @@ export function SkillsPanel({
           const i = k.name.indexOf(':')
           if (i < 0) return [{ name: k.name, kind: 'user', tokens: 0 }]
           const plugin = k.name.slice(0, i)
-          return installed.has(plugin.toLowerCase()) && plugin !== 'hookwich'
+          return installed.has(plugin.toLowerCase()) && plugin !== 'hoochi'
             ? [{ name: k.name, kind: 'plugin', plugin, tokens: 0 }]
             : []
         })
@@ -81,7 +81,7 @@ export function SkillsPanel({
     // Plugins switched off are not listed to Claude, so they come from the settings instead.
     for (const p of state.plugins) {
       const listed = [...byKey.values()].some(g => g.kind === 'plugin' && same(g.key.slice('plugin:'.length), p.name))
-      if (p.on || p.name === 'hookwich' || listed) continue
+      if (p.on || p.name === 'hoochi' || listed) continue
       byKey.set(`plugin:${p.name}`, {
         key: `plugin:${p.name}`,
         kind: 'plugin',
@@ -111,11 +111,11 @@ export function SkillsPanel({
 
   // Only what can be switched from here: a skill of yours or a built-in one by itself, a plugin
   // as a whole (one row, its skills not listed one by one). Skills synced from claude.ai, ones of
-  // unknown origin, and hookwich itself are left out; how many is said once, at the end.
+  // unknown origin, and hoochi itself are left out; how many is said once, at the end.
   const canSwitch = (g: Group) =>
     g.kind === 'off' ||
     (g.kind !== 'plugin' && ONE_BY_ONE.has(g.kind)) ||
-    (g.kind === 'plugin' && g.plugin !== undefined && !g.plugin.key.startsWith('hookwich@'))
+    (g.kind === 'plugin' && g.plugin !== undefined && !g.plugin.key.startsWith('hoochi@'))
   const usable = groups.filter(canSwitch)
   const hidden = groups
     .filter(g => !canSwitch(g))

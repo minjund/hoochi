@@ -1,4 +1,4 @@
-// The Claude Code hook lifecycle as hookwich draws it. Every hook event is a
+// The Claude Code hook lifecycle as hoochi draws it. Every hook event is a
 // slot: put text, commands or skills into it and the plugin hands them over
 // when that event fires. The diagram's layout follows the official hooks
 // lifecycle figure: https://code.claude.com/docs/en/hooks#hook-lifecycle
@@ -41,7 +41,7 @@ export type Scope = 'global' | 'project' | 'terminal'
 /** Where a session runs. */
 export type Place = { project: string; terminal: string; terminalLabel: string }
 
-/** Projects and terminals hookwich has seen, from ~/.hookwich/places.json. */
+/** Projects and terminals hoochi has seen, from ~/.hoochi/places.json. */
 export type Places = {
   /** `git` is set by the app: whether the folder is a git project */
   projects: Record<string, { lastSeen: number; git?: boolean }>
@@ -172,7 +172,7 @@ export const CLASSIC_ONLY: ReadonlySet<string> = new Set([
   'WorktreeRemove',
 ])
 
-/** Whether the classic hooks reach hookwich on this computer, as the plugin last found. */
+/** Whether the classic hooks reach hoochi on this computer, as the plugin last found. */
 export type ClassicReach = 'open' | 'blocked' | 'unknown'
 
 /** The moments that cannot run here: none unless the plugin found the classic hooks blocked. */

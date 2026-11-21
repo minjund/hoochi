@@ -1,5 +1,5 @@
-//! The hookwich window: a little always-on-top bubble that opens into the
-//! editor, hides to the menu bar, and reads/writes ~/.hookwich.
+//! The hoochi window: a little always-on-top bubble that opens into the
+//! editor, hides to the menu bar, and reads/writes ~/.hoochi.
 //!
 //! The Claude Code side (the plugin) reads config.json on every hook event,
 //! writes activity.json, and writes control.json to show or hide this window.
@@ -38,7 +38,7 @@ fn home() -> PathBuf {
 }
 
 fn data_dir() -> PathBuf {
-    home().join(".hookwich")
+    home().join(".hoochi")
 }
 
 fn read_or(path: &Path, fallback: &str) -> String {
@@ -93,7 +93,7 @@ fn read_state() -> Snapshot {
     }
 }
 
-/// Hooks already set up outside hookwich, for one project folder.
+/// Hooks already set up outside hoochi, for one project folder.
 #[tauri::command]
 async fn existing_hooks(project: String) -> Value {
     existing::existing(&project)
@@ -148,7 +148,7 @@ fn set_plugin(key: String, on: bool) -> Result<Value, String> {
     Ok(skills::state())
 }
 
-/// Whether a newer hookwich is out, and what the last update did.
+/// Whether a newer hoochi is out, and what the last update did.
 #[tauri::command]
 async fn check_update() -> Value {
     update::check()
@@ -438,7 +438,7 @@ fn bring_on_screen(window: &WebviewWindow) {
     }
 }
 
-/// Watches control.json, which the plugin's /hookwich command writes.
+/// Watches control.json, which the plugin's /hoochi command writes.
 fn watch_control(app: AppHandle) {
     thread::spawn(move || {
         let path = data_dir().join("control.json");
@@ -497,13 +497,20 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let _ = fs::create_dir_all(data_dir());
+            // Codex hooks set up by an older copy (hookwich, or another place) run this one now;
+            // only from an installed .app, so a dev build does not take them over.
+            if let Ok(exe) = std::env::current_exe() {
+                if update::bundle_of(&exe).is_some() {
+                    let _ = codex::repoint(&exe);
+                }
+            }
             let config = data_dir().join("config.json");
             if !config.exists() {
                 let _ = fs::write(&config, EMPTY_CONFIG);
             }
 
             let show_hide = MenuItemBuilder::with_id("toggle", "Show / Hide").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit Hookwich").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit Hoochi").build(app)?;
             let menu = MenuBuilder::new(app)
                 .items(&[&show_hide, &quit_item])
                 .build()?;
@@ -512,7 +519,7 @@ pub fn run() {
                     "../icons/tray.png"
                 ))?)
                 .icon_as_template(true)
-                .tooltip("Hookwich")
+                .tooltip("Hoochi")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -556,7 +563,7 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running hookwich");
+        .expect("error while running hoochi");
 }
 
 #[cfg(test)]

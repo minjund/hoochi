@@ -15,18 +15,18 @@ import type {
   SkillRule,
 } from '../types'
 
-// hookwich: put text, commands or skills before or after any Claude Code hook
-// event. The window edits ~/.hookwich/config.json (everywhere / per project /
+// hoochi: put text, commands or skills before or after any Claude Code hook
+// event. The window edits ~/.hoochi/config.json (everywhere / per project /
 // per terminal); this module reads it on every event and puts the enabled items
 // of the narrowest scope in. It writes activity-claude.json for the window to
 // light up, places.json so the window knows the projects and terminals, and
 // control.json to show or hide the window, and context/<terminal>.json with what /context
 // shows for that terminal's chat.
 
-const APP_NAME = 'Hookwich.app'
+const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.27'
-const RELEASE = `https://github.com/minjund/hookwich/releases/download/v${APP_VERSION}`
+export const APP_VERSION = '0.1.28'
+const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
 
@@ -74,7 +74,7 @@ export function byYou(origin: unknown): boolean {
  */
 let interactive = true
 
-const activity = atom({ plugin: 'hookwich', key: 'activity' } as const, emptyActivity(), {
+const activity = atom({ plugin: 'hoochi', key: 'activity' } as const, emptyActivity(), {
   shape: 'activity-2',
 })
 
@@ -341,11 +341,11 @@ async function appPath($: EngineInterface, dir: string): Promise<string | undefi
 type AppTrouble = 'not-mac' | 'download' | 'checksum' | 'unzip' | 'update'
 
 const TROUBLE: Record<AppTrouble, string> = {
-  'not-mac': 'hookwich: the window app is macOS only',
-  download: 'hookwich: could not download the window app (offline, or no release yet) — see the README',
-  checksum: 'hookwich: the downloaded window app did not match its checksum, so it was not opened',
-  unzip: 'hookwich: could not unpack the window app',
-  update: `hookwich: could not update the window app to ${APP_VERSION}; the one you have is still running`,
+  'not-mac': 'hoochi: the window app is macOS only',
+  download: 'hoochi: could not download the window app (offline, or no release yet) — see the README',
+  checksum: 'hoochi: the downloaded window app did not match its checksum, so it was not opened',
+  unzip: 'hoochi: could not unpack the window app',
+  update: `hoochi: could not update the window app to ${APP_VERSION}; the one you have is still running`,
 }
 
 const isTrouble = (v: string): v is AppTrouble => v in TROUBLE
@@ -371,13 +371,13 @@ async function appVersion($: EngineInterface, path: string): Promise<string | un
 
 /**
  * Downloads this plugin's version of the app, checks its SHA-256 and signature, and puts it at
- * ~/.hookwich/Hookwich.app, stopping a running older copy first. Returns its path, or why not.
+ * ~/.hoochi/Hoochi.app, stopping a running older copy first. Returns its path, or why not.
  */
 async function installApp($: EngineInterface, dir: string, old?: string): Promise<string | AppTrouble> {
   const run = (argv: string[], timeoutMs?: number) =>
     $.process.run(argv, timeoutMs ? { timeoutMs } : undefined)
   const arch = (await run(['/usr/bin/uname', '-m'])).stdout.trim() === 'arm64' ? 'arm64' : 'x64'
-  const name = `Hookwich-macos-${arch}.zip`
+  const name = `Hoochi-macos-${arch}.zip`
   const zip = `${dir}/${name}`
   const got = await run(['/usr/bin/curl', '-fsSL', '-o', zip, `${RELEASE}/${name}`], 120_000)
   const sums = await run(['/usr/bin/curl', '-fsSL', `${RELEASE}/${name}.sha256`], 30_000)
@@ -392,7 +392,7 @@ async function installApp($: EngineInterface, dir: string, old?: string): Promis
   if ((await run(['/usr/bin/ditto', '-x', '-k', zip, fresh])).exitCode !== 0) return 'unzip'
   const verified = await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `${fresh}/${APP_NAME}`])
   if (verified.exitCode !== 0) return 'unzip'
-  if (old !== undefined) await run(['/usr/bin/pkill', '-f', `${old}/Contents/MacOS/hookwich`])
+  if (old !== undefined) await run(['/usr/bin/pkill', '-f', `${old}/Contents/MacOS/hoochi`])
   const target = `${dir}/${APP_NAME}`
   await run(['/bin/rm', '-rf', `${dir}/.old-${APP_NAME}`])
   if (await $.fs.exists(target).catch(() => false)) await run(['/bin/mv', target, `${dir}/.old-${APP_NAME}`])
@@ -472,7 +472,7 @@ export async function noteTyping($: EngineInterface): Promise<boolean> {
   const now = await $.clock.now()
   if (now - lastTypingCheck < 1000) return false
   lastTypingCheck = now
-  const dir = `${await home($)}/.hookwich`
+  const dir = `${await home($)}/.hoochi`
   const place = await placeOf($)
   const known = newestChat(
     await chatOnDisk($, `${dir}/activity-claude.json`),
@@ -487,7 +487,7 @@ export async function noteTyping($: EngineInterface): Promise<boolean> {
 
 /** You sent a message here (your own Enter): this terminal is where you are chatting. */
 export async function noteSent($: EngineInterface): Promise<void> {
-  const dir = `${await home($)}/.hookwich`
+  const dir = `${await home($)}/.hoochi`
   const [now, place] = await Promise.all([$.clock.now(), placeOf($)])
   const seen: Activity = { ...(await read($, activity)), lastChat: { at: now, place } }
   await update($, activity, () => seen)
@@ -580,7 +580,7 @@ export async function noteContext($: EngineInterface, force = false): Promise<bo
   const b = usage.context.breakdown
   if (!b) return false
   contextDir ??= (async () => {
-    const dir = `${await home($)}/.hookwich/context`
+    const dir = `${await home($)}/.hoochi/context`
     await $.process.run(['/bin/mkdir', '-p', dir])
     return dir
   })()
@@ -593,12 +593,12 @@ export async function noteContext($: EngineInterface, force = false): Promise<bo
   return true
 }
 
-/** Claude Code's record of the plugins installed, and hookwich's entry in it. */
+/** Claude Code's record of the plugins installed, and hoochi's entry in it. */
 const INSTALLED = '.claude/plugins/installed_plugins.json'
-const PLUGIN_KEY = 'hookwich@hookwich'
+const PLUGIN_KEY = 'hoochi@hoochi'
 const RELOAD_CHECK_MS = 10_000
 
-/** The newest hookwich Claude Code has installed; none when the record cannot be read. */
+/** The newest hoochi Claude Code has installed; none when the record cannot be read. */
 export function installedVersion(record: string | undefined): string | undefined {
   try {
     const plugins = (JSON.parse(record ?? '') as Loose).plugins as Loose | undefined
@@ -612,11 +612,43 @@ export function installedVersion(record: string | undefined): string | undefined
   }
 }
 
-/** The version this chat last reloaded for; kept across the reload, so one that did not take is not tried again. */
-const reloaded = atom({ plugin: 'hookwich', key: 'reloaded' } as const, '')
+/** hoochi was called hookwich before 0.1.28: its folder, window and plugin went by that name. */
+const OLD_DIR = '.hookwich'
+export const OLD_PLUGIN_KEY = 'hookwich@hookwich'
 
 /**
- * A newer hookwich was installed (the window's Update button, or `claude plugin update`) while
+ * Moves the folder kept under the old name (~/.hookwich) to ~/.hoochi, once: what you put in,
+ * the places and the records come along. The old window is stopped and its app left out, since
+ * this plugin installs the new one. Nothing happens once ~/.hoochi exists.
+ */
+export async function moveOldFolder($: EngineInterface): Promise<boolean> {
+  const h = await home($)
+  const old = `${h}/${OLD_DIR}`
+  const dir = `${h}/.hoochi`
+  const there = (p: string) => $.fs.exists(p).catch(() => false)
+  if (!(await there(old)) || (await there(dir))) return false
+  const run = (argv: string[]) => $.process.run(argv).catch(() => undefined)
+  await run(['/usr/bin/pkill', '-f', `${old}/Hookwich.app/Contents/MacOS/hookwich`])
+  if ((await run(['/bin/mv', old, dir]))?.exitCode !== 0) return false
+  await run(['/bin/rm', '-rf', `${dir}/Hookwich.app`, `${dir}/.update`])
+  return true
+}
+
+/** Whether the plugin under the old name is still installed (it would open its own window). */
+export function oldPluginInstalled(record: string | undefined): boolean {
+  try {
+    const plugins = (JSON.parse(record ?? '') as Loose).plugins as Loose | undefined
+    return plugins?.[OLD_PLUGIN_KEY] !== undefined
+  } catch {
+    return false
+  }
+}
+
+/** The version this chat last reloaded for; kept across the reload, so one that did not take is not tried again. */
+const reloaded = atom({ plugin: 'hoochi', key: 'reloaded' } as const, '')
+
+/**
+ * A newer hoochi was installed (the window's Update button, or `claude plugin update`) while
  * this chat runs the old one: it runs /reload-plugins once, which Claude Code holds until the chat
  * is idle, so the new version applies here without starting Claude Code again.
  */
@@ -626,7 +658,7 @@ export async function reloadIfUpdated($: EngineInterface): Promise<boolean> {
   if (version === undefined || !newer(version, APP_VERSION)) return false
   if ((await read($, reloaded)) === version) return false
   await update($, reloaded, () => version)
-  $.ui.toast(`hookwich ${version}: reloading plugins so this chat uses it`)
+  $.ui.toast(`hoochi ${version}: reloading plugins so this chat uses it`)
   await $.command.run({ command: 'reload-plugins' })
   return true
 }
@@ -667,13 +699,13 @@ export function noteOnce(log: OnceLog, session: string, ids: readonly string[], 
 }
 
 /**
- * The moments hookwich serves from Claude Code's own events (prompt.submit, tool.call,
+ * The moments hoochi serves from Claude Code's own events (prompt.submit, tool.call,
  * turn.complete, agent.spawn, session.start/end/compact) rather than the settings hooks'
  * classic ones. An organization's policy plugin (sec-default, on Team and Enterprise plans)
- * passes every classic event on beneath a person's plugins, so these would never reach hookwich
- * there. hookwich does not hook their classic events, so nothing goes in twice where both arrive.
+ * passes every classic event on beneath a person's plugins, so these would never reach hoochi
+ * there. hoochi does not hook their classic events, so nothing goes in twice where both arrive.
  *
- * After changing model has no native event of its own: hookwich sees the model differ from the
+ * After changing model has no native event of its own: hoochi sees the model differ from the
  * last prompt's and puts its words in with the next prompt, where the classic hook's words would
  * have reached the model too.
  */
@@ -696,7 +728,7 @@ export const NATIVE: ReadonlySet<string> = new Set([
 
 /**
  * The moments the window offers that have no native event: served by their classic hook alone,
- * so they work where the classic hooks reach hookwich (not under sec-default). The window keeps
+ * so they work where the classic hooks reach hoochi (not under sec-default). The window keeps
  * the same list (CLASSIC_ONLY in app/src/lib/lifecycle.ts) to dim them where they cannot run.
  */
 export const CLASSIC_ONLY = [
@@ -738,7 +770,7 @@ type Moment = {
 
 /** Runs the enabled items for this moment and records it; returns what goes to the model. */
 async function gather($: EngineInterface, event: string, m: Moment): Promise<string[]> {
-  const dir = `${await home($)}/.hookwich`
+  const dir = `${await home($)}/.hoochi`
   const config = await readConfig($, dir)
   const place = await placeOf($)
   const chosen = pick(config.claude, event, place)
@@ -834,13 +866,13 @@ async function sessionId($: EngineInterface): Promise<string> {
 }
 
 /** The chat whose chat-start moment already ran: a reload runs session.start again, not it. */
-const startedChat = atom({ plugin: 'hookwich', key: 'started' } as const, '')
+const startedChat = atom({ plugin: 'hoochi', key: 'started' } as const, '')
 
 /** What the chat-start moment said, waiting for the first prompt to carry it to the model. */
 let startWords: string[] = []
 /** A new chat began without a session.start (/clear): its chat-start moment runs at the next prompt. */
 let startOwed = false
-/** hookwich made Claude keep going after a turn: that turn's end does not ask again. */
+/** hoochi made Claude keep going after a turn: that turn's end does not ask again. */
 let keptGoing = false
 
 /** Runs a moment and gives back the one block it says, if any; never throws. */
@@ -853,33 +885,33 @@ async function say($: EngineInterface, event: string, m: Moment): Promise<string
   }
 }
 
-/** A prompt hookwich itself sent to keep Claude going. */
-function fromHookwich(origin: unknown): boolean {
+/** A prompt hoochi itself sent to keep Claude going. */
+function fromHoochi(origin: unknown): boolean {
   const o = origin as { kind?: unknown; name?: unknown } | undefined
-  return o?.kind === 'plugin' && o.name === 'hookwich'
+  return o?.kind === 'plugin' && o.name === 'hoochi'
 }
 
 /**
- * Whether the classic hooks reach hookwich on this computer: `~/.hookwich/classic-claude.json`,
+ * Whether the classic hooks reach hoochi on this computer: `~/.hoochi/classic-claude.json`,
  * read by the window to dim the moments in CLASSIC_ONLY where they cannot run.
  */
 export type ClassicReach = { reach: 'open' | 'blocked'; at: number }
 
-/** Answered turns with no classic event at all before hookwich calls the classic hooks blocked. */
+/** Answered turns with no classic event at all before hoochi calls the classic hooks blocked. */
 export const QUIET_TURNS = 2
 
-/** A classic event reached hookwich in this process. */
+/** A classic event reached hoochi in this process. */
 let classicSeen = false
 /** Answered turns in a row with no classic event; MessageDisplay comes with every answer. */
 let quietTurns = 0
 /** What this process last wrote, so it writes only a change. */
 let reachWritten: ClassicReach['reach'] | undefined
 
-/** Notes whether classic events reach hookwich, when that differs from what the file says. */
+/** Notes whether classic events reach hoochi, when that differs from what the file says. */
 async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Promise<void> {
   if (reachWritten === reach) return
   reachWritten = reach
-  const path = `${await home($)}/.hookwich/classic-claude.json`
+  const path = `${await home($)}/.hoochi/classic-claude.json`
   let had: unknown
   try {
     had = JSON.parse((await readText($, path)) ?? '{}')
@@ -891,7 +923,7 @@ async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Prom
   await $.fs.write(path, JSON.stringify(body))
 }
 
-/** The main loop's model when the last prompt went in; undefined until hookwich first asks. */
+/** The main loop's model when the last prompt went in; undefined until hoochi first asks. */
 let lastModel: string | undefined
 
 /** The main loop's model, or undefined when the engine cannot say. */
@@ -914,7 +946,7 @@ async function classicMoment(
   try {
     return (await sandwich($, event, e, result)) as never
   } catch {
-    // hookwich never breaks a hook: on any trouble, the answer stays as it was
+    // hoochi never breaks a hook: on any trouble, the answer stays as it was
     return result
   }
 }
@@ -924,10 +956,13 @@ export const register: Register = on => {
     interactive = e.isInteractive !== false
     const started = await next(e)
     await $.command.register({
-      name: 'hookwich',
-      description: 'Show or hide the hookwich window (show | hide | toggle)',
+      name: 'hoochi',
+      description: 'Show or hide the hoochi window (show | hide | toggle)',
     })
-    const dir = `${await home($)}/.hookwich`
+    await moveOldFolder($).catch(() => false)
+    if (interactive && oldPluginInstalled(await readText($, `${await home($)}/${INSTALLED}`)))
+      $.ui.toast(`hookwich is now hoochi: remove the old plugin with  claude plugin uninstall ${OLD_PLUGIN_KEY}`)
+    const dir = `${await home($)}/.hoochi`
     if (!(await $.fs.exists(`${dir}/config.json`).catch(() => false))) {
       const empty = { global: [], projects: {}, terminals: {} }
       await $.fs.write(
@@ -1038,15 +1073,15 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'hookwich' }, async ($, e) => {
-    const dir = `${await home($)}/.hookwich`
+  on('command.run', { command: 'hoochi' }, async ($, e) => {
+    const dir = `${await home($)}/.hoochi`
     const word = (typeof e.args === 'string' ? e.args : '').trim()
     const cmd = word === 'show' || word === 'hide' ? word : 'toggle'
     const trouble = await ensureApp($, dir)
     showTrouble($, trouble)
     await sendControl($, dir, cmd)
 
-    return { text: trouble === undefined ? `hookwich: ${cmd}` : `${TROUBLE[trouble]}.` }
+    return { text: trouble === undefined ? `hoochi: ${cmd}` : `${TROUBLE[trouble]}.` }
   })
 
   // Typing in the prompt box: "where you are chatting" moves here at the first key, not on send.
@@ -1059,8 +1094,8 @@ export const register: Register = on => {
 
   on('prompt.submit', async ($, e, next) => {
     const words: string[] = []
-    // Engine notices and hookwich's own "keep going" are not your prompt.
-    if (e.isMeta !== true && !fromHookwich(e.origin)) {
+    // Engine notices and hoochi's own "keep going" are not your prompt.
+    if (e.isMeta !== true && !fromHoochi(e.origin)) {
       const session = await sessionId($)
       if (startOwed) {
         startOwed = false

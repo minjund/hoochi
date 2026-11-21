@@ -20,7 +20,7 @@ type Props = {
   agent: Agent
   /** how this scope relates to the others for this moment */
   note?: string
-  /** hooks already set up outside hookwich for this moment, shown read-only */
+  /** hooks already set up outside hoochi for this moment, shown read-only */
   existing?: ExistingHook[]
   /** switch an existing hook off or back on */
   onToggleExisting?(hook: ExistingHook, on: boolean): void
@@ -28,7 +28,7 @@ type Props = {
   lastRun?: Readonly<Record<string, number>>
   /** more about this moment, shown under its explanation */
   extra?: ReactNode
-  /** Claude Code never hands this moment to hookwich here (sec-default passes its classic hook by) */
+  /** Claude Code never hands this moment to hoochi here (sec-default passes its classic hook by) */
   blocked?: boolean
   /** a saved item changed: its content by Save, its switch at once */
   onChange(item: Item): void

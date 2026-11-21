@@ -12,7 +12,7 @@ export type LifecycleDiagramProps = {
   onSelect(event: string): void
   /** the language the labels are drawn in */
   lang: Lang
-  /** hooks already set up outside hookwich, per event: drawn as a grey number at the top left */
+  /** hooks already set up outside hoochi, per event: drawn as a grey number at the top left */
   existing?: Readonly<Record<string, number>>
   /** what a moment holds, shown in a card while the pointer rests on its box */
   describe?(event: string): ReactNode
@@ -132,7 +132,7 @@ export const CLAUDE_LAYOUT: DiagramLayout = {
     { x: 160, y: 1029, width: 190, events: ['PostCompact'], tone: 'neutral' },
     { x: 160, y: 1102, width: 190, events: ['SessionEnd'], tone: 'neutral' },
     // Moments with no fixed place in the order: the official figure stacks them at the bottom
-    // left, which reads as if they came after Stop. hookwich gathers them in an "anytime" band.
+    // left, which reads as if they came after Stop. hoochi gathers them in an "anytime" band.
     { x: 24, y: 1206, width: 150, events: ['InstructionsLoaded'], tone: 'side' },
     { x: 186, y: 1206, width: 150, events: ['WorktreeCreate'], tone: 'side' },
     { x: 348, y: 1206, width: 150, events: ['ConfigChange'], tone: 'side' },
@@ -785,7 +785,7 @@ export function LifecycleDiagram({
         <desc id={`${id}-description`}>
           Select a hook event to edit its items. Tab moves between events; Enter or Space selects one. Badges
           count enabled items. A hollow badge means all items are disabled. A grey badge at the top left
-          counts hooks already set up outside hookwich.
+          counts hooks already set up outside hoochi.
         </desc>
         <defs>
           <filter
