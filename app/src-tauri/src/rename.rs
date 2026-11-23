@@ -2,6 +2,11 @@
 //! `Hookwich-macos-<arch>.zip` and puts it at ~/.hookwich/Hookwich.app, so each release also
 //! ships the window under that name. Opened from there, the window moves ~/.hookwich to
 //! ~/.hoochi and itself to Hoochi.app, swaps the hookwich plugin for hoochi, and opens again.
+//!
+//! Chats opened before the update keep running the old plugin until they reload, and it reads and
+//! writes ~/.hookwich. So the old names stay as links: ~/.hookwich → ~/.hoochi (what you put in
+//! still reaches those chats) and ~/.hoochi/Hookwich.app → Hoochi.app (the old plugin finds a
+//! window as new as its own and opens this one rather than download its own).
 
 use std::{
     fs,
@@ -26,6 +31,10 @@ const NEW_MARKET: &str = "minjund/hoochi";
 pub fn move_in(home: &Path, exe: &Path) -> Result<Option<PathBuf>, String> {
     let Some(bundle) = bundle_of(exe) else { return Ok(None) };
     let (old, new) = (home.join(OLD_DIR), home.join(NEW_DIR));
+    // Opened through the links left below: it is already in place.
+    if is_link(&old) || is_link(&bundle) {
+        return Ok(None);
+    }
     let ours = bundle.file_name().is_some_and(|n| n == OLD_APP) && bundle.parent() == Some(old.as_path());
     if !ours {
         return Ok(None);
@@ -40,6 +49,31 @@ pub fn move_in(home: &Path, exe: &Path) -> Result<Option<PathBuf>, String> {
     let _ = fs::remove_dir_all(&target);
     fs::rename(&bundle, &target).map_err(|e| format!("could not rename the window: {e}"))?;
     Ok(Some(target))
+}
+
+fn is_link(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink())
+}
+
+/// Leaves the old names as links to the new ones (see the top of this file). A ~/.hookwich that an
+/// old chat wrote again after the move (records only: no config.json, no window) is replaced.
+pub fn link_old(home: &Path) -> Result<(), String> {
+    let (old, new) = (home.join(OLD_DIR), home.join(NEW_DIR));
+    if !new.join(NEW_APP).is_dir() {
+        return Ok(());
+    }
+    let leftover = old.is_dir() && !is_link(&old) && !old.join("config.json").exists() && !old.join(OLD_APP).exists();
+    if leftover {
+        fs::remove_dir_all(&old).map_err(|e| e.to_string())?;
+    }
+    if fs::symlink_metadata(&old).is_err() {
+        std::os::unix::fs::symlink(&new, &old).map_err(|e| e.to_string())?;
+    }
+    let app_link = new.join(OLD_APP);
+    if fs::symlink_metadata(&app_link).is_err() {
+        std::os::unix::fs::symlink(NEW_APP, &app_link).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn installed(home: &Path) -> Value {
@@ -136,6 +170,41 @@ mod tests {
         assert_eq!(move_in(&h, &exe).unwrap(), None);
         assert!(h.join(OLD_DIR).exists());
         assert_eq!(move_in(&h, Path::new("/tmp/target/debug/hoochi")).unwrap(), None);
+    }
+
+    #[test]
+    fn the_old_names_are_left_as_links() {
+        let h = home("links");
+        let exe = app_at(&h.join(OLD_DIR), OLD_APP);
+        fs::write(h.join(OLD_DIR).join("config.json"), "{}").unwrap();
+        move_in(&h, &exe).unwrap();
+        link_old(&h).unwrap();
+        assert!(is_link(&h.join(OLD_DIR)));
+        assert!(h.join(OLD_DIR).join("config.json").exists(), "old chats still read what you put in");
+        assert!(h.join(NEW_DIR).join(OLD_APP).join("Contents/MacOS/hoochi").exists());
+        // Opened through either link, nothing moves or is removed.
+        let through = h.join(OLD_DIR).join(OLD_APP).join("Contents/MacOS/hoochi");
+        assert_eq!(move_in(&h, &through).unwrap(), None);
+        assert!(h.join(NEW_DIR).join(NEW_APP).is_dir());
+        link_old(&h).unwrap();
+        assert!(is_link(&h.join(OLD_DIR)));
+    }
+
+    #[test]
+    fn records_an_old_chat_wrote_after_the_move_give_way_to_the_link() {
+        let h = home("leftover");
+        app_at(&h.join(NEW_DIR), NEW_APP);
+        fs::create_dir_all(h.join(OLD_DIR).join("context")).unwrap();
+        fs::write(h.join(OLD_DIR).join("activity-claude.json"), "{}").unwrap();
+        link_old(&h).unwrap();
+        assert!(is_link(&h.join(OLD_DIR)));
+        // One still holding what you put in is never replaced.
+        let h = home("kept");
+        app_at(&h.join(NEW_DIR), NEW_APP);
+        fs::create_dir_all(h.join(OLD_DIR)).unwrap();
+        fs::write(h.join(OLD_DIR).join("config.json"), "{}").unwrap();
+        link_old(&h).unwrap();
+        assert!(!is_link(&h.join(OLD_DIR)));
     }
 
     #[test]

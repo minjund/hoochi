@@ -389,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.29/Hoochi-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.30/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -407,7 +407,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.29'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.30'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hoochi/Hoochi.app'
@@ -992,12 +992,13 @@ const OLD_MOVE = [
   '/usr/bin/pkill -f /home/me/.hookwich/Hookwich.app/Contents/MacOS/hookwich',
   '/bin/mv /home/me/.hookwich /home/me/.hoochi',
   '/bin/rm -rf /home/me/.hoochi/Hookwich.app /home/me/.hoochi/.update',
+  '/bin/ln -s /home/me/.hoochi /home/me/.hookwich',
 ]
 
 test('the folder kept under the old name (hookwich) moves to ~/.hoochi once, its old window stopped', async ($, on) => {
   const { ran } = machine(on, { '/home/me/.hookwich': '' })
   const toasts = await startChat($, on)
-  expect(ran.slice(0, 3)).toEqual(OLD_MOVE)
+  expect(ran.slice(0, 4)).toEqual(OLD_MOVE)
   expect(toasts).toEqual([])
 })
 

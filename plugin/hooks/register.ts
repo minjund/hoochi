@@ -25,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.29'
+export const APP_VERSION = '0.1.30'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000
@@ -619,7 +619,8 @@ export const OLD_PLUGIN_KEY = 'hookwich@hookwich'
 /**
  * Moves the folder kept under the old name (~/.hookwich) to ~/.hoochi, once: what you put in,
  * the places and the records come along. The old window is stopped and its app left out, since
- * this plugin installs the new one. Nothing happens once ~/.hoochi exists.
+ * this plugin installs the new one, and ~/.hookwich is left as a link here. Nothing happens once
+ * ~/.hoochi exists.
  */
 export async function moveOldFolder($: EngineInterface): Promise<boolean> {
   const h = await home($)
@@ -631,6 +632,8 @@ export async function moveOldFolder($: EngineInterface): Promise<boolean> {
   await run(['/usr/bin/pkill', '-f', `${old}/Hookwich.app/Contents/MacOS/hookwich`])
   if ((await run(['/bin/mv', old, dir]))?.exitCode !== 0) return false
   await run(['/bin/rm', '-rf', `${dir}/Hookwich.app`, `${dir}/.update`])
+  // Chats still on the old plugin read ~/.hookwich until they reload: keep it pointing here.
+  await run(['/bin/ln', '-s', dir, old])
   return true
 }
 

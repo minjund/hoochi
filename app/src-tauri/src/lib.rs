@@ -515,6 +515,7 @@ pub fn run() {
             // only from an installed .app, so a dev build does not take them over.
             if let Ok(exe) = std::env::current_exe() {
                 if update::bundle_of(&exe).is_some() {
+                    let _ = rename::link_old(&home());
                     let _ = codex::repoint(&exe);
                 }
             }
