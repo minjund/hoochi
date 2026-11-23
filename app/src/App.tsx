@@ -11,6 +11,8 @@ import { ContextGlance, type ContextFocus } from './components/hoochi/context-vi
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
 import { FirstSteps, MAIN_EVENTS, MomentList, RECIPES } from './components/hoochi/moment-list'
+import { SendSheet, type Target } from './components/hoochi/send-sheet'
+import { alsoIn, hasAll, hiddenHere, sendTo, type PlaceRef } from './lib/copy'
 import hoochiIcon from './assets/hoochi-icon.svg'
 import { Button } from './components/ui/button'
 import { DropdownMenu } from './components/ui/dropdown-menu'
@@ -210,7 +212,7 @@ const HideIcon = (
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
 /** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | null
+type Modal = 'mine' | 'skills' | 'send' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -701,67 +703,45 @@ export default function App() {
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
   }, [asking])
-  /** Copying into a place waits for a yes: a wrong tap would fill every project. */
-  const askCopy = (n: number, where: string, run: () => void) =>
-    ask({ message: t.askApply(n, where), yes: t.applyYes, danger: false, near: 'controls', run })
-  const loadFrom = (from: Scope) => {
-    const fromKey = from === 'project' ? terminalProject : ''
-    const merged = mergeItems(list, listOf(config[agent], from, fromKey), newId)
+  // Sending items to other places: one sheet picks what and where; an undo follows, no second ask.
+  const [sendPicked, setSendPicked] = useState<ReadonlySet<string>>(new Set())
+  const filled = list.filter(itemFilled)
+  const sendTargets: Target[] = [
+    ...(scope !== 'global' ? [{ place: { scope: 'global' as const, key: '' }, name: t.scopes.global }] : []),
+    ...allProjects
+      .filter(p => !(scope === 'project' && p === projectKey))
+      .map(p => ({ place: { scope: 'project' as const, key: p }, name: folderName(p) })),
+  ]
+  const openSend = (ids: string[]) => {
+    setSendPicked(new Set(ids))
+    setModal('send')
+  }
+  const itemWords = (items: Item[]) =>
+    items.length === 1 ? `‘${itemLabel(items[0])}’` : t.itemsCount(items.length)
+  const sendItems = (items: Item[], places: PlaceRef[]) => {
+    const r = sendTo(config, agent, items, places, newId)
+    setModal(null)
+    const names = sendTargets.filter(x => places.some(p => p.scope === x.place.scope && p.key === x.place.key))
+    act(r.config, t.sentDone(itemWords(items), names.map(x => x.name).join(' · ')))
+  }
+  // What a broader place puts in at a moment that this place's own items hide.
+  const here: PlaceRef = { scope, key }
+  const hiddenFor = (event: string) => {
+    if (!scopeReady) return null
+    const found = hiddenHere(config, agent, here, terminalHasProject ? terminalProject : '', event)
+    if (found.length === 0) return null
+    const items = found.flatMap(h => h.items)
+    const from = found
+      .map(h => (h.place.scope === 'global' ? t.scopes.global : t.placeProject(folderName(h.place.key))))
+      .join(' · ')
+    return { what: itemWords(items), from, items }
+  }
+  const addHidden = (event: string) => {
+    const h = hiddenFor(event)
+    if (!h) return
+    const merged = mergeItems(list, h.items, newId)
     act(withList(config, agent, scope, key, merged.list), t.copied(merged.added))
   }
-  const applyGlobal = () => {
-    const merged = mergeItems(config[agent].global, list, newId)
-    act(withList(config, agent, 'global', '', merged.list), t.copied(merged.added))
-  }
-  const applyAllProjects = () => {
-    const targets = targetProjects
-    let next = config
-    let added = 0
-    for (const p of targets) {
-      const merged = mergeItems(listOf(next[agent], 'project', p), list, newId)
-      next = withList(next, agent, 'project', p, merged.list)
-      added += merged.added
-    }
-    act(next, t.copiedProjects(added, targets.length))
-  }
-  // Only what can be done here is shown.
-  const targetProjects = allProjects.filter(p => !(scope === 'project' && p === projectKey))
-  const actions: { label: string; title?: string; strong?: boolean; run(): void }[] = [
-    ...(scope !== 'global'
-      ? [
-          {
-            label: t.setFromGlobal,
-            strong: true,
-            run: () => askCopy(config[agent].global.length, t.scopes[scope], () => loadFrom('global')),
-          },
-        ]
-      : []),
-    ...(scope === 'terminal' && terminalHasProject
-      ? [
-          {
-            label: t.setFromProject,
-            title: terminalProject,
-            strong: true,
-            run: () =>
-              askCopy(listOf(config[agent], 'project', terminalProject).length, t.scopes.terminal, () =>
-                loadFrom('project'),
-              ),
-          },
-        ]
-      : []),
-    ...(list.length > 0 && targetProjects.length > 0
-      ? [
-          {
-            label: t.applyAllProjects,
-            title: targetProjects.map(folderName).join(', '),
-            run: () => askCopy(list.length, t.allProjects(targetProjects.length), applyAllProjects),
-          },
-        ]
-      : []),
-    ...(scope !== 'global' && list.length > 0
-      ? [{ label: t.applyGlobal, run: () => askCopy(list.length, t.scopes.global, applyGlobal) }]
-      : []),
-  ]
 
   const noticeBanner = notice && (
     <div className="hw-done" role={notice.kind === 'error' ? 'alert' : 'status'} data-notice={notice.kind}>
@@ -1230,17 +1210,10 @@ export default function App() {
                 ? t.terminalNow(chatName(terminalKey, terminalProject, terminalAgent))
                 : t.appliesTo(whereWords)}
           </p>
-          {scopeReady && actions.length > 0 && (
-            <DropdownMenu
-              align="end"
-              aria-label={t.copyMenu}
-              items={actions.map(a => ({ label: a.label, description: a.title, onSelect: a.run }))}
-              trigger={({ triggerProps }) => (
-                <Button size="sm" variant="ghost" {...triggerProps}>
-                  {t.copyMenu} ▾
-                </Button>
-              )}
-            />
+          {scopeReady && filled.length > 0 && sendTargets.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => openSend(filled.map(i => i.id))}>
+              {t.sendAll}
+            </Button>
           )}
         </div>
         {asking?.near === 'controls' && askBanner}
@@ -1314,6 +1287,7 @@ export default function App() {
             onAdd={addTo}
             onBack={() => setSelected(null)}
             where={whereWords}
+            onSend={sendTargets.length > 0 ? item => openSend([item.id]) : undefined}
           />
         ) : (
           <>
@@ -1342,6 +1316,9 @@ export default function App() {
               existing={existingCounts}
               unreachable={unreachable(agent, classic)}
               onSelect={setSelected}
+              hidden={hiddenFor}
+              onAddHidden={addHidden}
+              alsoIn={item => alsoIn(config, agent, here, item).length}
             />
             <button type="button" className="hw-link hw-all-toggle" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
               {showAll ? t.fewerMoments : otherFilled > 0 ? t.otherMomentsCount(otherFilled) : t.otherMoments} {showAll ? '↑' : '↓'}
@@ -1458,6 +1435,19 @@ export default function App() {
           banner={inModal}
           onSkill={(name, on) => void setSkill(name, on).then(setSkillsNow).catch(failed)}
           onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(failed)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'send' && (
+        <SendSheet
+          lang={lang}
+          agent={agent}
+          items={filled}
+          picked={sendPicked}
+          targets={sendTargets}
+          has={(place, items) => hasAll(config, agent, place, items)}
+          banner={inModal}
+          onSend={sendItems}
           onClose={() => setModal(null)}
         />
       )}

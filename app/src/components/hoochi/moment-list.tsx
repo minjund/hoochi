@@ -62,10 +62,16 @@ type Props = {
   existing: Record<string, number>
   unreachable: ReadonlySet<string>
   onSelect(event: string): void
+  /** what a broader place puts in at this moment that this place's own items hide */
+  hidden?(event: string): { what: string; from: string } | null
+  /** copy those hidden items into this place */
+  onAddHidden?(event: string): void
+  /** how many other places have the same item */
+  alsoIn?(item: Item): number
 }
 
 /** The main moments as cards, top to bottom, each with what is put in there. */
-export function MomentList({ agent, lang, items, activity, existing, unreachable, onSelect }: Props) {
+export function MomentList({ agent, lang, items, activity, existing, unreachable, onSelect, hidden, onAddHidden, alsoIn }: Props) {
   const t = UI[lang]
   const now = Date.now()
   const on = items.filter(i => i.enabled && itemFilled(i) && MAIN_EVENTS.has(i.event)).length
@@ -80,7 +86,9 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
     const just = activity.recent.some(f => f.event === event && f.id !== undefined && ids.has(f.id) && now - f.at < JUST_MS)
     const blocked = unreachable.has(event)
     const outside = existing[event] ?? 0
-    return (
+    const elsewhere = first && alsoIn ? alsoIn(first) : 0
+    const shadow = hidden?.(event) ?? null
+    const button = (
       <button
         key={event}
         type="button"
@@ -110,15 +118,33 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
         </span>
         <span className="hw-moment-side">
           {just && <span className="hw-moment-just">✓ {t.justNow}</span>}
-          {(here.length > 1 || outside > 0) && (
+          {(here.length > 1 || outside > 0 || elsewhere > 0) && (
             <span className="hw-moment-more">
-              {[here.length > 1 ? t.moreItems(here.length - 1) : '', outside > 0 ? t.existingCount(outside) : '']
+              {[
+                here.length > 1 ? t.moreItems(here.length - 1) : '',
+                elsewhere > 0 ? t.alsoIn(elsewhere) : '',
+                outside > 0 ? t.existingCount(outside) : '',
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </span>
           )}
         </span>
       </button>
+    )
+    if (!shadow) return button
+    return (
+      <div key={event} className="hw-moment-wrap" data-compact={compact || undefined}>
+        {button}
+        <div className="hw-hidden" role="note">
+          <p>{t.hiddenNote(shadow.what, shadow.from)}</p>
+          {onAddHidden && (
+            <button type="button" className="hw-hidden-add" onClick={() => onAddHidden(event)}>
+              {t.hiddenAdd}
+            </button>
+          )}
+        </div>
+      </div>
     )
   }
 

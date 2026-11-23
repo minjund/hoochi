@@ -40,6 +40,8 @@ type Props = {
   onBack(): void
   /** where what is put in here applies, as words for the preview ("in the shop project") */
   where?: string
+  /** put a saved item into other places too (opens the sheet) */
+  onSend?(item: Item): void
 }
 
 /** What Save writes; the on/off switch and Delete act at once. */
@@ -87,6 +89,7 @@ export function SlotEditor({
   onAdd,
   onBack,
   where = '',
+  onSend,
 }: Props) {
   const t = UI[lang]
   // A new item waits here until it is saved; cards with unsaved changes are listed by id.
@@ -248,6 +251,7 @@ export function SlotEditor({
           onDirty={dirty => markUnsaved(item.id, dirty)}
           lastRun={lastRun[item.id]}
           where={where}
+          onSend={onSend ? () => onSend(item) : undefined}
         />
       ))}
 
@@ -297,6 +301,7 @@ function ItemCard({
   onDirty,
   lastRun,
   where,
+  onSend,
 }: {
   item: Item
   slot: Slot
@@ -312,6 +317,7 @@ function ItemCard({
   /** when it last ran (ms), if it has */
   lastRun?: number
   where: string
+  onSend?(): void
 }) {
   const t = UI[lang]
   const say = (text: string) => forAgent(text, agent)
@@ -501,6 +507,11 @@ function ItemCard({
             description={t.onceHint}
           />
           <div className="hw-item-actions">
+            {onSend && !isNew && !dirty && !empty && (
+              <Button variant="secondary" size="sm" onClick={onSend}>
+                {t.sendOne}
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={onRemove}>
               {isNew ? t.cancel : t.remove}
             </Button>

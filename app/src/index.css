@@ -1509,3 +1509,158 @@ button.hw-existing-text:hover b {
   line-height: 1.55;
   word-break: keep-all;
 }
+
+/* ---------- copy flow: what a place hides, and the sheet that sends ---------- */
+.hw-moment-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--hw-line);
+  background: var(--hw-card);
+}
+.hw-moment-wrap > .hw-moment {
+  border: 0;
+  border-radius: 0;
+}
+.hw-moment-wrap > .hw-moment[data-empty] {
+  background: var(--hw-card);
+}
+.hw-hidden {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 12px 66px;
+  background: #fbf1de;
+  border-top: 1px solid #ecd3a3;
+  color: #5d4210;
+}
+.hw-moment-wrap[data-compact] .hw-hidden {
+  padding-left: 16px;
+  flex-wrap: wrap;
+}
+.dark .hw-hidden {
+  background: rgba(236, 179, 82, 0.1);
+  border-top-color: rgba(236, 179, 82, 0.3);
+  color: #f0cf91;
+}
+.hw-hidden p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+.hw-hidden-add {
+  all: unset;
+  flex-shrink: 0;
+  cursor: pointer;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid #ecd3a3;
+  background: var(--hw-card);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 34px;
+  color: inherit;
+}
+.dark .hw-hidden-add {
+  border-color: rgba(236, 179, 82, 0.4);
+}
+.hw-hidden-add:focus-visible {
+  outline: 2px solid var(--hw-green);
+  outline-offset: 2px;
+}
+
+.hw-send {
+  place-items: end center;
+}
+.hw-send-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: var(--hw-bg);
+  overflow-y: auto;
+}
+.hw-send-card .hw-modal-head b {
+  font-size: 19px;
+}
+.hw-send-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.hw-send-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hw-line);
+  border-radius: 10px;
+  background: var(--hw-card);
+  font-size: 14.5px;
+  cursor: pointer;
+}
+.hw-send-item[data-on] {
+  background: var(--hw-green-tint);
+  border-color: var(--hw-green-line);
+}
+.hw-send-item input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--hw-green);
+  flex-shrink: 0;
+}
+.hw-send-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hw-send-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hw-send-chip {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hw-line-strong);
+  background: var(--hw-card);
+  font-size: 14px;
+  color: var(--hw-ink);
+}
+.hw-send-chip[aria-pressed='true'] {
+  background: var(--hw-green-tint);
+  border-color: var(--hw-green-line);
+  color: var(--hw-green-ink);
+  font-weight: 600;
+}
+.hw-send-chip:disabled {
+  cursor: default;
+  border-style: dashed;
+  color: var(--hw-soft);
+}
+.hw-send-chip:focus-visible {
+  outline: 2px solid var(--hw-green);
+  outline-offset: 2px;
+}
+.hw-send-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--hw-soft);
+}
+.hw-send-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

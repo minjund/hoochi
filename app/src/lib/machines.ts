@@ -214,8 +214,9 @@ export function noticePlace<T>(
 
 /**
  * none   → nothing waits for a yes
- * asking → a change that copies or deletes many items at once (applying to every project,
- *          deleting a project's items or all of them) waits for a yes; nothing is done yet
+ * asking → deleting many items at once (a project's items or all of them) waits for a yes;
+ *          nothing is done yet. Copying does not ask: the send sheet shows what it will do first,
+ *          and an undo follows.
  *
  * Yes runs it once and ends the ask. No, Esc, closing the popup, another ask, a scope change or
  * any change to the config ends it unrun: what it would do was worked out on the config as it was.
