@@ -18,6 +18,7 @@ use serde_json::Value;
 pub mod codex;
 pub mod existing;
 pub mod origin;
+pub mod rename;
 pub mod running;
 pub mod skills;
 pub mod update;
@@ -496,6 +497,19 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Updated by an old Hookwich window: take the folder and the plugin over, then open
+            // again as ~/.hoochi/Hoochi.app.
+            if let Ok(exe) = std::env::current_exe() {
+                if let Ok(Some(moved)) = rename::move_in(&home(), &exe) {
+                    let plugin = rename::switch_plugin(&home());
+                    rename::note_renamed(&data_dir(), plugin);
+                    let q = format!("'{}'", moved.to_string_lossy().replace('\'', "'\\''"));
+                    let _ = std::process::Command::new("/bin/sh")
+                        .args(["-c", &format!("sleep 1; /usr/bin/open {q}")])
+                        .spawn();
+                    std::process::exit(0);
+                }
+            }
             let _ = fs::create_dir_all(data_dir());
             // Codex hooks set up by an older copy (hookwich, or another place) run this one now;
             // only from an installed .app, so a dev build does not take them over.

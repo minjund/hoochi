@@ -208,6 +208,7 @@ test('after an update, open chats reload by themselves only when they already co
   assert.equal(pluginNote({ from: '0.1.15', plugin: true }), 'once')
   assert.equal(pluginNote({ from: '0.1.16', plugin: true }), 'auto')
   assert.equal(pluginNote({ from: '0.1.16', plugin: false }), 'by-hand')
+  assert.equal(pluginNote({ from: '0.1.27', plugin: true, renamed: true }), 'once')
 })
 
 import { modelName } from '../src/lib/names.ts'

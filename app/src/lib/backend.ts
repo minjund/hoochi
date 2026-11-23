@@ -530,7 +530,7 @@ export type UpdateState = {
   current: string
   latest: string | null
   available: boolean
-  updated: { from: string; to: string; plugin: boolean } | null
+  updated: { from: string; to: string; plugin: boolean; renamed?: boolean } | null
 }
 
 export async function checkUpdate(): Promise<UpdateState> {

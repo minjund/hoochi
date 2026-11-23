@@ -25,7 +25,7 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.28'
+export const APP_VERSION = '0.1.29'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 const COMMAND_TIMEOUT_MS = 30_000

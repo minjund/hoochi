@@ -59,7 +59,7 @@ pub fn bundle_of(exe: &Path) -> Option<PathBuf> {
     (bundle.extension()? == "app").then(|| bundle.to_path_buf())
 }
 
-fn run(argv: &[&str]) -> Result<String, String> {
+pub(crate) fn run(argv: &[&str]) -> Result<String, String> {
     let out = Command::new(argv[0])
         .args(&argv[1..])
         .output()
@@ -99,7 +99,7 @@ pub fn check() -> Value {
 }
 
 /// The `claude` command: the usual places first, then whatever a login shell finds.
-fn claude() -> Option<String> {
+pub(crate) fn claude() -> Option<String> {
     if let Ok(path) = std::env::var("HOOCHI_CLAUDE") {
         return Some(path);
     }

@@ -172,9 +172,13 @@ export function versionAtLeast(a: string, b: string): boolean {
  */
 export const AUTO_RELOAD_FROM = '0.1.16'
 
-/** What the note after an update says about the plugin. */
-export function pluginNote(updated: { from: string; plugin: boolean }): 'auto' | 'once' | 'by-hand' {
+/**
+ * What the note after an update says about the plugin. `renamed`: updated from a Hookwich window,
+ * so the plugin changed name too, and the chats open run the old one, which cannot reload itself.
+ */
+export function pluginNote(updated: { from: string; plugin: boolean; renamed?: boolean }): 'auto' | 'once' | 'by-hand' {
   if (!updated.plugin) return 'by-hand'
+  if (updated.renamed) return 'once'
   return versionAtLeast(updated.from, AUTO_RELOAD_FROM) ? 'auto' : 'once'
 }
 
