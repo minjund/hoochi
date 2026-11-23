@@ -248,10 +248,34 @@ export function askFlow(state: Ask | null, event: AskEvent): { state: Ask | null
  * paused → a moment is open; follows again when you go back to the workflow
  * held   → you moved the window yourself (another place, AI or project); follows again once you
  *          chat somewhere.
+ * busy   → input reached more than one place within BUSY_MS (agents run in several terminals at
+ *          once: a tool that types into terminals looks to Claude Code like you typing). The window
+ *          stays where it is; it follows again at the next input that comes alone.
  * There is no switch: the window always follows, in the background.
  */
-export type FollowState = 'on' | 'paused' | 'held'
+export type FollowState = 'on' | 'paused' | 'held' | 'busy'
 
-export function followState(editing: boolean, held = false): FollowState {
-  return editing ? 'paused' : held ? 'held' : 'on'
+export function followState(editing: boolean, held = false, busy = false): FollowState {
+  return editing ? 'paused' : held ? 'held' : busy ? 'busy' : 'on'
+}
+
+/** How close together inputs in two places must come to count as several places at once. */
+export const BUSY_MS = 20_000
+
+/** One input the window saw: where you (or a tool typing for you) chatted, and when. */
+export type Input = { terminal: string; at: number }
+
+/** The inputs seen, with `next` added once; only those within BUSY_MS of the newest are kept. */
+export function noteInput(seen: readonly Input[], next: Input): Input[] {
+  if (seen.some(i => i.terminal === next.terminal && i.at === next.at)) return [...seen]
+  const all = [...seen, next]
+  const newest = Math.max(...all.map(i => i.at))
+  return all.filter(i => newest - i.at <= BUSY_MS)
+}
+
+/** The places that got input within BUSY_MS of the newest input. Two or more: busy. */
+export function busyPlaces(seen: readonly Input[]): string[] {
+  if (seen.length === 0) return []
+  const newest = Math.max(...seen.map(i => i.at))
+  return [...new Set(seen.filter(i => newest - i.at <= BUSY_MS).map(i => i.terminal))]
 }

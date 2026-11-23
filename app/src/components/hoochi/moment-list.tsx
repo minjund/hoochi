@@ -74,7 +74,10 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
     if (!slotOf(event, agent)) return null
     const here = items.filter(i => i.event === event && itemFilled(i))
     const first = here[0]
-    const just = activity.lastEvent === event && now - activity.lastAt < JUST_MS
+    // Only when one of the items shown here ran: with several chats working at once (agents in
+    // many terminals), the moment that ran last anywhere says nothing about this place.
+    const ids = new Set(here.map(i => i.id))
+    const just = activity.recent.some(f => f.event === event && f.id !== undefined && ids.has(f.id) && now - f.at < JUST_MS)
     const blocked = unreachable.has(event)
     const outside = existing[event] ?? 0
     return (

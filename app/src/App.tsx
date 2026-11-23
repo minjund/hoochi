@@ -54,6 +54,9 @@ import {
   askFlow,
   createSaver,
   followState,
+  busyPlaces,
+  noteInput,
+  type Input,
   NOTICE_MS,
   noticePlace,
   pluginNote,
@@ -406,6 +409,12 @@ export default function App() {
   // Not while a moment is open for editing; it catches up when you go back to the workflow.
   // The tab follows too (below): this project when that chat is in one, else everywhere.
   const latest = lastChatOf(activity)
+  // Input in several places at once (a tool typing into many terminals looks like you typing):
+  // the window stays put until input comes to one place alone.
+  const inputs = useRef<Input[]>([])
+  if (latest) inputs.current = noteInput(inputs.current, { terminal: latest.place.terminal, at: latest.at })
+  const busy = busyPlaces(inputs.current)
+  const isBusy = busy.length > 1
   const followed = useRef(0)
   const holdFollow = () => {
     followed.current = Math.max(followed.current, Date.now())
@@ -414,20 +423,21 @@ export default function App() {
   useEffect(() => {
     if (!latest || selected !== null || latest.at <= followed.current) return
     followed.current = latest.at
+    if (isBusy) return
     setHeld(false)
     setAgent(latest.agent)
     setProjectKey(latest.place.project)
     setTerminalKey(latest.place.terminal)
-  }, [latest, selected])
+  }, [latest, selected, isBusy])
 
   // The tab: "this project" when the chat you are in has a git project, else
   // "everywhere". "This terminal" is yours to pick; once picked it stays, on the terminal you chat
   // in last. Picking another tab yourself holds following until you chat again (holdFollow).
   const chatHasProject = latest ? isProject(latest.place.project, latest.place.terminal) : false
   useEffect(() => {
-    if (held || selected !== null || !latest) return
+    if (held || isBusy || selected !== null || !latest) return
     setScope(s => (s === 'terminal' ? s : chatHasProject ? 'project' : 'global'))
-  }, [held, selected, latest, chatHasProject])
+  }, [held, isBusy, selected, latest, chatHasProject])
 
   // A newer hoochi: looked for when the window opens, each time you open the panel (at most every
   // five minutes), and every half hour while it is shown. About two GitHub requests an hour.
@@ -551,9 +561,10 @@ export default function App() {
   useEffect(() => {
     const now = latest?.place.terminal ?? ''
     if (!now || now === lastTerminal.current) return
-    if (lastTerminal.current) setSwitched({ terminal: now, at: Date.now() })
+    if (lastTerminal.current && !isBusy) setSwitched({ terminal: now, at: Date.now() })
+    else setSwitched(null)
     lastTerminal.current = now
-  }, [latest])
+  }, [latest, isBusy])
   useEffect(() => {
     if (!switched) return
     const id = window.setTimeout(() => setSwitched(null), 5000)
@@ -1007,7 +1018,7 @@ export default function App() {
         ? t.whereProject(folderName(key))
         : t.whereTerminal(chatName(key, terminalProject, terminalAgent))
   const otherFilled = new Set(list.filter(i => itemFilled(i) && !MAIN_EVENTS.has(i.event)).map(i => i.event)).size
-  const following = followState(selected !== null, held)
+  const following = followState(selected !== null, held, isBusy)
 
   if (!expanded) {
     return (
@@ -1120,7 +1131,15 @@ export default function App() {
         )}
 
       <div className="hw-controls">
-        {latest && (
+        {latest && isBusy && (
+          <div className="hw-now" data-busy title={t.busyHint}>
+            {busy.slice(0, 4).map(term => (
+              <span key={term} className="hw-now-dot" style={{ background: colorOf(term) }} aria-hidden="true" />
+            ))}
+            <b>{t.busyNow(busy.length)}</b>
+          </div>
+        )}
+        {latest && !isBusy && (
           <div className="hw-now" key={latest.place.terminal} data-moved={switched ? true : undefined}>
             <span
               className="hw-now-dot"

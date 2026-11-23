@@ -9,6 +9,9 @@ import {
   followState,
   noticePlace,
   pluginNote,
+  noteInput,
+  busyPlaces,
+  BUSY_MS,
   updateFlow,
   versionAtLeast,
   type Ask,
@@ -244,4 +247,24 @@ test('a change to many items waits for a yes, and runs only on it, once', () => 
   // a new ask takes the place of one still open
   const other: Ask = { ...ask, message: 'Apply to 2 projects?', danger: false, near: 'controls' }
   assert.equal(askFlow(ask, { kind: 'ask', ask: other }).state, other)
+})
+
+test('input in several places at once holds following; input alone follows again', () => {
+  let seen = noteInput([], { terminal: 'a', at: 1_000 })
+  assert.deepEqual(busyPlaces(seen), ['a'])
+  assert.equal(followState(false, false, busyPlaces(seen).length > 1), 'on')
+  // a tool types into two more terminals within the window
+  seen = noteInput(seen, { terminal: 'b', at: 5_000 })
+  seen = noteInput(seen, { terminal: 'c', at: 9_000 })
+  assert.deepEqual(busyPlaces(seen).sort(), ['a', 'b', 'c'])
+  assert.equal(followState(false, false, busyPlaces(seen).length > 1), 'busy')
+  // the same input seen again on the next read changes nothing
+  assert.equal(noteInput(seen, { terminal: 'c', at: 9_000 }).length, 3)
+  // a while later, input in one place alone: following again
+  seen = noteInput(seen, { terminal: 'a', at: 9_000 + BUSY_MS + 1 })
+  assert.deepEqual(busyPlaces(seen), ['a'])
+  assert.equal(followState(false, false, false), 'on')
+  // editing and holding still come first
+  assert.equal(followState(true, false, true), 'paused')
+  assert.equal(followState(false, true, true), 'held')
 })
