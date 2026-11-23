@@ -277,6 +277,7 @@ export default function App() {
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   // A rule from a sentence, opened in the editor to adjust before it is saved.
   const [draft, setDraft] = useState<Item | null>(null)
+  const [mineQuery, setMineQuery] = useState('')
   const [skills, setSkills] = useState<Skill[]>([])
   const [lang, setLang] = useState<Lang>(detectLang)
   const [agent, setAgent] = useState<Agent>(browserFlags.agent === 'codex' ? 'codex' : 'claude')
@@ -996,36 +997,42 @@ export default function App() {
     if (m.scope !== 'global' && m.key !== here) holdFollow()
     setSelected(m.item.event)
   }
-  const mineRow = (m: Mine, withPlace = true) => {
+  const mineRow = (m: Mine) => {
     const label = itemLabel(m.item)
+    const name = eventName(m.item.event, lang, agent)
     return (
-      <div
-        className="hw-mine-row"
-        key={`${m.scope}-${m.key}-${m.item.id}`}
-        data-off={!m.item.enabled || undefined}
-      >
+      <div className="hw-mine-row" key={`${m.scope}-${m.key}-${m.item.id}`} data-off={!m.item.enabled || undefined}>
         <button type="button" className="hw-mine-go" title={t.goEdit} onClick={() => goTo(m)}>
-          <b>{eventName(m.item.event, lang, agent)}</b>
-          <span>
-            {withPlace ? `${placeName(m)} · ` : ''}
-            {t.kinds[m.item.kind]}: {label === '(empty)' ? t.emptyItem : label}
+          <span className="hw-mine-what">
+            <i className="hw-moment-kind" data-kind={m.item.kind}>
+              {t.kinds[m.item.kind]}
+            </i>
+            <span>{label === '(empty)' ? t.emptyItem : label}</span>
           </span>
+          {(m.item.mode === 'onFail' && m.item.kind === 'command') || m.item.once || m.item.tools || !m.item.enabled ? (
+            <span className="hw-mine-tags">
+              {m.item.kind === 'command' && m.item.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+              {m.item.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
+              {m.item.tools && <i className="hw-moment-tag">{m.item.tools}</i>}
+              {!m.item.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
+            </span>
+          ) : null}
         </button>
-        <Switch
-          size="sm"
-          aria-label={t.mineSwitch(eventName(m.item.event, lang, agent))}
-          checked={m.item.enabled}
-          onChange={e => setMine(m, e.currentTarget.checked)}
-        />
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={TrashIcon}
-          label={t.mineDelete(eventName(m.item.event, lang, agent))}
-          onClick={() => deleteMine(m)}
-        />
+        <Switch size="sm" aria-label={t.mineSwitch(name)} checked={m.item.enabled} onChange={e => setMine(m, e.currentTarget.checked)} />
+        <IconButton size="sm" variant="ghost" icon={TrashIcon} label={t.mineDelete(name)} onClick={() => deleteMine(m)} />
       </div>
     )
+  }
+  // Within a place, by moment in the order a chat goes through them.
+  const order = SLOTS[agent].map(x => x.event)
+  const byMoment = (rows: Mine[]) => {
+    const events = [...new Set(rows.map(m => m.item.event))].sort((x, y) => order.indexOf(x) - order.indexOf(y))
+    return events.map(e => [e, rows.filter(m => m.item.event === e)] as const)
+  }
+  const mineFound = (m: Mine) => {
+    const q = mineQuery.trim().toLowerCase()
+    if (!q) return true
+    return `${eventName(m.item.event, lang, agent)} ${itemLabel(m.item)} ${t.kinds[m.item.kind]}`.toLowerCase().includes(q)
   }
   const groups = [
     { name: t.scopes.global, scope: 'global' as const, key: '', rows: mine.filter(m => m.scope === 'global') },
@@ -1596,13 +1603,24 @@ export default function App() {
               />
             </div>
             <p className="hw-editor-hint">{t.mineHint}</p>
+            {mine.length > 6 && (
+              <input
+                className="hw-pick-search hw-mine-search"
+                type="search"
+                placeholder={t.mineSearch}
+                aria-label={t.mineSearch}
+                value={mineQuery}
+                onChange={e => setMineQuery(e.currentTarget.value)}
+              />
+            )}
             {asking?.near === 'modal' && askBanner}
             {inModal}
             <div className="hw-modal-list">
-              {groups.map(g => (
-                <section key={`${g.scope}-${g.key}`}>
+              {groups.map(g => ({ ...g, shown: g.rows.filter(mineFound) })).filter(g => g.shown.length > 0).map(g => (
+                <section key={`${g.scope}-${g.key}`} className="hw-mine-place">
                   <h4>
                     <span>{g.name}</span>
+                    <small>{t.itemsCount(g.rows.length)}</small>
                     <IconButton
                       size="sm"
                       variant="ghost"
@@ -1611,7 +1629,12 @@ export default function App() {
                       onClick={() => askDeleteGroup(g)}
                     />
                   </h4>
-                  {g.rows.map(m => mineRow(m, false))}
+                  {byMoment(g.shown).map(([event, rows]) => (
+                    <div key={event} className="hw-mine-moment">
+                      <p className="hw-mine-moment-name">{eventName(event, lang, agent)}</p>
+                      {rows.map(m => mineRow(m))}
+                    </div>
+                  ))}
                 </section>
               ))}
             </div>

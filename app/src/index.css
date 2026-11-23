@@ -2097,3 +2097,140 @@ button.hw-existing-text:hover b {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ---------- no "…": what you put in is always shown whole, wrapping onto more lines ---------- */
+.hw-moment-label,
+.hw-mine-go span,
+.hw-send-item span,
+.hw-tip-list li > span,
+.hw-skills-name,
+.hw-now b,
+.hw-row .hw-now b {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.hw-moment-what {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  white-space: normal;
+}
+.hw-moment {
+  align-items: flex-start;
+}
+.hw-moment-name {
+  padding-top: 1px;
+}
+.hw-row .hw-now {
+  white-space: normal;
+}
+
+/* ---------- "what you put in": by place, then by moment; each item whole ---------- */
+.hw-mine-search {
+  margin: 2px 0 4px;
+}
+.hw-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.hw-mine-place h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hw-line-strong);
+  font-size: 16px;
+  font-weight: 650;
+}
+.hw-mine-place h4 small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hw-soft);
+}
+.hw-mine-place h4 > :last-child {
+  margin-left: auto;
+}
+.hw-mine-moment {
+  padding: 6px 0 4px;
+}
+.hw-mine-moment + .hw-mine-moment {
+  border-top: 1px dashed var(--hw-line);
+}
+.hw-mine-moment-name {
+  margin: 4px 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-mine-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+}
+.hw-mine-row[data-off] .hw-mine-what {
+  color: var(--hw-soft);
+}
+.hw-mine-go {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 8px;
+}
+.hw-mine-go:hover {
+  background: var(--hw-tint);
+}
+.hw-mine-go:focus-visible {
+  outline: 2px solid var(--hw-green);
+}
+.hw-mine-what {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--hw-ink);
+}
+.hw-mine-what .hw-moment-kind {
+  margin-top: 1px;
+}
+.hw-mine-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hw-mine-row > .ui-sw,
+.hw-mine-row > label,
+.hw-mine-row > button:last-child {
+  margin-top: 2px;
+}
+.hw-modal-card {
+  gap: 10px;
+  padding: 18px 20px;
+}
+.hw-modal-head b {
+  font-size: 18px;
+}
+.hw-moment {
+  min-height: 0;
+  padding: 16px 18px;
+}
+.hw-moment-what {
+  align-items: flex-start;
+}
+.hw-moment-what .hw-moment-kind {
+  margin-top: 1px;
+}
+.hw-moment-label {
+  flex: 1 1 60%;
+  min-width: 0;
+}

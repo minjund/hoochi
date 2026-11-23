@@ -213,8 +213,8 @@ export function itemLabel(item: Item): string {
               .map(r => `/${r.skill}`)
               .join(' ')
           : `/${item.skill}`
-  const one = raw.replace(/\s+/g, ' ').trim()
-  return one.length > 40 ? `${one.slice(0, 39)}…` : one || '(empty)'
+  // Whole, never cut with "…": the screens wrap it onto more lines instead.
+  return raw.replace(/\s+/g, ' ').trim() || '(empty)'
 }
 
 export const emptyAgent = (): AgentConfig => ({ global: [], projects: {}, terminals: {} })
