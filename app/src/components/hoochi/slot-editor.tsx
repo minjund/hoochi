@@ -42,6 +42,8 @@ type Props = {
   where?: string
   /** put a saved item into other places too (opens the sheet) */
   onSend?(item: Item): void
+  /** opens with this new item already filled in (from a sentence), not saved until Save */
+  startWith?: Item | null
 }
 
 /** What Save writes; the on/off switch and Delete act at once. */
@@ -90,10 +92,11 @@ export function SlotEditor({
   onBack,
   where = '',
   onSend,
+  startWith = null,
 }: Props) {
   const t = UI[lang]
   // A new item waits here until it is saved; cards with unsaved changes are listed by id.
-  const [fresh, setFresh] = useState<Item | null>(null)
+  const [fresh, setFresh] = useState<Item | null>(startWith)
   const [unsaved, setUnsaved] = useState<ReadonlySet<string>>(new Set())
   const [leaving, setLeaving] = useState(false)
   const markUnsaved = (id: string, dirty: boolean) =>

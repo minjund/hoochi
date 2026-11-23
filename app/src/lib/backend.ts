@@ -604,4 +604,11 @@ export async function quitApp(): Promise<void> {
   if (inApp) await invoke('quit')
 }
 
+/** Asks this computer's Claude Code once for an answer in `schema`'s shape (see understand.ts).
+ * In the browser there is no Claude Code: it fails with "no-claude", and the ready-made rules answer. */
+export async function askClaude(system: string, schema: string, text: string, model: string): Promise<unknown> {
+  if (inApp) return invoke('ask_claude', { system, schema, text, model })
+  throw new Error('no-claude')
+}
+
 export const newId = () => Math.random().toString(36).slice(2, 10)

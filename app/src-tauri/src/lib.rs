@@ -21,6 +21,7 @@ pub mod origin;
 pub mod rename;
 pub mod running;
 pub mod skills;
+pub mod understand;
 pub mod update;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -147,6 +148,14 @@ fn set_skill(name: String, on: bool) -> Result<Value, String> {
 fn set_plugin(key: String, on: bool) -> Result<Value, String> {
     skills::set_plugin(&key, on)?;
     Ok(skills::state())
+}
+
+/// Turns a sentence into a rule by asking this computer's Claude Code once (see understand.rs).
+#[tauri::command]
+async fn ask_claude(system: String, schema: String, text: String, model: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || understand::ask(&system, &schema, &text, &model))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Whether a newer hoochi is out, and what the last update did.
@@ -487,6 +496,7 @@ pub fn run() {
             set_existing_hook,
             context_usage,
             check_update,
+            ask_claude,
             apply_update,
             skill_state,
             set_skill,

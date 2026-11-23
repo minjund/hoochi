@@ -10,7 +10,9 @@ import { SandwichBubble } from './components/hoochi/sandwich-bubble'
 import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
-import { FirstSteps, MomentList, RECIPES } from './components/hoochi/moment-list'
+import { MomentList } from './components/hoochi/moment-list'
+import { ChatView, type Exchange } from './components/hoochi/chat-view'
+import { itemOf, matchRecipe, MODEL, momentsOf, ruleOf, schemaFor, systemFor, type Rule, type Understood } from './lib/understand'
 import { SendSheet, type Target } from './components/hoochi/send-sheet'
 import { MomentPicker } from './components/hoochi/moment-picker'
 import { alsoIn, hasAll, hiddenHere, sendTo, type PlaceRef } from './lib/copy'
@@ -32,6 +34,7 @@ import {
   EMPTY_ACTIVITY,
   bubbleMenu,
   listSkills,
+  askClaude,
   newId,
   existingHooks,
   readState,
@@ -51,7 +54,7 @@ import {
   type Running,
   type Skill,
 } from './lib/backend'
-import { detectLang, eventName, saveLang, UI, type Lang } from './lib/i18n'
+import { detectLang, eventHint, eventName, saveLang, UI, type Lang } from './lib/i18n'
 import { modelName } from './lib/names'
 import {
   afterChange,
@@ -78,6 +81,7 @@ import {
   listOf,
   mergeItems,
   slotOf,
+  SLOTS,
   unreachable,
   withList,
   type Activity,
@@ -218,15 +222,6 @@ type Modal = 'mine' | 'skills' | 'send' | 'pick' | null
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
 
-const FIRST_KEY = 'hoochi.firstStepsDone'
-function loadFirstDone(): boolean {
-  try {
-    return localStorage.getItem(FIRST_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
 const UNHOOKED_KEY = 'hoochi.unhookedSeen'
 function loadUnhookedSeen(): string[] {
   try {
@@ -277,9 +272,11 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   // The full picture of every moment, behind "See every moment" (the main moments show as cards).
   const [showAll, setShowAll] = useState(false)
-  // Ready-made items offered while nothing is put in; the first one starts picked.
-  const [firstDone, setFirstDone] = useState(loadFirstDone)
-  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set([0]))
+  // The first screen is one chat box; the moments are a page you open from it.
+  const [page, setPage] = useState<'chat' | 'moments'>(browserFlags.select ? 'moments' : 'chat')
+  const [exchanges, setExchanges] = useState<Exchange[]>([])
+  // A rule from a sentence, opened in the editor to adjust before it is saved.
+  const [draft, setDraft] = useState<Item | null>(null)
   const [skills, setSkills] = useState<Skill[]>([])
   const [lang, setLang] = useState<Lang>(detectLang)
   const [agent, setAgent] = useState<Agent>(browserFlags.agent === 'codex' ? 'codex' : 'claude')
@@ -660,28 +657,6 @@ export default function App() {
   const setList = (next: Item[]) => edit(withList(config, agent, scope, key, next))
 
   const addTo = (item: Item) => setList([...list, item])
-  const endFirstSteps = () => {
-    setFirstDone(true)
-    try {
-      localStorage.setItem(FIRST_KEY, '1')
-    } catch {
-      // only a convenience
-    }
-  }
-  const addRecipes = () => {
-    const made = [...picked].sort().map(i => {
-      const r = RECIPES[i]
-      return {
-        ...newItem(r.event, agent),
-        kind: r.kind,
-        text: r.kind === 'text' ? (t.recipes[i].text ?? '') : '',
-        command: r.command ?? '',
-        mode: r.mode ?? 'always',
-      }
-    })
-    setList([...list, ...made])
-    endFirstSteps()
-  }
   const changeItem = (item: Item) => setList(list.map(i => (i.id === item.id ? item : i)))
   const removeItem = (id: string) => setList(list.filter(i => i.id !== id))
 
@@ -742,6 +717,82 @@ export default function App() {
     if (!h) return
     const merged = mergeItems(list, h.items, newId)
     act(withList(config, agent, scope, key, merged.list), t.copied(merged.added))
+  }
+
+  // ---------- Saying it in words ----------
+  const momentList = momentsOf(SLOTS[agent], e => eventName(e, lang, agent), e => eventHint(e, lang, agent))
+  const skillNames = skills.map(s => s.name)
+  /** This computer's Claude Code makes a rule of the sentence; without it, the ready-made rules. */
+  const understand = async (text: string): Promise<Understood & { fallback?: boolean }> => {
+    try {
+      const answer = await askClaude(
+        systemFor({ agent, moments: momentList, skills: skillNames, lang }),
+        schemaFor(momentList),
+        text,
+        MODEL,
+      )
+      const r = ruleOf(answer, momentList, skillNames)
+      if (r.ok || r.say) return r
+    } catch {
+      // no Claude Code here, or it failed: the ready-made rules answer
+    }
+    return { ...matchRecipe(text, lang, momentList), fallback: true }
+  }
+  const placeOfRule = (rule: Rule): PlaceRef =>
+    rule.scope === 'global' || !scopeReady ? { scope: 'global', key: '' } : { scope, key }
+  const placeWords = (p: PlaceRef) => (p.scope === 'global' ? t.scopes.global : placeName(p))
+  const say = (text: string) => {
+    const id = newId()
+    setExchanges(xs => [...xs, { id, said: text, state: 'thinking' }])
+    void understand(text).then(u =>
+      setExchanges(xs =>
+        xs.map(x =>
+          x.id !== id
+            ? x
+            : u.ok
+              ? { ...x, state: 'rule', rule: u.rule, place: placeWords(placeOfRule(u.rule)), fallback: u.fallback }
+              : { ...x, state: 'unclear', say: u.say },
+        ),
+      ),
+    )
+  }
+  const addRule = (x: Exchange) => {
+    if (!x.rule) return
+    const p = placeOfRule(x.rule)
+    const item = itemOf(x.rule, newId(), Date.now())
+    save(withList(config, agent, p.scope, p.key, [...listOf(config[agent], p.scope, p.key), item]))
+    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, state: 'added', itemId: item.id, target: p } : e)))
+  }
+  const undoRule = (x: Exchange) => {
+    if (!x.itemId || !x.target) return
+    const { scope: s0, key: k0 } = x.target
+    save(withList(config, agent, s0, k0, listOf(config[agent], s0, k0).filter(i => i.id !== x.itemId)))
+    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, state: 'rule', itemId: undefined, target: undefined } : e)))
+  }
+  const editRule = (x: Exchange) => {
+    if (!x.rule) return
+    const p = placeOfRule(x.rule)
+    if (p.scope !== scope) {
+      setScope(p.scope)
+      holdFollow()
+    }
+    setDraft(itemOf(x.rule, newId(), Date.now()))
+    // The editor shows over either page; going back returns to the chat it came from.
+    setSelected(x.rule.event)
+  }
+  const ruleWords = (rule: Rule) => {
+    const item = itemOf(rule, '', 0)
+    return (
+      <>
+        <i className="hw-moment-kind" data-kind={rule.kind}>
+          {t.kinds[rule.kind]}
+        </i>
+        <span className="hw-moment-label">{itemLabel(item)}</span>
+        {rule.kind === 'command' && rule.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+        {rule.tools && <i className="hw-moment-tag">{rule.tools}</i>}
+        {rule.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
+      </>
+    )
   }
 
   const noticeBanner = notice && (
@@ -1020,7 +1071,7 @@ export default function App() {
   return (
     <div
       className="hw-panel"
-      data-view={slot ? 'editor' : 'picture'}
+      data-view={slot ? 'editor' : page === 'chat' ? 'chat' : 'picture'}
       data-modal={modal ?? undefined}
       data-save={saving.status}
       data-update={update.step}
@@ -1121,6 +1172,56 @@ export default function App() {
           </div>
         )}
 
+      {page === 'chat' && !slot ? (
+        <main className="hw-body hw-body-chat">
+          <ChatView
+            lang={lang}
+            exchanges={exchanges}
+            mine={mine.length}
+            momentName={e => eventName(e, lang, agent)}
+            ruleWords={ruleWords}
+            onSay={say}
+            onAdd={addRule}
+            onEdit={editRule}
+            onUndo={undoRule}
+            onPick={() => setModal('pick')}
+            onSeeMine={() => setPage('moments')}
+            where={
+              <DropdownMenu
+                align="start"
+                side="top"
+                aria-label={t.scopeLabel}
+                items={[
+                  ...(['claude', 'codex'] as const).map(a => ({
+                    label: t.agents[a],
+                    type: 'radio' as const,
+                    checked: agent === a,
+                    onSelect: () => {
+                      setAgent(a)
+                      holdFollow()
+                    },
+                  })),
+                  { label: t.scopes.global, type: 'radio' as const, divider: true, checked: scope === 'global', onSelect: () => { setScope('global'); holdFollow() } },
+                  {
+                    label: projectKey ? `${t.scopes.project} · ${folderName(projectKey)}` : t.scopes.project,
+                    type: 'radio' as const,
+                    disabled: !projectKey,
+                    checked: scope === 'project',
+                    onSelect: () => { setScope('project'); holdFollow() },
+                  },
+                  { label: t.scopes.terminal, type: 'radio' as const, disabled: !terminalKey, checked: scope === 'terminal', onSelect: () => setScope('terminal') },
+                ]}
+                trigger={({ triggerProps }) => (
+                  <button type="button" className="hw-chat-where" {...triggerProps}>
+                    {t.agents[agent]} · {scopeReady ? placeWords({ scope, key }) : t.scopes.global} ▾
+                  </button>
+                )}
+              />
+            }
+          />
+        </main>
+      ) : (
+        <>
       <div className="hw-controls">
         {unhookedNew.length > 0 && (
           <div className="hw-note hw-unhooked" role="status">
@@ -1260,6 +1361,7 @@ export default function App() {
       <main className="hw-body">
         {!scopeReady ? null : slot ? (
           <SlotEditor
+            key={`${slot.event}:${draft?.id ?? ''}`}
             slot={slot}
             agent={agent}
             blocked={unreachable(agent, classic).has(slot.event)}
@@ -1285,28 +1387,20 @@ export default function App() {
             onRemove={removeItem}
             makeItem={() => newItem(slot.event, agent)}
             onAdd={addTo}
-            onBack={() => setSelected(null)}
+            onBack={() => {
+              setSelected(null)
+              setDraft(null)
+            }}
             where={whereWords}
+            startWith={draft?.event === slot.event ? draft : null}
             onSend={sendTargets.length > 0 ? item => openSend([item.id]) : undefined}
           />
         ) : (
           <>
-            {!showAll && !firstDone && mine.length === 0 && agent === 'claude' && (
-              <FirstSteps
-                lang={lang}
-                place={placeName({ scope, key })}
-                picked={picked}
-                onPick={(i, on) =>
-                  setPicked(prev => {
-                    const next = new Set(prev)
-                    if (on) next.add(i)
-                    else next.delete(i)
-                    return next
-                  })
-                }
-                onAdd={addRecipes}
-                onSkip={endFirstSteps}
-              />
+            {!showAll && (
+              <button type="button" className="hw-link hw-back-chat" onClick={() => setPage('chat')}>
+                {t.backToChat}
+              </button>
             )}
             {!showAll && (
             <MomentList
@@ -1434,6 +1528,8 @@ export default function App() {
         {mine.length === 0 && <p className="hw-editor-hint">{t.noneYet}</p>}
         {noticeAt === 'list' && noticeBanner}
       </footer>
+        </>
+      )}
 
       {modal === 'skills' && (
         <SkillsPanel

@@ -43,7 +43,9 @@ export function MomentPicker({
   const [query, setQuery] = useState('')
   const [all, setAll] = useState(false)
   const input = useRef<HTMLInputElement>(null)
-  useEffect(() => input.current?.focus(), [])
+  useEffect(() => {
+    input.current?.focus()
+  }, [])
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', key)
