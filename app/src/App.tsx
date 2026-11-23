@@ -1143,21 +1143,14 @@ export default function App() {
 
       <div className="hw-controls">
         {unhookedNew.length > 0 && (
-          <details className="hw-note hw-unhooked">
-            <summary>{t.unhookedTitle(unhooked.length)}</summary>
-            <p>{t.unhookedHow}</p>
+          <div className="hw-note hw-unhooked" role="status">
+            <p>
+              <b>{t.unhookedTitle(unhooked.length)}</b> {t.unhookedHow}
+            </p>
             <Button size="sm" variant="ghost" onClick={dismissUnhooked}>
               {t.unhookedDismiss}
             </Button>
-            <ul>
-              {unhooked.map(r => (
-                <li key={r.terminal}>
-                  {chatName(r.terminal, r.project, 'claude')}
-                  {r.started ? ` · ${t.openedAt(new Date(r.started))}` : ''}
-                </li>
-              ))}
-            </ul>
-          </details>
+          </div>
         )}
         <div className="hw-row">
           <span className="hw-row-label">{t.rowAgent}</span>

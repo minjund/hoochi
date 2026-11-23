@@ -1496,3 +1496,16 @@ button.hw-existing-text:hover b {
 .hw-editor > .hw-editor-hint {
   font-size: 14.5px;
 }
+
+.hw-unhooked {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.hw-unhooked p {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: keep-all;
+}
