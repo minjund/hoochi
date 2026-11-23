@@ -296,11 +296,75 @@ export const SUBTITLES: Record<string, PerLang<string>> = {
   MessageDisplay: { en: 'on screen', ko: '화면', ja: '画面', zh: '屏幕' },
 }
 
+/** What the editor's one-sentence preview is built from. */
+export type Preview = {
+  where: string
+  moment: string
+  ai: string
+  kind: 'text' | 'command' | 'skill' | 'rules'
+  text: string
+  command: string
+  skill: string
+  onFail: boolean
+  /** can words reach the AI at this moment (else a command only runs) */
+  inject: boolean
+  tools: string
+  once: boolean
+}
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 export const UI = {
   en: {
     on: (n: number) => `${n} of yours on`,
     onHint: 'How many things you put in are switched on, everywhere, in every project and terminal, for Claude Code and Codex together.',
     quitApp: 'Quit hoochi',
+    momentsTitle: 'When the AI works',
+    momentsOn: (n: number) => `${n} on`,
+    toolGroup: 'When it edits files or runs commands',
+    toolRepeat: 'As often as it needs',
+    putHere: 'Add here',
+    justNow: 'Just used',
+    existingCount: (n: number) => `${n} already set up`,
+    moreItems: (n: number) => `+${n} more`,
+    otherMoments: 'See every moment',
+    otherMomentsCount: (n: number) => `See every moment (${n} with something in)`,
+    fewerMoments: 'Back to the main moments',
+    blockedCard: "Doesn't run on this account",
+    tagOnce: 'once per chat',
+    tagOnFail: 'only if it fails',
+    tagOff: 'off',
+    recipesKicker: 'Start here',
+    recipesTitle: ['The things you keep telling the AI,', 'set them once.'],
+    recipesLead: 'Pick what you need. When its moment comes, hoochi puts it in for you.',
+    recipesWhere: (place: string) => `They go into ${place}. You can change or switch them off any time.`,
+    recipesAdd: (n: number) => (n === 0 ? 'Pick at least one' : `Add ${n} and start`),
+    recipesSkip: "I'll set them up myself",
+    recipes: [
+      { title: 'Always answer in English', sub: 'When you send a message → “Please answer in English.”', text: 'Please answer in English.' },
+      { title: 'Run the tests before finishing', sub: 'When the answer ends → npm test, and the AI fixes what fails' },
+      { title: 'Start knowing where things stand', sub: 'When a chat starts → git status -sb' },
+    ],
+    stepWhen: 'When',
+    stepWhat: 'What',
+    previewTitle: 'What happens',
+    whereGlobal: 'everywhere',
+    whereProject: (name: string) => `in the ${name} project`,
+    whereTerminal: (name: string) => `in the ${name} terminal`,
+    preview: (p: Preview) =>
+      `${cap(p.where)}, at “${p.moment}”, ` +
+      (p.kind === 'text'
+        ? `${p.ai} is given “${p.text || '…'}”.`
+        : p.kind === 'command'
+          ? !p.inject
+            ? `${p.command || '…'} runs on your computer.`
+            : p.onFail
+              ? `${p.command || '…'} runs on your computer, and ${p.ai} sees the result only when it fails.`
+              : `${p.command || '…'} runs on your computer, and ${p.ai} sees the result.`
+          : p.kind === 'skill'
+            ? `${p.ai} uses the ${p.skill || '…'} skill.`
+            : `${p.ai} picks the skill that fits.`) +
+      (p.tools ? ` Only for ${p.tools}.` : '') +
+      (p.once ? ' Once per chat.' : ''),
     diagramHint: 'Tap a moment to add words, a command or a skill there.',
     back: 'Back to the workflow',
     save: 'Save',
@@ -521,6 +585,53 @@ export const UI = {
     on: (n: number) => `넣은 것 ${n}개 켜짐`,
     onHint: '내가 넣은 것 중 켜져 있는 개수예요. 모든 곳·모든 프로젝트·모든 터미널, Claude Code와 Codex를 다 합쳐 셌어요.',
     quitApp: 'hoochi 끝내기',
+    momentsTitle: 'AI가 일하는 순간',
+    momentsOn: (n: number) => `${n}개 켜짐`,
+    toolGroup: '파일을 고치거나 명령을 실행할 때',
+    toolRepeat: '필요한 만큼 반복',
+    putHere: '여기에 넣기',
+    justNow: '방금 적용',
+    existingCount: (n: number) => `이미 있는 것 ${n}`,
+    moreItems: (n: number) => `외 ${n}개`,
+    otherMoments: '모든 순간 보기',
+    otherMomentsCount: (n: number) => `모든 순간 보기 (넣은 곳 ${n})`,
+    fewerMoments: '주요 순간만 보기',
+    blockedCard: '이 계정에서는 돌지 않아요',
+    tagOnce: '대화마다 한 번',
+    tagOnFail: '실패할 때만 전달',
+    tagOff: '꺼짐',
+    recipesKicker: '여기서 시작해 보세요',
+    recipesTitle: ['매번 하던 말과 작업,', '한 번만 정해 두세요.'],
+    recipesLead: '필요한 것을 골라 시작해 보세요. 정해 둔 순간이 오면 hoochi가 알아서 넣어 드려요.',
+    recipesWhere: (place: string) => `${place}에 넣어요. 넣은 것은 언제든 고치거나 끌 수 있어요.`,
+    recipesAdd: (n: number) => (n === 0 ? '하나 이상 골라 주세요' : `${n}개 골라 시작하기`),
+    recipesSkip: '직접 정해서 시작할게요',
+    recipes: [
+      { title: '답변은 늘 한국어로', sub: '메시지를 보낼 때 → “한국어로 답해 줘”', text: '한국어로 답해 줘.' },
+      { title: '마치기 전에 테스트 확인', sub: '답을 마칠 때 → npm test, 실패하면 AI가 다시 고쳐요' },
+      { title: '지금 상태부터 알고 시작', sub: '대화를 시작할 때 → git status -sb' },
+    ],
+    stepWhen: '언제',
+    stepWhat: '무엇을',
+    previewTitle: '이렇게 동작해요',
+    whereGlobal: '모든 곳에서',
+    whereProject: (name: string) => `${name} 프로젝트에서`,
+    whereTerminal: (name: string) => `${name} 터미널에서`,
+    preview: (p: Preview) =>
+      `${p.where} ‘${p.moment}’마다 ` +
+      (p.kind === 'text'
+        ? `${p.ai}에게 “${p.text || '…'}”를 건네요.`
+        : p.kind === 'command'
+          ? !p.inject
+            ? `내 컴퓨터에서 ${p.command || '…'}를 실행해요.`
+            : p.onFail
+              ? `내 컴퓨터에서 ${p.command || '…'}를 실행하고, 실패할 때만 ${p.ai}에게 결과를 전달해요.`
+              : `내 컴퓨터에서 ${p.command || '…'}를 실행하고, ${p.ai}에게 결과를 전달해요.`
+          : p.kind === 'skill'
+            ? `${p.ai}가 ${p.skill || '…'} 스킬을 쓰게 해요.`
+            : `${p.ai}가 상황에 맞는 스킬을 고르게 해요.`) +
+      (p.tools ? ` (${p.tools}일 때만)` : '') +
+      (p.once ? ' 대화마다 한 번만 해요.' : ''),
     diagramHint: '원하는 순간을 누르고, 그때 넣을 말·명령·스킬을 고르세요.',
     back: '워크플로우로 돌아가기',
     save: '저장하기',
@@ -753,6 +864,53 @@ export const UI = {
     on: (n: number) => `入れたもの ${n} 件オン`,
     onHint: '自分で入れたもののうちオンになっている数です。すべて・全プロジェクト・全ターミナル、Claude Code と Codex を合わせて数えています。',
     quitApp: 'hoochi を終了',
+    momentsTitle: 'AI が働く瞬間',
+    momentsOn: (n: number) => `${n} 件オン`,
+    toolGroup: 'ファイルを直したりコマンドを実行するとき',
+    toolRepeat: '必要なだけ繰り返す',
+    putHere: 'ここに入れる',
+    justNow: 'いま適用',
+    existingCount: (n: number) => `既存 ${n}`,
+    moreItems: (n: number) => `ほか ${n} 件`,
+    otherMoments: 'すべての瞬間を見る',
+    otherMomentsCount: (n: number) => `すべての瞬間を見る (入れた所 ${n})`,
+    fewerMoments: '主な瞬間だけ見る',
+    blockedCard: 'このアカウントでは動きません',
+    tagOnce: '会話ごとに一度',
+    tagOnFail: '失敗したときだけ',
+    tagOff: 'オフ',
+    recipesKicker: 'ここから始めましょう',
+    recipesTitle: ['毎回伝えていた言葉と作業を、', '一度だけ決めておきましょう。'],
+    recipesLead: '必要なものを選んで始めましょう。その瞬間が来たら hoochi が入れてくれます。',
+    recipesWhere: (place: string) => `${place}に入れます。入れたものはいつでも直したりオフにできます。`,
+    recipesAdd: (n: number) => (n === 0 ? '一つ以上選んでください' : `${n} 件選んで始める`),
+    recipesSkip: '自分で決めて始めます',
+    recipes: [
+      { title: '答えはいつも日本語で', sub: 'メッセージを送るとき → 「日本語で答えて」', text: '日本語で答えてください。' },
+      { title: '終える前にテストを確認', sub: '答えを終えるとき → npm test、失敗したら AI が直す' },
+      { title: 'いまの状態を知って始める', sub: '会話を始めるとき → git status -sb' },
+    ],
+    stepWhen: 'いつ',
+    stepWhat: '何を',
+    previewTitle: 'こう動きます',
+    whereGlobal: 'すべての場所で',
+    whereProject: (name: string) => `${name} プロジェクトで`,
+    whereTerminal: (name: string) => `${name} ターミナルで`,
+    preview: (p: Preview) =>
+      `${p.where}「${p.moment}」のたびに、` +
+      (p.kind === 'text'
+        ? `${p.ai} に「${p.text || '…'}」を渡します。`
+        : p.kind === 'command'
+          ? !p.inject
+            ? `このコンピューターで ${p.command || '…'} を実行します。`
+            : p.onFail
+              ? `このコンピューターで ${p.command || '…'} を実行し、失敗したときだけ ${p.ai} に結果を渡します。`
+              : `このコンピューターで ${p.command || '…'} を実行し、${p.ai} に結果を渡します。`
+          : p.kind === 'skill'
+            ? `${p.ai} に ${p.skill || '…'} スキルを使わせます。`
+            : `${p.ai} に合うスキルを選ばせます。`) +
+      (p.tools ? `（${p.tools} のときだけ）` : '') +
+      (p.once ? '会話ごとに一度だけ。' : ''),
     diagramHint: 'タイミングを押して、そこで入れる言葉・コマンド・スキルを選びます。',
     back: 'ワークフローに戻る',
     save: '保存',
@@ -988,6 +1146,53 @@ export const UI = {
     on: (n: number) => `已开启 ${n} 项我加入的内容`,
     onHint: '我加入的内容里开启着的数量，包括所有地方、所有项目、所有终端，Claude Code 和 Codex 合计。',
     quitApp: '退出 hoochi',
+    momentsTitle: 'AI 工作的时刻',
+    momentsOn: (n: number) => `${n} 项已开启`,
+    toolGroup: '修改文件或运行命令时',
+    toolRepeat: '按需重复',
+    putHere: '放到这里',
+    justNow: '刚刚生效',
+    existingCount: (n: number) => `已有 ${n} 项`,
+    moreItems: (n: number) => `另有 ${n} 项`,
+    otherMoments: '查看所有时刻',
+    otherMomentsCount: (n: number) => `查看所有时刻（已放入 ${n} 处）`,
+    fewerMoments: '只看主要时刻',
+    blockedCard: '此账号上不会运行',
+    tagOnce: '每个对话一次',
+    tagOnFail: '仅在失败时',
+    tagOff: '已关闭',
+    recipesKicker: '从这里开始',
+    recipesTitle: ['每次都要说的话和要做的事，', '只需设定一次。'],
+    recipesLead: '选好需要的内容开始吧。到了那个时刻，hoochi 会替你放进去。',
+    recipesWhere: (place: string) => `会放进${place}。随时可以修改或关闭。`,
+    recipesAdd: (n: number) => (n === 0 ? '请至少选择一项' : `选好 ${n} 项，开始`),
+    recipesSkip: '我自己来设定',
+    recipes: [
+      { title: '回答总是用中文', sub: '发送消息时 → “请用中文回答”', text: '请用中文回答。' },
+      { title: '结束前先跑测试', sub: '回答结束时 → npm test，失败时 AI 会再修' },
+      { title: '开始时先了解现状', sub: '对话开始时 → git status -sb' },
+    ],
+    stepWhen: '何时',
+    stepWhat: '做什么',
+    previewTitle: '会这样运行',
+    whereGlobal: '在所有地方',
+    whereProject: (name: string) => `在 ${name} 项目中`,
+    whereTerminal: (name: string) => `在 ${name} 终端中`,
+    preview: (p: Preview) =>
+      `${p.where}，每当“${p.moment}”时，` +
+      (p.kind === 'text'
+        ? `把“${p.text || '…'}”交给 ${p.ai}。`
+        : p.kind === 'command'
+          ? !p.inject
+            ? `在这台电脑上运行 ${p.command || '…'}。`
+            : p.onFail
+              ? `在这台电脑上运行 ${p.command || '…'}，仅在失败时把结果交给 ${p.ai}。`
+              : `在这台电脑上运行 ${p.command || '…'}，并把结果交给 ${p.ai}。`
+          : p.kind === 'skill'
+            ? `让 ${p.ai} 使用 ${p.skill || '…'} 技能。`
+            : `让 ${p.ai} 选择合适的技能。`) +
+      (p.tools ? `（仅限 ${p.tools}）` : '') +
+      (p.once ? '每个对话只做一次。' : ''),
     diagramHint: '点一个时刻，选择要在那时加入的话、命令或技能。',
     back: '返回工作流程',
     save: '保存',

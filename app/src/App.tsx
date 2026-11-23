@@ -10,6 +10,8 @@ import { SandwichBubble } from './components/hoochi/sandwich-bubble'
 import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
+import { FirstSteps, MAIN_EVENTS, MomentList, RECIPES } from './components/hoochi/moment-list'
+import hoochiIcon from './assets/hoochi-icon.svg'
 import { Button } from './components/ui/button'
 import { IconButton } from './components/ui/icon-button'
 import { SegmentedControl } from './components/ui/segmented-control'
@@ -209,6 +211,15 @@ type Modal = 'mine' | 'skills' | null
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
 
+const FIRST_KEY = 'hoochi.firstStepsDone'
+function loadFirstDone(): boolean {
+  try {
+    return localStorage.getItem(FIRST_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 const UNHOOKED_KEY = 'hoochi.unhookedSeen'
 function loadUnhookedSeen(): string[] {
   try {
@@ -257,6 +268,11 @@ export default function App() {
   // Where sec-default passes Claude Code's classic hooks by, the moments only they serve are dimmed.
   const [classic, setClassic] = useState<ClassicReach>('unknown')
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
+  // The full picture of every moment, behind "See every moment" (the main moments show as cards).
+  const [showAll, setShowAll] = useState(false)
+  // Ready-made items offered while nothing is put in; the first one starts picked.
+  const [firstDone, setFirstDone] = useState(loadFirstDone)
+  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set([0]))
   const [skills, setSkills] = useState<Skill[]>([])
   const [lang, setLang] = useState<Lang>(detectLang)
   const [agent, setAgent] = useState<Agent>(browserFlags.agent === 'codex' ? 'codex' : 'claude')
@@ -629,6 +645,28 @@ export default function App() {
   const setList = (next: Item[]) => edit(withList(config, agent, scope, key, next))
 
   const addTo = (item: Item) => setList([...list, item])
+  const endFirstSteps = () => {
+    setFirstDone(true)
+    try {
+      localStorage.setItem(FIRST_KEY, '1')
+    } catch {
+      // only a convenience
+    }
+  }
+  const addRecipes = () => {
+    const made = [...picked].sort().map(i => {
+      const r = RECIPES[i]
+      return {
+        ...newItem(r.event, agent),
+        kind: r.kind,
+        text: r.kind === 'text' ? (t.recipes[i].text ?? '') : '',
+        command: r.command ?? '',
+        mode: r.mode ?? 'always',
+      }
+    })
+    setList([...list, ...made])
+    endFirstSteps()
+  }
   const changeItem = (item: Item) => setList(list.map(i => (i.id === item.id ? item : i)))
   const removeItem = (id: string) => setList(list.filter(i => i.id !== id))
 
@@ -962,6 +1000,13 @@ export default function App() {
   ].filter(g => g.rows.length > 0)
 
   const slot = selected ? slotOf(selected, agent) : undefined
+  const whereWords =
+    scope === 'global'
+      ? t.whereGlobal
+      : scope === 'project'
+        ? t.whereProject(folderName(key))
+        : t.whereTerminal(chatName(key, terminalProject, terminalAgent))
+  const otherFilled = new Set(list.filter(i => itemFilled(i) && !MAIN_EVENTS.has(i.event)).map(i => i.event)).size
   const following = followState(selected !== null, held)
 
   if (!expanded) {
@@ -997,6 +1042,7 @@ export default function App() {
         }}
       >
         <div className="hw-head-title">
+          <img className="hw-head-icon" src={hoochiIcon} alt="" width={28} height={28} draggable={false} />
           hoochi
           <span title={t.onHint}>{t.on(activeCount)}</span>
         </div>
@@ -1247,9 +1293,41 @@ export default function App() {
             makeItem={() => newItem(slot.event, agent)}
             onAdd={addTo}
             onBack={() => setSelected(null)}
+            where={whereWords}
           />
         ) : (
           <>
+            {!firstDone && mine.length === 0 && agent === 'claude' && (
+              <FirstSteps
+                lang={lang}
+                place={placeName({ scope, key })}
+                picked={picked}
+                onPick={(i, on) =>
+                  setPicked(prev => {
+                    const next = new Set(prev)
+                    if (on) next.add(i)
+                    else next.delete(i)
+                    return next
+                  })
+                }
+                onAdd={addRecipes}
+                onSkip={endFirstSteps}
+              />
+            )}
+            <MomentList
+              agent={agent}
+              lang={lang}
+              items={list}
+              activity={activity[agent]}
+              existing={existingCounts}
+              unreachable={unreachable(agent, classic)}
+              onSelect={setSelected}
+            />
+            <button type="button" className="hw-link hw-all-toggle" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
+              {showAll ? t.fewerMoments : otherFilled > 0 ? t.otherMomentsCount(otherFilled) : t.otherMoments} {showAll ? '↑' : '↓'}
+            </button>
+            {showAll && (
+            <>
             <p className="hw-diagram-hint">
               {t.diagramHint}
               <br />
@@ -1329,6 +1407,8 @@ export default function App() {
                 )
               }}
             />
+            </>
+            )}
           </>
         )}
       </main>
@@ -1344,11 +1424,8 @@ export default function App() {
             </Button>
           )}
         </div>
-        {mine.length === 0 ? (
-          <p className="hw-editor-hint">{t.noneYet}</p>
-        ) : (
-          mine.slice(0, 3).map(m => mineRow(m))
-        )}
+        {/* One line: the main moments above already show what is in; the list opens in a popup. */}
+        {mine.length === 0 && <p className="hw-editor-hint">{t.noneYet}</p>}
         {noticeAt === 'list' && noticeBanner}
       </footer>
 

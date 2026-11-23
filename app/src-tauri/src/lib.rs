@@ -29,8 +29,8 @@ use tauri::{
 };
 
 const BUBBLE: (f64, f64) = (76.0, 76.0);
-/// Wide enough that the lifecycle picture (520 wide) is drawn near its own size, so its text stays sharp.
-const PANEL: (f64, f64) = (500.0, 760.0);
+/// Big enough to read without squinting: the main moments as cards, and the full picture (520 wide) drawn a little larger.
+const PANEL: (f64, f64) = (720.0, 900.0);
 const MARGIN: f64 = 24.0;
 const EMPTY_CONFIG: &str = "{\n  \"version\": 2,\n  \"claude\": { \"global\": [], \"projects\": {}, \"terminals\": {} },\n  \"codex\": { \"global\": [], \"projects\": {}, \"terminals\": {} }\n}\n";
 

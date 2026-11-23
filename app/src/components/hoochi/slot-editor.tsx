@@ -38,6 +38,8 @@ type Props = {
   /** a new item saved */
   onAdd(item: Item): void
   onBack(): void
+  /** where what is put in here applies, as words for the preview ("in the shop project") */
+  where?: string
 }
 
 /** What Save writes; the on/off switch and Delete act at once. */
@@ -84,6 +86,7 @@ export function SlotEditor({
   makeItem,
   onAdd,
   onBack,
+  where = '',
 }: Props) {
   const t = UI[lang]
   // A new item waits here until it is saved; cards with unsaved changes are listed by id.
@@ -135,6 +138,10 @@ export function SlotEditor({
           </div>
         </div>
       )}
+      <p className="hw-step">
+        <span>1</span>
+        {t.stepWhen}
+      </p>
       <div className="hw-editor-title">
         <strong>{eventName(slot.event, lang, agent)}</strong>
         <code>{slot.event}</code>
@@ -241,6 +248,7 @@ export function SlotEditor({
           }}
           onDirty={dirty => markUnsaved(item.id, dirty)}
           lastRun={lastRun[item.id]}
+          where={where}
         />
       ))}
 
@@ -260,6 +268,7 @@ export function SlotEditor({
           onSwitch={enabled => setFresh({ ...fresh, enabled })}
           onRemove={() => setFresh(null)}
           onDirty={() => undefined}
+          where={where}
         />
       ) : (
         <Button
@@ -288,6 +297,7 @@ function ItemCard({
   onRemove,
   onDirty,
   lastRun,
+  where,
 }: {
   item: Item
   slot: Slot
@@ -302,6 +312,7 @@ function ItemCard({
   onDirty(dirty: boolean): void
   /** when it last ran (ms), if it has */
   lastRun?: number
+  where: string
 }) {
   const t = UI[lang]
   const say = (text: string) => forAgent(text, agent)
@@ -343,6 +354,10 @@ function ItemCard({
   return (
     <Card className="hw-item" data-unsaved={dirty || undefined}>
       <CardContent className="hw-item-body" onKeyDown={onKey}>
+        <p className="hw-step">
+          <span>2</span>
+          {t.stepWhat}
+        </p>
         <div className="hw-item-row">
           <SegmentedControl
             size="sm"
@@ -460,6 +475,24 @@ function ItemCard({
           />
         )}
 
+        <div className="hw-preview" aria-live="polite">
+          <span>✓ {t.previewTitle}</span>
+          <p>
+            {t.preview({
+              where,
+              moment: eventName(slot.event, lang, agent),
+              ai: t.agents[agent],
+              kind: item_.kind,
+              text: item_.text.trim(),
+              command: item_.command.trim(),
+              skill: item_.skill,
+              onFail: item_.mode === 'onFail',
+              inject: slot.canInject,
+              tools: slot.hasTools ? item_.tools.trim() : '',
+              once: item_.once,
+            })}
+          </p>
+        </div>
         <div className="hw-item-row">
           <Switch
             size="sm"

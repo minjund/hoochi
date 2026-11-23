@@ -18,6 +18,8 @@ The window's flows are written out as pure functions in `app/src/lib/machines.ts
 | Asking before a change to many items (`askFlow`): every scope button, deleting a place's items or all | none, asking | `.hw-confirm[data-asking]` (`copy` or `delete`) |
 | Following where you chat (`followState`), always on with no switch | on, paused, held; the tab goes to "this project" or "everywhere" | `[data-follow]` |
 | Which screen | bubble, picture, editor | `[data-view]` |
+
+The picture view shows the main moments as cards (`MomentList` in `components/hoochi/moment-list.tsx`: chat start, your message, before/after a tool, answer ends, chat ends). The full lifecycle picture of every moment is behind "See every moment". While nothing at all is put in, `FirstSteps` offers a few ready-made items (dismissed for good once used or skipped, in localStorage `hoochi.firstStepsDone`). Each item in the editor ends with a one-sentence preview of what it will do (`t.preview`).
 | The popup (`Modal` in App.tsx) | mine, skills, none | `.hw-panel[data-modal]` |
 | An item being edited (`ItemCard` in slot-editor.tsx) | saved, unsaved (Save writes it) | `.hw-item[data-unsaved]` |
 
