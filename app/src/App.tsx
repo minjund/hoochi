@@ -10,8 +10,9 @@ import { SandwichBubble } from './components/hoochi/sandwich-bubble'
 import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
-import { FirstSteps, MAIN_EVENTS, MomentList, RECIPES } from './components/hoochi/moment-list'
+import { FirstSteps, MomentList, RECIPES } from './components/hoochi/moment-list'
 import { SendSheet, type Target } from './components/hoochi/send-sheet'
+import { MomentPicker } from './components/hoochi/moment-picker'
 import { alsoIn, hasAll, hiddenHere, sendTo, type PlaceRef } from './lib/copy'
 import hoochiIcon from './assets/hoochi-icon.svg'
 import { Button } from './components/ui/button'
@@ -212,7 +213,7 @@ const HideIcon = (
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
 /** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | 'send' | null
+type Modal = 'mine' | 'skills' | 'send' | 'pick' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -998,7 +999,6 @@ export default function App() {
       : scope === 'project'
         ? t.whereProject(folderName(key))
         : t.whereTerminal(chatName(key, terminalProject, terminalAgent))
-  const otherFilled = new Set(list.filter(i => itemFilled(i) && !MAIN_EVENTS.has(i.event)).map(i => i.event)).size
   const following = followState(selected !== null, held, isBusy)
 
   if (!expanded) {
@@ -1291,7 +1291,7 @@ export default function App() {
           />
         ) : (
           <>
-            {!firstDone && mine.length === 0 && agent === 'claude' && (
+            {!showAll && !firstDone && mine.length === 0 && agent === 'claude' && (
               <FirstSteps
                 lang={lang}
                 place={placeName({ scope, key })}
@@ -1308,6 +1308,7 @@ export default function App() {
                 onSkip={endFirstSteps}
               />
             )}
+            {!showAll && (
             <MomentList
               agent={agent}
               lang={lang}
@@ -1319,12 +1320,14 @@ export default function App() {
               hidden={hiddenFor}
               onAddHidden={addHidden}
               alsoIn={item => alsoIn(config, agent, here, item).length}
+              onAddOther={() => setModal('pick')}
             />
-            <button type="button" className="hw-link hw-all-toggle" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
-              {showAll ? t.fewerMoments : otherFilled > 0 ? t.otherMomentsCount(otherFilled) : t.otherMoments} {showAll ? '↑' : '↓'}
-            </button>
+            )}
             {showAll && (
             <>
+            <button type="button" className="hw-link hw-back-list" onClick={() => setShowAll(false)}>
+              {t.backToList}
+            </button>
             <p className="hw-diagram-hint">
               {t.diagramHint}
               <br />
@@ -1412,9 +1415,15 @@ export default function App() {
 
       <footer className="hw-feed hw-mine" aria-label={t.mine}>
         <div className="hw-mine-head">
-          <span>
-            {t.mine} · {mine.length}
-          </span>
+          {slot ? (
+            <span>
+              {t.mine} · {mine.length}
+            </span>
+          ) : (
+            <button type="button" className="hw-link" aria-pressed={showAll} onClick={() => setShowAll(v => !v)}>
+              {showAll ? t.backToList : t.flowView}
+            </button>
+          )}
           {mine.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
               {t.seeAll(mine.length)}
@@ -1435,6 +1444,19 @@ export default function App() {
           banner={inModal}
           onSkill={(name, on) => void setSkill(name, on).then(setSkillsNow).catch(failed)}
           onPlugin={(key, on) => void setPlugin(key, on).then(setSkillsNow).catch(failed)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === 'pick' && (
+        <MomentPicker
+          lang={lang}
+          agent={agent}
+          unreachable={unreachable(agent, classic)}
+          onPick={event => {
+            setModal(null)
+            setShowAll(false)
+            setSelected(event)
+          }}
           onClose={() => setModal(null)}
         />
       )}

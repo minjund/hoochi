@@ -1664,3 +1664,189 @@ button.hw-existing-text:hover b {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* The editor's back bar sticks to the top while you scroll: it must cover the panel's padding
+   (18px above, 20px each side) or what scrolls under it shows above and beside it. */
+.hw-editor-head {
+  top: -18px;
+  margin: -18px -20px 0;
+  padding: 14px 20px 10px;
+}
+
+/* ---------- simpler moments: one-line cards, other moments on demand ---------- */
+.hw-moments {
+  gap: 10px;
+}
+.hw-moments-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.hw-moments-sub {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-moments-list {
+  gap: 10px;
+}
+.hw-moments-list > li + li::before {
+  content: none;
+}
+.hw-moment {
+  min-height: 60px;
+  padding: 12px 18px;
+  gap: 16px;
+}
+.hw-moment-name {
+  flex-shrink: 0;
+  width: 210px;
+  font-size: 15.5px;
+}
+.hw-moment-what {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+.hw-moment-hint {
+  flex: 1;
+  font-size: 15px;
+}
+.hw-moment-more,
+.hw-moment-just {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.hw-moment-wrap > .hw-hidden {
+  padding-left: 18px;
+}
+.hw-add-other {
+  all: unset;
+  align-self: center;
+  margin: 8px 0 4px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 11px;
+  border: 1px solid var(--hw-line-strong);
+  background: var(--hw-card);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 44px;
+  cursor: pointer;
+}
+.hw-add-other:hover {
+  border-color: var(--hw-soft);
+}
+.hw-add-other:focus-visible {
+  outline: 2px solid var(--hw-green);
+  outline-offset: 2px;
+}
+.hw-back-list {
+  display: inline-block;
+  margin-bottom: 10px;
+}
+
+.hw-pick {
+  place-items: stretch;
+  padding: 16px;
+}
+.hw-pick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: var(--hw-bg);
+  max-height: 100%;
+}
+.hw-pick-card .hw-modal-head b {
+  font-size: 20px;
+}
+.hw-pick-search {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--hw-line-strong);
+  border-radius: 11px;
+  background: var(--hw-card);
+  font-size: 15px;
+  color: var(--hw-ink);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.hw-pick-search:focus {
+  border-color: var(--hw-green);
+}
+.hw-pick-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.hw-pick-body ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hw-pick-group {
+  margin: 14px 0 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-pick-group:first-child {
+  margin-top: 0;
+}
+.hw-pick-opt {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.hw-pick-opt:hover,
+.hw-pick-opt:focus-visible {
+  background: var(--hw-card);
+  box-shadow: 0 0 0 1px var(--hw-line);
+}
+.hw-pick-opt:hover b,
+.hw-pick-opt:focus-visible b {
+  color: var(--hw-green-ink);
+}
+.hw-pick-opt b {
+  font-size: 15.5px;
+  font-weight: 600;
+}
+.hw-pick-opt span {
+  font-size: 13.5px;
+  color: var(--hw-soft);
+  word-break: keep-all;
+}
+.hw-pick-all {
+  display: block;
+  margin: 12px auto 4px;
+}
+.hw-pick-none {
+  margin: 8px 4px;
+  font-size: 14.5px;
+  color: var(--hw-soft);
+}
+.hw-pick {
+  align-items: start;
+  justify-items: stretch;
+}
+.hw-pick-card,
+.hw-send-card {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}

@@ -55,7 +55,7 @@ const Icon = ({ event }: { event: string }) => (
 type Props = {
   agent: Agent
   lang: Lang
-  /** what is put in at the scope shown */
+  /** what is put in at the place shown */
   items: Item[]
   activity: Activity
   /** hooks set up outside hoochi, switched on, by moment */
@@ -68,16 +68,39 @@ type Props = {
   onAddHidden?(event: string): void
   /** how many other places have the same item */
   alsoIn?(item: Item): number
+  /** open the picker for the other moments */
+  onAddOther(): void
 }
 
-/** The main moments as cards, top to bottom, each with what is put in there. */
-export function MomentList({ agent, lang, items, activity, existing, unreachable, onSelect, hidden, onAddHidden, alsoIn }: Props) {
+/** The moments of the main flow, in the order a chat goes through them. */
+const MAIN_LIST = MAIN.flat()
+
+/**
+ * What the window shows: the main moments as one-line cards, then the other moments that have
+ * something put in here, then one button to put something in at another moment. The moments not
+ * in use stay out of sight (the picker finds them).
+ */
+export function MomentList({
+  agent,
+  lang,
+  items,
+  activity,
+  existing,
+  unreachable,
+  onSelect,
+  hidden,
+  onAddHidden,
+  alsoIn,
+  onAddOther,
+}: Props) {
   const t = UI[lang]
   const now = Date.now()
-  const on = items.filter(i => i.enabled && itemFilled(i) && MAIN_EVENTS.has(i.event)).length
+  const slots = new Set(MAIN_LIST.filter(e => slotOf(e, agent)))
+  const others = [...new Set(items.filter(i => itemFilled(i) && !MAIN_EVENTS.has(i.event)).map(i => i.event))].filter(
+    e => slotOf(e, agent),
+  )
 
-  const card = (event: string, compact = false) => {
-    if (!slotOf(event, agent)) return null
+  const card = (event: string) => {
     const here = items.filter(i => i.event === event && itemFilled(i))
     const first = here[0]
     // Only when one of the items shown here ran: with several chats working at once (agents in
@@ -88,53 +111,44 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
     const outside = existing[event] ?? 0
     const elsewhere = first && alsoIn ? alsoIn(first) : 0
     const shadow = hidden?.(event) ?? null
+    const extra = [
+      here.length > 1 ? t.moreItems(here.length - 1) : '',
+      elsewhere > 0 ? t.alsoIn(elsewhere) : '',
+      outside > 0 ? t.existingCount(outside) : '',
+    ].filter(Boolean)
     const button = (
       <button
-        key={event}
         type="button"
         className="hw-moment"
         data-just={just || undefined}
         data-empty={here.length === 0 || undefined}
         data-blocked={blocked || undefined}
-        data-compact={compact || undefined}
         onClick={() => onSelect(event)}
       >
-        {!compact && <Icon event={event} />}
-        <span className="hw-moment-main">
-          <span className="hw-moment-name">{eventName(event, lang, agent)}</span>
-          {first ? (
-            <span className="hw-moment-what" data-off={!first.enabled || undefined}>
-              <i className="hw-moment-kind" data-kind={first.kind}>
-                {t.kinds[first.kind]}
-              </i>
-              <span className="hw-moment-label">{itemLabel(first)}</span>
-              {first.kind === 'command' && first.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
-              {first.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
-              {!first.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
-            </span>
-          ) : (
-            <span className="hw-moment-hint">{blocked ? t.blockedCard : `+ ${t.putHere}`}</span>
-          )}
-        </span>
-        <span className="hw-moment-side">
-          {just && <span className="hw-moment-just">✓ {t.justNow}</span>}
-          {(here.length > 1 || outside > 0 || elsewhere > 0) && (
-            <span className="hw-moment-more">
-              {[
-                here.length > 1 ? t.moreItems(here.length - 1) : '',
-                elsewhere > 0 ? t.alsoIn(elsewhere) : '',
-                outside > 0 ? t.existingCount(outside) : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </span>
-          )}
-        </span>
+        <span className="hw-moment-name">{eventName(event, lang, agent)}</span>
+        {first ? (
+          <span className="hw-moment-what" data-off={!first.enabled || undefined}>
+            <i className="hw-moment-kind" data-kind={first.kind}>
+              {t.kinds[first.kind]}
+            </i>
+            <span className="hw-moment-label">{itemLabel(first)}</span>
+            {first.kind === 'command' && first.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+            {first.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
+            {!first.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
+          </span>
+        ) : (
+          <span className="hw-moment-hint">{blocked ? t.blockedCard : `+ ${t.putHere}`}</span>
+        )}
+        {just ? (
+          <span className="hw-moment-just">✓ {t.justNow}</span>
+        ) : (
+          extra.length > 0 && <span className="hw-moment-more">{extra.join(' · ')}</span>
+        )}
       </button>
     )
-    if (!shadow) return button
+    if (!shadow) return <li key={event}>{button}</li>
     return (
-      <div key={event} className="hw-moment-wrap" data-compact={compact || undefined}>
+      <li key={event} className="hw-moment-wrap">
         {button}
         <div className="hw-hidden" role="note">
           <p>{t.hiddenNote(shadow.what, shadow.from)}</p>
@@ -144,37 +158,23 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
             </button>
           )}
         </div>
-      </div>
+      </li>
     )
   }
 
   return (
     <section className="hw-moments" aria-label={t.momentsTitle}>
-      <div className="hw-moments-head">
-        <h2>{t.momentsTitle}</h2>
-        {on > 0 && <span className="hw-moments-on">{t.momentsOn(on)}</span>}
-      </div>
-      <ol className="hw-moments-list">
-        {MAIN.map(m =>
-          Array.isArray(m) ? (
-            <li key={m.join('+')} className="hw-moment-group">
-              <div className="hw-moment-group-head">
-                <span>{t.toolGroup}</span>
-                <span>↻ {t.toolRepeat}</span>
-              </div>
-              <div className="hw-moment-pair">
-                {card(m[0], true)}
-                <span className="hw-moment-arrow" aria-hidden="true">
-                  →
-                </span>
-                {card(m[1], true)}
-              </div>
-            </li>
-          ) : (
-            <li key={m}>{card(m)}</li>
-          ),
-        )}
-      </ol>
+      <h2 className="hw-moments-title">{t.momentsTitle}</h2>
+      <ul className="hw-moments-list">{MAIN_LIST.filter(e => slots.has(e)).map(card)}</ul>
+      {others.length > 0 && (
+        <>
+          <h3 className="hw-moments-sub">{t.otherMomentsTitle}</h3>
+          <ul className="hw-moments-list">{others.map(card)}</ul>
+        </>
+      )}
+      <button type="button" className="hw-add-other" onClick={onAddOther}>
+        + {t.addOther}
+      </button>
     </section>
   )
 }
