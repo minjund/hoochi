@@ -13,6 +13,7 @@ import { SlotEditor } from './components/hoochi/slot-editor'
 import { FirstSteps, MAIN_EVENTS, MomentList, RECIPES } from './components/hoochi/moment-list'
 import hoochiIcon from './assets/hoochi-icon.svg'
 import { Button } from './components/ui/button'
+import { DropdownMenu } from './components/ui/dropdown-menu'
 import { IconButton } from './components/ui/icon-button'
 import { SegmentedControl } from './components/ui/segmented-control'
 import { Select } from './components/ui/select'
@@ -1057,20 +1058,30 @@ export default function App() {
           hoochi
           <span title={t.onHint}>{t.on(activeCount)}</span>
         </div>
-        <SegmentedControl
-          size="sm"
+        <DropdownMenu
+          align="end"
           aria-label={t.language}
-          options={[
-            { value: 'en', label: 'EN', ariaLabel: 'English' },
-            { value: 'ko', label: '한', ariaLabel: '한국어' },
-            { value: 'ja', label: '日', ariaLabel: '日本語' },
-            { value: 'zh', label: '中', ariaLabel: '中文' },
-          ]}
-          value={lang}
-          onChange={next => {
-            setLang(next)
-            saveLang(next)
-          }}
+          items={(
+            [
+              ['en', 'English'],
+              ['ko', '한국어'],
+              ['ja', '日本語'],
+              ['zh', '中文'],
+            ] as const
+          ).map(([value, label]) => ({
+            label,
+            type: 'radio' as const,
+            checked: lang === value,
+            onSelect: () => {
+              setLang(value)
+              saveLang(value)
+            },
+          }))}
+          trigger={({ triggerProps }) => (
+            <Button size="sm" variant="ghost" title={t.language} {...triggerProps}>
+              {{ en: 'EN', ko: '한국어', ja: '日本語', zh: '中文' }[lang]} ▾
+            </Button>
+          )}
         />
         <IconButton
           size="sm"
@@ -1131,28 +1142,6 @@ export default function App() {
         )}
 
       <div className="hw-controls">
-        {latest && isBusy && (
-          <div className="hw-now" data-busy title={t.busyHint}>
-            {busy.slice(0, 4).map(term => (
-              <span key={term} className="hw-now-dot" style={{ background: colorOf(term) }} aria-hidden="true" />
-            ))}
-            <b>{t.busyNow(busy.length)}</b>
-          </div>
-        )}
-        {latest && !isBusy && (
-          <div className="hw-now" key={latest.place.terminal} data-moved={switched ? true : undefined}>
-            <span
-              className="hw-now-dot"
-              style={{ background: colorOf(latest.place.terminal) }}
-              aria-hidden="true"
-            />
-            <span className="hw-now-label">{t.nowChatting}</span>
-            <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
-          </div>
-        )}
-        {latest?.agent === 'claude' && codex?.installed && !codex.connected && (
-          <p className="hw-editor-hint">{t.followCodex}</p>
-        )}
         {unhookedNew.length > 0 && (
           <details className="hw-note hw-unhooked">
             <summary>{t.unhookedTitle(unhooked.length)}</summary>
@@ -1170,78 +1159,97 @@ export default function App() {
             </ul>
           </details>
         )}
-        {switched && latest && (
-          <p className="hw-switched" role="status">
-            {t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent))}
-          </p>
-        )}
-        <SegmentedControl
-          fullWidth
-          size="sm"
-          aria-label="Agent"
-          options={[
-            { value: 'claude', label: t.agents.claude },
-            { value: 'codex', label: t.agents.codex },
-          ]}
-          value={agent}
-          onChange={next => {
-            setAgent(next)
-            setSelected(null)
-            holdFollow()
-          }}
-        />
-        <SegmentedControl
-          fullWidth
-          size="sm"
-          aria-label={t.scopeLabel}
-          options={[
-            { value: 'global', label: t.scopes.global },
-            { value: 'project', label: t.scopes.project },
-            { value: 'terminal', label: t.scopes.terminal },
-          ]}
-          value={scope}
-          onChange={next => {
-            setScope(next)
-            // "This terminal" is kept while following; the other two would be changed back at once.
-            if (next !== 'terminal') holdFollow()
-          }}
-        />
-        {scope === 'project' &&
-          (projectOptions.length ? (
-            <Select
-              size="sm"
-              aria-label={t.pickProject}
-              placeholder={t.pickProject}
-              options={projectOptions}
-              value={projectKey || null}
-              onChange={next => {
-                setProjectKey(next)
-                holdFollow()
-              }}
-            />
-          ) : (
-            <p className="hw-editor-hint">{t.noPlaces}</p>
-          ))}
-        {scope === 'terminal' && (
-          <p className="hw-editor-hint">
-            {terminalKey ? t.terminalNow(chatName(terminalKey, terminalProject, terminalAgent)) : t.noPlaces}
-          </p>
-        )}
-        {scopeReady && actions.length > 0 && (
-          <div className="hw-actions">
-            {actions.map(a => (
-              <Button
-                key={a.label}
+        <div className="hw-row">
+          <span className="hw-row-label">{t.rowAgent}</span>
+          <SegmentedControl
+            size="sm"
+            aria-label={t.rowAgent}
+            options={[
+              { value: 'claude', label: t.agents.claude },
+              { value: 'codex', label: t.agents.codex },
+            ]}
+            value={agent}
+            onChange={next => {
+              setAgent(next)
+              setSelected(null)
+              holdFollow()
+            }}
+          />
+          {latest && isBusy && (
+            <div className="hw-now" data-busy title={t.busyHint}>
+              {busy.slice(0, 4).map(term => (
+                <span key={term} className="hw-now-dot" style={{ background: colorOf(term) }} aria-hidden="true" />
+              ))}
+              <b>{t.busyNow(busy.length)}</b>
+            </div>
+          )}
+          {latest && !isBusy && (
+            <div
+              className="hw-now"
+              key={latest.place.terminal}
+              data-moved={switched ? true : undefined}
+              title={switched ? t.switchedTo(chatName(latest.place.terminal, latest.place.project, latest.agent)) : undefined}
+            >
+              <span className="hw-now-dot" style={{ background: colorOf(latest.place.terminal) }} aria-hidden="true" />
+              <span className="hw-now-label">{t.nowChatting}</span>
+              <b>{chatName(latest.place.terminal, latest.place.project, latest.agent)}</b>
+            </div>
+          )}
+        </div>
+        <div className="hw-row">
+          <span className="hw-row-label">{t.scopeLabel}</span>
+          <SegmentedControl
+            size="sm"
+            aria-label={t.scopeLabel}
+            options={[
+              { value: 'global', label: t.scopes.global },
+              { value: 'project', label: t.scopes.project },
+              { value: 'terminal', label: t.scopes.terminal },
+            ]}
+            value={scope}
+            onChange={next => {
+              setScope(next)
+              // "This terminal" is kept while following; the other two would be changed back at once.
+              if (next !== 'terminal') holdFollow()
+            }}
+          />
+          {scope === 'project' && projectOptions.length > 0 && (
+            <div className="hw-row-fill">
+              <Select
                 size="sm"
-                variant={a.strong ? 'secondary' : 'ghost'}
-                title={a.title}
-                onClick={a.run}
-              >
-                {a.label}
-              </Button>
-            ))}
-          </div>
-        )}
+                aria-label={t.pickProject}
+                placeholder={t.pickProject}
+                options={projectOptions}
+                value={projectKey || null}
+                onChange={next => {
+                  setProjectKey(next)
+                  holdFollow()
+                }}
+              />
+            </div>
+          )}
+        </div>
+        <div className="hw-where">
+          <p>
+            {!scopeReady
+              ? t.noPlaces
+              : scope === 'terminal'
+                ? t.terminalNow(chatName(terminalKey, terminalProject, terminalAgent))
+                : t.appliesTo(whereWords)}
+          </p>
+          {scopeReady && actions.length > 0 && (
+            <DropdownMenu
+              align="end"
+              aria-label={t.copyMenu}
+              items={actions.map(a => ({ label: a.label, description: a.title, onSelect: a.run }))}
+              trigger={({ triggerProps }) => (
+                <Button size="sm" variant="ghost" {...triggerProps}>
+                  {t.copyMenu} ▾
+                </Button>
+              )}
+            />
+          )}
+        </div>
         {asking?.near === 'controls' && askBanner}
         {noticeAt === 'controls' && noticeBanner}
         {agent === 'codex' && codex && (

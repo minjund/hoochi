@@ -143,8 +143,7 @@ export function SlotEditor({
         {t.stepWhen}
       </p>
       <div className="hw-editor-title">
-        <strong>{eventName(slot.event, lang, agent)}</strong>
-        <code>{slot.event}</code>
+        <strong title={slot.event}>{eventName(slot.event, lang, agent)}</strong>
         {!slot.canInject && <span className="hw-tag">{t.onlyCommandsTag}</span>}
         {blocked && <span className="hw-tag hw-tag-blocked">{t.blockedTag}</span>}
       </div>

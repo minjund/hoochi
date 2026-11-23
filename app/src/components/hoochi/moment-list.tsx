@@ -93,30 +93,31 @@ export function MomentList({ agent, lang, items, activity, existing, unreachable
       >
         {!compact && <Icon event={event} />}
         <span className="hw-moment-main">
-          <span className="hw-moment-name">
-            {eventName(event, lang, agent)}
-            {first?.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
-          </span>
+          <span className="hw-moment-name">{eventName(event, lang, agent)}</span>
           {first ? (
             <span className="hw-moment-what" data-off={!first.enabled || undefined}>
               <i className="hw-moment-kind" data-kind={first.kind}>
                 {t.kinds[first.kind]}
               </i>
               <span className="hw-moment-label">{itemLabel(first)}</span>
-              {first.kind === 'command' && first.mode === 'onFail' && (
-                <i className="hw-moment-tag">{t.tagOnFail}</i>
-              )}
+              {first.kind === 'command' && first.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+              {first.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
               {!first.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
-              {here.length > 1 && <span className="hw-moment-more">{t.moreItems(here.length - 1)}</span>}
             </span>
-          ) : blocked ? (
-            <span className="hw-moment-hint">{t.blockedCard}</span>
           ) : (
-            <span className="hw-moment-hint">+ {t.putHere}</span>
+            <span className="hw-moment-hint">{blocked ? t.blockedCard : `+ ${t.putHere}`}</span>
           )}
-          {outside > 0 && <span className="hw-moment-hint">{t.existingCount(outside)}</span>}
         </span>
-        {just && <span className="hw-moment-just">✓ {t.justNow}</span>}
+        <span className="hw-moment-side">
+          {just && <span className="hw-moment-just">✓ {t.justNow}</span>}
+          {(here.length > 1 || outside > 0) && (
+            <span className="hw-moment-more">
+              {[here.length > 1 ? t.moreItems(here.length - 1) : '', outside > 0 ? t.existingCount(outside) : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          )}
+        </span>
       </button>
     )
   }
