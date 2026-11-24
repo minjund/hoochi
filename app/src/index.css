@@ -2299,3 +2299,44 @@ button.hw-existing-text:hover b {
 .hw-rl-fold > details > .hw-rl-empty {
   margin: 0 14px 14px;
 }
+
+/* ---------- the lifecycle picture at the top of its tab ---------- */
+.hw-rl-picture {
+  display: grid;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--hw-line);
+  border-radius: 12px;
+  background: var(--hw-card);
+}
+.hw-rl-picture-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hw-rl-picture-head .hw-diagram-hint {
+  margin: 0;
+}
+.hw-rl-legend {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hw-soft);
+}
+.hw-rl-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+.hw-rl-heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.hw-rl-heading small {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}

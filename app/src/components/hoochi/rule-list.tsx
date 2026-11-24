@@ -17,6 +17,9 @@ type Place = { scope: Scope; key: string }
  * elsewhere too, or deletes it. Adding is done in words; "Make one yourself" is the one way in.
  */
 export function RuleList({
+  picture,
+  pictureAi,
+  onPictureAi,
   lang,
   rows,
   shown,
@@ -25,7 +28,6 @@ export function RuleList({
   chat,
   codexWarn,
   existing,
-  context,
   momentName,
   placeWords,
   itemWords,
@@ -42,9 +44,12 @@ export function RuleList({
   onAddHere,
   onMake,
   onToggleExisting,
-  onFlow,
   onSkills,
 }: {
+  /** the lifecycle picture of one AI, and which AI it is */
+  picture: ReactNode
+  pictureAi: Agent
+  onPictureAi(a: Agent): void
   lang: Lang
   /** every row (for the counts and the place chips) and the ones this view shows */
   rows: Row[]
@@ -57,8 +62,6 @@ export function RuleList({
   codexWarn: { count: number; installed: boolean } | null
   /** hooks set up outside hoochi */
   existing: { agent: Agent; hook: ExistingHook }[]
-  /** the context window at a glance, when a Claude Code chat has one */
-  context: ReactNode
   momentName(event: string, agent: Agent): string
   placeWords(p: Place): string
   itemWords(item: Item): ReactNode
@@ -75,7 +78,6 @@ export function RuleList({
   onAddHere(r: Row): void
   onMake(): void
   onToggleExisting(agent: Agent, hook: ExistingHook, on: boolean): void
-  onFlow(): void
   onSkills(): void
 }) {
   const t = UI[lang]
@@ -93,14 +95,14 @@ export function RuleList({
     if (r.problem === 'codex-off') return <span className="hw-rl-state" data-s="idle">{t.rlCodexOff}</span>
     if (r.problem === 'blocked') return <span className="hw-rl-state" data-s="hid">{t.rlBlocked}</span>
     if (!r.item.enabled) return <span className="hw-rl-tag">{t.tagOff}</span>
-    if (inChat && r.reach === 'hidden') return <span className="hw-rl-state" data-s="hid">{t.rlHidden}</span>
+    if (r.reach === 'hidden') return <span className="hw-rl-state" data-s="hid">{t.rlHidden}</span>
     const ran = r.lastRun ? t.rlRan(ago(Date.now() - r.lastRun)) : t.rlNotYet
     if (inChat && r.reach === 'in') return <span className="hw-rl-state" data-s="in">✓ {t.rlIn} · {ran}</span>
     return <span className="hw-rl-state" data-s={r.lastRun ? 'ran' : 'idle'}>{ran}</span>
   }
 
   const row = (r: Row) => (
-    <li key={targetKey(r)} className="hw-rl-row" data-off={!r.item.enabled || undefined} data-hidden={(inChat && r.reach === 'hidden') || undefined}>
+    <li key={targetKey(r)} className="hw-rl-row" data-off={!r.item.enabled || undefined} data-hidden={r.reach === 'hidden' || undefined}>
       <div className="hw-rl-main">
         <div className="hw-rl-what">{itemWords(r.item)}</div>
         <div className="hw-rl-meta">
@@ -113,7 +115,7 @@ export function RuleList({
           {r.item.once && <span className="hw-rl-tag">{t.tagOnce}</span>}
           {state(r)}
         </div>
-        {inChat && r.reach === 'hidden' && r.hiddenBy && (
+        {r.reach === 'hidden' && r.hiddenBy && (
           <p className="hw-rl-why">
             {t.rlHiddenWhy(placeWords(r.hiddenBy))}{' '}
             <button type="button" className="hw-link" onClick={() => onAddHere(r)}>
@@ -153,17 +155,39 @@ export function RuleList({
             <b>{chat.words}</b>
             <small>{t.rlNowCount(chat.in, chat.hidden)}</small>
           </p>
-          <div className="hw-rl-seg" role="group" aria-label={t.rlModeLabel}>
-            <button type="button" aria-pressed={view.mode === 'chat'} onClick={() => set({ mode: 'chat' })}>
-              {t.rlModeChat}
-            </button>
-            <button type="button" aria-pressed={view.mode === 'all'} onClick={() => set({ mode: 'all' })}>
-              {t.rlModeAll}
-            </button>
-          </div>
         </div>
       )}
 
+      <div className="hw-rl-picture">
+        <div className="hw-rl-picture-head">
+          <p className="hw-diagram-hint">{t.diagramHint}</p>
+          <div className="hw-rl-seg" role="group" aria-label={t.rowAgent}>
+            {(['claude', 'codex'] as const).map(a => (
+              <button key={a} type="button" aria-pressed={pictureAi === a} onClick={() => onPictureAi(a)}>
+                {t.agents[a]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {picture}
+        <p className="hw-rl-legend">{t.legend}</p>
+      </div>
+
+      <div className="hw-rl-list-head">
+        <h3 className="hw-rl-heading">
+          {t.rlListTitle} <small>{rows.length}</small>
+        </h3>
+        {chat && (
+          <div className="hw-rl-seg" role="group" aria-label={t.rlModeLabel}>
+            <button type="button" aria-pressed={view.mode === 'all'} onClick={() => set({ mode: 'all' })}>
+              {t.rlModeAll}
+            </button>
+            <button type="button" aria-pressed={view.mode === 'chat'} onClick={() => set({ mode: 'chat' })}>
+              {t.rlModeChat}
+            </button>
+          </div>
+        )}
+      </div>
       <input
         className="hw-pick-search hw-rl-search"
         type="search"
@@ -244,18 +268,9 @@ export function RuleList({
             </ul>
           )}
         </details>
-        <button type="button" onClick={onFlow}>
-          {t.flowView} <small>{t.rlFlowHint}</small>
-        </button>
         <button type="button" onClick={onSkills}>
           {t.rlSkills} <small>{t.rlSkillsHint}</small>
         </button>
-        <details>
-          <summary>
-            {t.ctxTitle} <small>{context ? '' : t.rlContextNone}</small>
-          </summary>
-          {context && <div className="hw-rl-context">{context}</div>}
-        </details>
       </div>
     </section>
   )

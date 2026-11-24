@@ -289,9 +289,10 @@ export default function App() {
   const [classic, setClassic] = useState<ClassicReach>('unknown')
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   // The full picture of every moment, behind "See every moment" (the main moments show as cards).
-  const [showAll, setShowAll] = useState(false)
   // The "What you put in" list: from the chat you are in, or everything; which AI, place, off or not working.
-  const [listView, setListView] = useState<View>({ mode: 'chat', ai: 'all', place: '', off: false, problems: false })
+  const [listView, setListView] = useState<View>({ mode: 'all', ai: 'all', place: '', off: false, problems: false })
+  // Whose lifecycle the picture shows: the AI of the chat in view, unless another one is picked.
+  const [pictureAi, setPictureAi] = useState<Agent | null>(null)
   // The first screen is one chat box; the moments are a page you open from it.
   const [page, setPage] = useState<'chat' | 'moments'>(browserFlags.select ? 'moments' : 'chat')
   const [exchanges, setExchanges] = useState<Exchange[]>([])
@@ -528,7 +529,7 @@ export default function App() {
 
   // The figures the picture draws, from the snapshot: drawn only on Claude Code's picture.
   const contextFill: ContextFill | undefined =
-    context && agent === 'claude'
+    context
       ? {
           used: context.used,
           max: context.max,
@@ -1007,6 +1008,97 @@ export default function App() {
             </div>
     </>
   )
+  /**
+   * The lifecycle picture for one AI: `items` on its boxes (what goes in at the chat in view),
+   * hooks set up elsewhere as grey numbers, the context window on Claude Code's. Resting on a box
+   * shows what it holds (at the start of a chat: the context it loads, with the skills switch);
+   * pressing one opens that moment in the editor.
+   */
+  const flowPicture = (who: Agent, items: Item[], where: string) => {
+    const counts: Record<string, number> = {}
+    for (const h of existing[who]) if (!h.off) counts[h.event] = (counts[h.event] ?? 0) + 1
+    return (
+      <LifecycleDiagram
+        layout={who === 'codex' ? CODEX_LAYOUT : CLAUDE_LAYOUT}
+        agent={who}
+        items={items}
+        activity={activity[who]}
+        selectedEvent={selected}
+        onSelect={e => {
+          // The editor opens for this AI at the place the window follows.
+          if (who !== agent) setAgent(who)
+          setSelected(e)
+        }}
+        lang={lang}
+        existing={counts}
+        context={who === 'claude' ? contextFill : undefined}
+        unreachable={unreachable(who, classic)}
+        describe={event => {
+          const added = items.filter(i => i.event === event)
+          const already = existing[who].filter(h => h.event === event)
+          const fired = activity[who].counts[event] ?? 0
+          return (
+            <div className="hw-tip">
+              <div className="hw-tip-head">
+                <b>{eventName(event, lang, who)}</b>
+                {fired > 0 && <span className="hw-tip-count">{t.fired(fired)}</span>}
+              </div>
+              {unreachable(who, classic).has(event) && <p className="hw-tip-blocked">{t.blockedShort}</p>}
+              {added.length === 0 && already.length === 0 && !(who === 'claude' && contextFill) && <p>{t.tipEmpty}</p>}
+              {who === 'claude' && contextTip(event)}
+              {added.length > 0 && (
+                <section>
+                  <div className="hw-tip-label">
+                    {t.tipAdded} · {where}
+                  </div>
+                  <ul className="hw-tip-list">
+                    {added.slice(0, TIP_ROWS).map(i => (
+                      <li key={i.id} data-off={!i.enabled || undefined}>
+                        <i className="hw-chip" data-kind={i.kind}>
+                          {t.kinds[i.kind]}
+                        </i>
+                        <span>{itemLabel(i)}</span>
+                        {!i.enabled && <em>{t.tipOff}</em>}
+                      </li>
+                    ))}
+                    {added.length > TIP_ROWS && (
+                      <li className="hw-tip-more">{t.tipMore(added.length - TIP_ROWS)}</li>
+                    )}
+                  </ul>
+                </section>
+              )}
+              {already.length > 0 && (
+                <section>
+                  <div className="hw-tip-label">{t.tipExisting}</div>
+                  <ul className="hw-tip-list">
+                    {already.slice(0, TIP_ROWS).map(h => (
+                      <li key={h.id} data-off={h.off || undefined}>
+                        <i className="hw-chip" data-kind="existing">
+                          {t.existingFrom(h.from)}
+                        </i>
+                        <span>
+                          {h.origin?.name ?? h.name}
+                          {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
+                        </span>
+                        {h.off && <em>{t.tipOff}</em>}
+                      </li>
+                    ))}
+                    {already.length > TIP_ROWS && (
+                      <li className="hw-tip-more">{t.tipMore(already.length - TIP_ROWS)}</li>
+                    )}
+                  </ul>
+                </section>
+              )}
+              {added.length === 0 && already.length === 0 && who === 'claude' && contextFill && (
+                <p className="hw-tip-hint">{t.tipEmpty}</p>
+              )}
+            </div>
+          )
+        }}
+      />
+    )
+  }
+
   // ---------- What you put in ----------
   const chatNow = latest ? { agent: latest.agent, project: latest.place.project, terminal: latest.place.terminal } : undefined
   const ruleRows: Row[] = rowsOf(config, {
@@ -1055,8 +1147,17 @@ export default function App() {
     holdFollow()
     openSend([r.item.id])
   }
+  const pictureWho: Agent = pictureAi ?? chatNow?.agent ?? agent
+  const pictureOfChat = !!chatNow && pictureWho === chatNow.agent
   const ruleList = (
     <RuleList
+      picture={flowPicture(
+        pictureWho,
+        pictureOfChat ? ruleRows.filter(r => r.agent === pictureWho && r.reach === 'in').map(r => r.item) : config[pictureWho].global,
+        pictureOfChat ? t.nowChatting : t.scopes.global,
+      )}
+      pictureAi={pictureWho}
+      onPictureAi={setPictureAi}
       lang={lang}
       rows={ruleRows}
       shown={shownRows}
@@ -1077,9 +1178,6 @@ export default function App() {
         ...existing.claude.map(hook => ({ agent: 'claude' as const, hook })),
         ...existing.codex.map(hook => ({ agent: 'codex' as const, hook })),
       ]}
-      context={
-        context ? <ContextGlance snap={context} focus="start" plugins={skillsNow.plugins} t={t} /> : null
-      }
       momentName={(e, a) => eventName(e, lang, a)}
       placeWords={p => placeWords(p)}
       itemWords={i => wordsOf(i, false)}
@@ -1107,7 +1205,6 @@ export default function App() {
           .then(setExisting)
           .catch(failed)
       }
-      onFlow={() => setShowAll(true)}
       onSkills={() => setModal('skills')}
     />
   )
@@ -1182,11 +1279,6 @@ export default function App() {
       window.clearInterval(id)
     }
   }, [expanded, visible, existingProject])
-  const existingCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const h of existing[agent]) if (!h.off) counts[h.event] = (counts[h.event] ?? 0) + 1
-    return counts
-  }, [existing, agent])
 
   const activeCount = useMemo(() => {
     const all = (a: typeof config.claude) => [
@@ -1503,14 +1595,13 @@ export default function App() {
             aria-selected={page === 'chat'}
             onClick={() => {
               setPage('chat')
-              setShowAll(false)
             }}
           >
             {t.tabSay}
           </button>
           <button type="button" role="tab" aria-selected={page === 'moments'} onClick={() => setPage('moments')}>
             {t.tabMine}
-            <b className="hw-tabs-count">{mine.length}</b>
+            <b className="hw-tabs-count">{ruleRows.length}</b>
           </button>
         </nav>
       )}
@@ -1561,7 +1652,7 @@ export default function App() {
         </main>
       ) : (
         <>
-      {!slot && !showAll ? (
+      {!slot ? (
         <div className="hw-controls hw-controls-slim">
         {unhookedNew.length > 0 && (
           <div className="hw-note hw-unhooked" role="status">
@@ -1743,111 +1834,19 @@ export default function App() {
           />
         ) : (
           <>
-            {!showAll && ruleList}
-            {showAll && (
-            <>
-            <button type="button" className="hw-link hw-back-list" onClick={() => setShowAll(false)}>
-              {t.backToList}
-            </button>
-            <p className="hw-diagram-hint">
-              {t.diagramHint}
-              <br />
-              {t.legend}
-            </p>
-            <LifecycleDiagram
-              layout={agent === 'codex' ? CODEX_LAYOUT : CLAUDE_LAYOUT}
-              agent={agent}
-              items={list}
-              activity={activity[agent]}
-              selectedEvent={selected}
-              onSelect={setSelected}
-              lang={lang}
-              existing={existingCounts}
-              context={contextFill}
-              unreachable={unreachable(agent, classic)}
-              describe={event => {
-                const added = list.filter(i => i.event === event)
-                const already = existing[agent].filter(h => h.event === event)
-                const fired = activity[agent].counts[event] ?? 0
-                return (
-                  <div className="hw-tip">
-                    <div className="hw-tip-head">
-                      <b>{eventName(event, lang, agent)}</b>
-                      {fired > 0 && <span className="hw-tip-count">{t.fired(fired)}</span>}
-                    </div>
-                    {unreachable(agent, classic).has(event) && <p className="hw-tip-blocked">{t.blockedShort}</p>}
-                    {added.length === 0 && already.length === 0 && !contextFill && <p>{t.tipEmpty}</p>}
-                    {contextTip(event)}
-                    {added.length > 0 && (
-                      <section>
-                        <div className="hw-tip-label">
-                          {t.tipAdded} · {t.scopes[scope]}
-                        </div>
-                        <ul className="hw-tip-list">
-                          {added.slice(0, TIP_ROWS).map(i => (
-                            <li key={i.id} data-off={!i.enabled || undefined}>
-                              <i className="hw-chip" data-kind={i.kind}>
-                                {t.kinds[i.kind]}
-                              </i>
-                              <span>{itemLabel(i)}</span>
-                              {!i.enabled && <em>{t.tipOff}</em>}
-                            </li>
-                          ))}
-                          {added.length > TIP_ROWS && (
-                            <li className="hw-tip-more">{t.tipMore(added.length - TIP_ROWS)}</li>
-                          )}
-                        </ul>
-                      </section>
-                    )}
-                    {already.length > 0 && (
-                      <section>
-                        <div className="hw-tip-label">{t.tipExisting}</div>
-                        <ul className="hw-tip-list">
-                          {already.slice(0, TIP_ROWS).map(h => (
-                            <li key={h.id} data-off={h.off || undefined}>
-                              <i className="hw-chip" data-kind="existing">
-                                {t.existingFrom(h.from)}
-                              </i>
-                              <span>
-                                {h.origin?.name ?? h.name}
-                                {h.matcher ? ` · ${t.onlyWhen(h.matcher)}` : ''}
-                              </span>
-                              {h.off && <em>{t.tipOff}</em>}
-                            </li>
-                          ))}
-                          {already.length > TIP_ROWS && (
-                            <li className="hw-tip-more">{t.tipMore(already.length - TIP_ROWS)}</li>
-                          )}
-                        </ul>
-                      </section>
-                    )}
-                    {added.length === 0 && already.length === 0 && contextFill && (
-                      <p className="hw-tip-hint">{t.tipEmpty}</p>
-                    )}
-                  </div>
-                )
-              }}
-            />
-            </>
-            )}
+            {ruleList}
           </>
         )}
       </main>
 
-      {(slot || showAll || noticeAt === 'list') && (
+      {(slot || noticeAt === 'list') && (
       <footer className="hw-feed hw-mine" aria-label={t.mine}>
         <div className="hw-mine-head">
           {slot ? (
             <span>
               {t.mine} · {mine.length}
             </span>
-          ) : (
-            showAll && (
-              <button type="button" className="hw-link" aria-pressed onClick={() => setShowAll(false)}>
-                {t.backToList}
-              </button>
-            )
-          )}
+          ) : null}
           {slot && mine.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
               {t.seeAll(mine.length)}
@@ -1881,7 +1880,6 @@ export default function App() {
           unreachable={unreachable(agent, classic)}
           onPick={event => {
             setModal(null)
-            setShowAll(false)
             setSelected(event)
           }}
           onClose={() => setModal(null)}
