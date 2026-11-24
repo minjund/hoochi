@@ -2355,3 +2355,38 @@ button.hw-existing-text:hover b {
   border-color: #c8463c;
   color: #fff;
 }
+
+/* ---------- rules found: a list to act on, row by row ---------- */
+.hw-chat-find-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.hw-chat-find-btn {
+  all: unset;
+  cursor: pointer;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--hw-line-strong);
+  background: var(--hw-card);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 32px;
+}
+.hw-chat-find-btn:hover {
+  background: var(--hw-tint);
+}
+.hw-chat-find-btn:focus-visible {
+  outline: 2px solid var(--hw-green);
+}
+.hw-chat-find-btn[data-danger] {
+  color: #d9574c;
+  border-color: rgba(217, 87, 76, 0.45);
+}
+.hw-chat-edit-change + .hw-chat-edit-change {
+  padding-top: 10px;
+  border-top: 1px dashed var(--hw-line);
+}

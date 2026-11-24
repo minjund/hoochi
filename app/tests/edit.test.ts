@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { allTargets, applyEdit, revertEdit, type Edit } from '../src/lib/edit.ts'
+import { allTargets, applyEdit, revertEdit, touched, type Edit } from '../src/lib/edit.ts'
 import { emptyAgent, listOf, type Config, type Item } from '../src/lib/lifecycle.ts'
 
 const item = (id: string, over: Partial<Item> = {}): Item => ({
@@ -43,12 +43,12 @@ test('off, on and delete, each taken back by itself', () => {
 test('a change in place, and a move to another place and AI', () => {
   const c0 = config()
   const b = allTargets(c0)[1]
-  const inPlace: Edit = { action: 'change', target: b, item: { ...b.item, command: 'pnpm test' }, to: { agent: 'claude', scope: 'global', key: '' } }
+  const inPlace: Edit = { action: 'change', changes: [{ target: b, item: { ...b.item, command: 'pnpm test' }, to: { agent: 'claude', scope: 'global', key: '' } }] }
   const c1 = applyEdit(c0, inPlace)
   assert.deepEqual(c1.claude.global.map(i => i.command), ['cmd a', 'pnpm test', 'cmd c'])
   assert.deepEqual(revertEdit(c1, inPlace), c0)
 
-  const move: Edit = { action: 'change', target: b, item: b.item, to: { agent: 'codex', scope: 'project', key: '/shop' } }
+  const move: Edit = { action: 'change', changes: [{ target: b, item: b.item, to: { agent: 'codex', scope: 'project', key: '/shop' } }] }
   const m1 = applyEdit(c0, move)
   assert.deepEqual(ids(m1, 'claude', 'global'), ['a', 'c'])
   assert.deepEqual(ids(m1, 'codex', 'project', '/shop'), ['b'])
@@ -64,4 +64,22 @@ test('copies go in, and come back out', () => {
   assert.deepEqual(ids(c1, 'codex', 'global'), ['x'])
   assert.deepEqual(ids(c1, 'claude', 'global'), ['a', 'b', 'c'], 'the original stays')
   assert.deepEqual(ids(revertEdit(c1, copy), 'codex', 'global'), [])
+})
+
+test('several changed at once, and all taken back where they stood', () => {
+  const c0 = config()
+  const [a, , c] = allTargets(c0)
+  const both: Edit = {
+    action: 'change',
+    changes: [
+      { target: a, item: { ...a.item, mode: 'always' }, to: { agent: 'claude', scope: 'global', key: '' } },
+      { target: c, item: c.item, to: { agent: 'claude', scope: 'project', key: '/shop' } },
+    ],
+  }
+  const c1 = applyEdit(c0, both)
+  assert.deepEqual(c1.claude.global.map(i => `${i.id}:${i.mode}`), ['a:always', 'b:onFail'])
+  assert.deepEqual(ids(c1, 'claude', 'project', '/shop'), ['p', 'c'])
+  assert.deepEqual(revertEdit(c1, both), c0)
+  assert.deepEqual(touched(both, true).map(t => `${t.scope}:${t.item.id}`), ['global:a', 'project:c'])
+  assert.deepEqual(touched({ action: 'delete', targets: [a] }, true), [])
 })

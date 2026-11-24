@@ -1,20 +1,23 @@
 import { UI, type Lang } from '../../lib/i18n'
-import type { Edit } from '../../lib/edit'
+import { targetKey, type Edit } from '../../lib/edit'
 import type { Agent, Item, Scope } from '../../lib/lifecycle'
-import type { PlaceOpt, Rule } from '../../lib/understand'
+import type { Known, PlaceOpt, Rule } from '../../lib/understand'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 /** One exchange: what you said, and what hoochi made of it. */
 export type Exchange = {
   id: string
   said: string
-  state: 'thinking' | 'rule' | 'edit' | 'unclear'
+  state: 'thinking' | 'rule' | 'edit' | 'find' | 'unclear'
   rule?: Rule
   /** the place the sentence named for a new rule, if any */
   at?: PlaceOpt
   /** a change to the rules already put in, and whether it is done (it can be taken back) */
   edit?: Edit
   done?: boolean
+  /** rules found, and what was done to each one from the list (by `targetKey`), to take it back */
+  found?: Known[]
+  rows?: Record<string, Edit>
   /** the place it goes in, as words */
   place?: string
   /** what hoochi says when it could not make a rule of it */
@@ -46,6 +49,9 @@ export function ChatView({
   onSay,
   onApply,
   onRevert,
+  onRow,
+  onRowUndo,
+  onRowOpen,
   onAdd,
   onEdit,
   onUndo,
@@ -71,6 +77,10 @@ export function ChatView({
   /** do what an edit card says, and take it back */
   onApply(x: Exchange): void
   onRevert(x: Exchange): void
+  /** on a list of rules found: switch one off or on, delete it, take that back, or open it */
+  onRow(x: Exchange, k: Known, action: 'off' | 'on' | 'delete'): void
+  onRowUndo(x: Exchange, k: Known): void
+  onRowOpen(k: Known): void
   onPick(): void
 }) {
   const t = UI[lang]
@@ -163,6 +173,18 @@ export function ChatView({
             )}
             {x.state === 'edit' && x.edit && (
               <EditCard lang={lang} x={x} edit={x.edit} itemWords={itemWords} whereOf={whereOf} onApply={onApply} onRevert={onRevert} />
+            )}
+            {x.state === 'find' && x.found && (
+              <FindCard
+                lang={lang}
+                x={x}
+                found={x.found}
+                itemWords={itemWords}
+                whereOf={whereOf}
+                onRow={onRow}
+                onRowUndo={onRowUndo}
+                onRowOpen={onRowOpen}
+              />
             )}
             {x.state === 'rule' && x.rule && (
               <RuleCard
@@ -283,7 +305,7 @@ function EditCard({
   onRevert(x: Exchange): void
 }) {
   const t = UI[lang]
-  const n = edit.action === 'change' ? 1 : edit.action === 'copy' ? edit.copies.length : edit.targets.length
+  const n = edit.action === 'change' ? edit.changes.length : edit.action === 'copy' ? edit.copies.length : edit.targets.length
   const row = (key: string, where: string, item: Item, mark?: 'before' | 'gone' | 'off') => (
     <li key={key} className="hw-chat-edit-row" data-mark={mark}>
       <span className="hw-chat-rule-when">{where}</span>
@@ -292,13 +314,17 @@ function EditCard({
   )
   const rows =
     edit.action === 'change'
-      ? [
-          row('before', whereOf(edit.target, edit.target.item.event), edit.target.item, 'before'),
-          <li key="arrow" className="hw-chat-edit-arrow" aria-hidden="true">
-            ↓
-          </li>,
-          row('after', whereOf(edit.to, edit.item.event), edit.item),
-        ]
+      ? edit.changes.map(c => (
+          <li key={targetKey(c.target)} className="hw-chat-edit-change">
+            <ul className="hw-chat-edit-list">
+              {row('before', whereOf(c.target, c.target.item.event), c.target.item, 'before')}
+              <li className="hw-chat-edit-arrow" aria-hidden="true">
+                ↓
+              </li>
+              {row('after', whereOf(c.to, c.item.event), c.item)}
+            </ul>
+          </li>
+        ))
       : edit.action === 'copy'
         ? edit.copies.map(c => row(c.item.id, whereOf(c.to, c.item.event), c.item))
         : edit.targets.map(k =>
@@ -334,6 +360,76 @@ function EditCard({
             </button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Rules found: each with what it is and where, and buttons to switch it off or on, delete it, or
+ * open it in the editor. A press acts at once, and the row says what it did with a way back. The
+ * next sentence can act on all of them ("turn these off").
+ */
+function FindCard({
+  lang,
+  x,
+  found,
+  itemWords,
+  whereOf,
+  onRow,
+  onRowUndo,
+  onRowOpen,
+}: {
+  lang: Lang
+  x: Exchange
+  found: Known[]
+  itemWords(item: Item): ReactNode
+  whereOf(at: { agent: Agent; scope: Scope; key: string }, event: string): string
+  onRow(x: Exchange, k: Known, action: 'off' | 'on' | 'delete'): void
+  onRowUndo(x: Exchange, k: Known): void
+  onRowOpen(k: Known): void
+}) {
+  const t = UI[lang]
+  return (
+    <div className="hw-chat-hoo">
+      <p>{t.chatFound(found.length)}</p>
+      <div className="hw-chat-rule hw-chat-find">
+        <ul className="hw-chat-edit-list">
+          {found.map(k => {
+            const done = x.rows?.[targetKey(k)]
+            const item = done && done.action !== 'delete' ? { ...k.item, enabled: done.action === 'on' } : k.item
+            return (
+              <li key={targetKey(k)} className="hw-chat-edit-row" data-mark={done?.action === 'delete' ? 'gone' : undefined}>
+                <span className="hw-chat-rule-when">{whereOf(k, k.item.event)}</span>
+                <span className="hw-chat-rule-what">{itemWords(item)}</span>
+                <div className="hw-chat-find-acts">
+                  {done ? (
+                    <span className="hw-chat-rule-done">
+                      ✓ {t.chatEditDone[done.action](1)}
+                      <button type="button" className="hw-link" onClick={() => onRowUndo(x, k)}>
+                        {t.undo}
+                      </button>
+                    </span>
+                  ) : (
+                    <>
+                      <button type="button" className="hw-chat-find-btn" onClick={() => onRow(x, k, k.item.enabled ? 'off' : 'on')}>
+                        {t.chatEditDo[k.item.enabled ? 'off' : 'on'](1)}
+                      </button>
+                      <button type="button" className="hw-chat-find-btn" onClick={() => onRowOpen(k)}>
+                        {t.chatEdit}
+                      </button>
+                      <button type="button" className="hw-chat-find-btn" data-danger onClick={() => onRow(x, k, 'delete')}>
+                        {t.chatEditDo.delete(1)}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+        {x.fallback && <span className="hw-chat-rule-note">{t.chatEditFallback}</span>}
+        <span className="hw-chat-rule-note">{t.chatFoundNext}</span>
       </div>
     </div>
   )

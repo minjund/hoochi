@@ -39,14 +39,16 @@ export type PlaceOpt = { ref: string; scope: Scope; key: string; words: string; 
 /** What one sentence turned into. */
 export type Understood =
   | { ok: true; action: 'add'; rule: Rule; place?: PlaceOpt }
-  /** `item` is the rule after the change; `to` where it ends up (null place: where it is) */
-  | { ok: true; action: 'change'; target: Known; item: Item; to: { agent: Agent; place: PlaceOpt | null } }
+  /** each `item` is that rule after the change; `to` where they end up (null: each one's own AI or place) */
+  | { ok: true; action: 'change'; changes: { target: Known; item: Item }[]; to: { agent: Agent | null; place: PlaceOpt | null } }
+  /** rules found, shown as a list to act on one by one or by the next sentence */
+  | { ok: true; action: 'find'; targets: Known[] }
   /** `to.agent` null: each one's own AI; `to.place` null: each one's own place */
   | { ok: true; action: 'copy'; targets: Known[]; to: { agent: Agent | null; place: PlaceOpt | null } }
   | { ok: true; action: 'off' | 'on' | 'delete'; targets: Known[] }
   | { ok: false; say: string }
 
-export const ACTIONS = ['add', 'change', 'copy', 'off', 'on', 'delete'] as const
+export const ACTIONS = ['add', 'find', 'change', 'copy', 'off', 'on', 'delete'] as const
 
 export const MODEL = 'sonnet'
 
@@ -58,6 +60,25 @@ export function schemaFor(moments: readonly Moment[], extra: readonly string[] =
       ok: { type: 'boolean' },
       action: { type: 'string', enum: ACTIONS },
       targets: { type: 'array', items: { type: 'string' } },
+      changes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            ref: { type: 'string' },
+            event: { type: 'string', enum: [...new Set([...moments.map(m => m.event), ...extra])] },
+            kind: { type: 'string', enum: ['text', 'command', 'skill'] },
+            text: { type: 'string' },
+            command: { type: 'string' },
+            skill: { type: 'string' },
+            mode: { type: 'string', enum: ['always', 'onFail'] },
+            tools: { type: 'string' },
+            once: { type: 'boolean' },
+          },
+          required: ['ref', 'event', 'kind', 'text', 'command', 'skill', 'mode', 'tools', 'once'],
+          additionalProperties: false,
+        },
+      },
       place: { type: 'string' },
       agent: { type: 'string', enum: ['', 'claude', 'codex'] },
       event: { type: 'string', enum: [...new Set([...moments.map(m => m.event), ...extra])] },
@@ -72,7 +93,7 @@ export function schemaFor(moments: readonly Moment[], extra: readonly string[] =
       why: { type: 'string' },
       say: { type: 'string' },
     },
-    required: ['ok', 'action', 'targets', 'place', 'agent', 'event', 'kind', 'text', 'command', 'skill', 'mode', 'tools', 'once', 'scope', 'why', 'say'],
+    required: ['ok', 'action', 'targets', 'changes', 'place', 'agent', 'event', 'kind', 'text', 'command', 'skill', 'mode', 'tools', 'once', 'scope', 'why', 'say'],
     additionalProperties: false,
   })
 }
@@ -89,6 +110,8 @@ export function systemFor(o: {
   places?: readonly PlaceOpt[]
   /** the ref of the place picked in the window */
   here?: string
+  /** what the person said just before, and the rules on the card it left on screen (refs, in order) */
+  recent?: { said: string; refs: readonly string[] }
 }): string {
   const ai = o.agent === 'codex' ? 'Codex' : 'Claude Code'
   const both = o.agent === 'claude' && o.moments.some(m => m.codex)
@@ -120,7 +143,7 @@ Examples:
 - "tell me with a sound when you're done" -> Stop, command "say done" (macOS), onFail, scope global.
 - "show me the branch status when a chat starts" -> SessionStart, command "git status -sb", always, scope here.
 
-${edits ? editPart(o.known ?? [], o.places ?? [], o.here ?? '') : ''}
+${edits ? editPart(o.known ?? [], o.places ?? [], o.here ?? '', o.recent) : ''}
 Write "text", "why" and "say" in ${LANG_NAME[o.lang] ?? 'English'}. "why" is one short sentence saying why this moment fits. If no rule can do what the person asks, answer ok false with a short "say" explaining what hoochi can do instead, and fill the other fields with any valid value. Otherwise ok true and "say" "".`
 }
 
@@ -145,7 +168,12 @@ export function knownLine(k: Known): string {
   return `${k.ref} | ${AI_NAME[k.agent]} | ${k.place} | ${i.event} | ${what}${extra ? ` | ${extra}` : ''} | ${i.enabled ? 'on' : 'off'}`
 }
 
-function editPart(known: readonly Known[], places: readonly PlaceOpt[], here: string): string {
+function editPart(
+  known: readonly Known[],
+  places: readonly PlaceOpt[],
+  here: string,
+  recent?: { said: string; refs: readonly string[] },
+): string {
   const rules = known.length ? known.map(knownLine).join('\n') : '(none yet)'
   const where = places.map(p => `${p.ref}: ${p.words}${p.agent ? ` (a ${AI_NAME[p.agent]} chat; only ${AI_NAME[p.agent]} rules go here)` : ''}`).join('\n')
   return `
@@ -155,17 +183,28 @@ ${rules}
 Places (ref: what it is):
 ${where}
 The place picked in the window now: ${here || 'g'}.
-
+${
+  recent
+    ? `\nJust before, the person said: "${clip(recent.said, 200)}"${
+        recent.refs.length
+          ? `\nThe card it left on screen shows these rules, in this order: ${recent.refs.map((r, i) => `${i + 1}. ${r}`).join(', ')}. When the person says "it", "that one", "them", "all of these", "the second one" and the like, they mean these.`
+          : ''
+      }\n`
+    : ''
+}
 "action" says what to do:
 - "add": a new rule, as above. "targets" []. "place": "" to go by "scope", or a place ref when the person names a place.
-- "change": the person wants ONE rule above different: its words, command, moment, tools, "only when it fails", "once", its place or its AI. "targets" [its ref]. "event", "kind", "text", "command", "skill", "mode", "tools", "once" are the whole rule as it should be after the change: copy over everything they did not ask to change. "event" must be a moment of the AI it ends up with. "place": "" to keep it where it is, or the ref of the place to move it to. "agent": "" to keep its AI, or "claude"/"codex" to move it to the other AI.
+- "find": the person wants to see which rules there are, or which ones match ("show me the lint rules", "what's in project shop?"). "targets": every matching ref (all of them when they ask for everything). If none match, ok false and say so in "say".
+- "change": the person wants rules above different: their words, command, moment, tools, "only when it fails", "once", their place or their AI. "changes": one entry per rule, with its "ref" and the whole rule as it should be after the change ("event", "kind", "text", "command", "skill", "mode", "tools", "once"): copy over everything they did not ask to change. "event" must be a moment of the AI it ends up with. For a rule that only moves, its content stays as it is. "targets": the same refs. "place": "" to keep each where it is, or the ref of the place to move them to. "agent": "" to keep each one's AI, or "claude"/"codex" to move them to that AI.
 - "copy": put copies of rules above in another place or for the other AI too ("put this in Codex too", "use the same in project shop"). "targets": their refs. "place": "" for each one's own place, or a place ref. "agent": "" for each one's own AI, or "claude"/"codex".
 - "off" / "on": switch rules off (they stay, but nothing goes in) or back on. "delete": remove rules for good. "targets": every ref meant, one or many ("all the lint ones", "everything in project shop", "all of them").
-For any action but "add" and "change", fill the content fields with any valid value. Only use refs listed above. Refs are for you only: never write them in "say"; name a rule by what it does. When it is not clear which rule the person means, answer ok false and ask in "say" which one, naming the candidates in a few words.
+For any action but "add", fill the top-level content fields with any valid value; "changes" is [] unless the action is "change". Only use refs listed above. Refs are for you only: never write them in "say"; name a rule by what it does. When it is not clear which rule the person means, answer ok false and ask in "say" which one, naming the candidates in a few words.
 
 Examples:
 - "turn off the test rule" -> off, targets [the ref of the "npm test" rule].
-- "use pnpm instead of npm for the tests" -> change, targets [that ref], command "pnpm test", the rest as it was.
+- "show me the lint rules" -> find, targets [every ref whose command or words are about lint].
+- "use pnpm instead of npm for the tests" -> change, changes [{ref of that rule, command "pnpm test", the rest as it was}].
+- after a card showing three rules, "make all of these only report failures" -> change, one entry per rule with mode "onFail".
 - "put the Korean rule in Codex too" -> copy, targets [that ref], agent "codex".
 - "delete everything in project shop" -> delete, targets [every ref whose place is project shop].
 `
@@ -205,7 +244,7 @@ export function ruleOf(answer: unknown, moments: readonly Moment[], skills: read
   return { ok: true, rule: { ...c, scope: a.scope === 'global' ? 'global' : 'here', why: (a.why ?? '').trim() } }
 }
 
-type Answer = Partial<Rule & { ok: boolean; say: string; action: string; targets: unknown; place: string; agent: string }>
+type Answer = Partial<Rule & { ok: boolean; say: string; action: string; targets: unknown; changes: unknown; place: string; agent: string }>
 
 /**
  * What an answer says to do, checked against the rules put in and the places: a new rule (as
@@ -226,29 +265,36 @@ export function interpret(
     const r = ruleOf(a, o.moments, o.skills)
     return r.ok ? { ok: true, action, rule: r.rule, ...(place ? { place } : {}) } : r
   }
-  const refs = Array.isArray(a.targets) ? a.targets.filter((x): x is string => typeof x === 'string') : []
+  const listed = Array.isArray(a.targets) ? a.targets.filter((x): x is string => typeof x === 'string') : []
+  const changeRefs = Array.isArray(a.changes) ? (a.changes as { ref?: unknown }[]).map(c => c?.ref).filter((x): x is string => typeof x === 'string') : []
+  const refs = [...listed, ...changeRefs]
   const targets = o.known.filter(k => refs.includes(k.ref))
   const say = typeof a.say === 'string' ? a.say : ''
   if (targets.length === 0) return { ok: false, say }
-  if (action === 'off' || action === 'on' || action === 'delete') return { ok: true, action, targets }
+  if (action === 'off' || action === 'on' || action === 'delete' || action === 'find') return { ok: true, action, targets }
   if (action === 'copy') {
     if (!place && !agent) return { ok: false, say }
     return { ok: true, action, targets, to: { agent, place } }
   }
-  // change: one rule, its words (unless they are skill rules), place and AI
-  const target = targets[0]
-  const to = agent ?? target.agent
-  let item: Item = target.item
-  if (target.item.kind !== 'rules') {
-    const s = slotOf(a.event ?? '', to)
-    if (!s) return { ok: false, say }
-    const c = contentOf(a, s, o.skills)
-    if (!c) return { ok: false, say }
-    item = { ...target.item, ...c }
-  }
-  const fit = itemFor(item, to)
-  if (!fit.ok) return { ok: false, say }
-  return { ok: true, action, target, item: fit.item, to: { agent: to, place } }
+  // change: each rule's words (unless they are skill rules), checked for the AI it ends up with
+  const entries = Array.isArray(a.changes) ? (a.changes as (Partial<Rule> & { ref?: string })[]) : []
+  const changes = targets.flatMap(target => {
+    const c = entries.find(x => x && x.ref === target.ref)
+    const to = agent ?? target.agent
+    let item: Item = target.item
+    if (c && target.item.kind !== 'rules') {
+      const slot = slotOf(c.event ?? '', to)
+      const content = slot ? contentOf(c, slot, o.skills) : null
+      if (!content) return []
+      item = { ...target.item, ...content }
+    }
+    const fit = itemFor(item, to)
+    // nothing to change: no new words, place or AI
+    if (!fit.ok || (!c && !agent && !place)) return []
+    return [{ target, item: fit.item }]
+  })
+  if (changes.length === 0) return { ok: false, say }
+  return { ok: true, action, changes, to: { agent, place } }
 }
 
 /** Tool names as the hooks compare them: comma-separated ("Edit|Write" too, as a matcher writes it). */
@@ -424,12 +470,15 @@ export function matchRecipe(text: string, lang: string, moments: readonly Moment
 }
 
 /** Words that switch off, back on, or delete; checked in this order ("비활성화" is off, not on). */
-const VERBS: [Exclude<Understood & { ok: true }, { action: 'add' | 'change' | 'copy' }>['action'], RegExp][] = [
+const VERBS: ['off' | 'on' | 'delete', RegExp][] = [
   ['delete', /지워\s*줘|지워\s*주|지우자|삭제해|삭제\s*$|없애|빼\s*줘|delete|remove|消して|削除|删除|删掉/i],
   ['off', /꺼\s*줘|꺼\s*주|끄자|끄고|끌래|비활성|turn (it |them |that )?off|switch (it |them |that )?off|disable|オフ|止めて|关掉|关闭/i],
   ['on', /켜\s*줘|켜\s*주|다시\s*켜|활성화|turn (it |them |that )?on|switch (it |them |that )?on|enable|オンに|打开|开启/i],
 ]
 const STOP = new Set(['규칙', '규칙을', '규칙은', '거', '것', '걸', '다시', 'rule', 'rules', 'the', 'it', 'that', 'please', 'ルール', '规则'])
+const FIND = /찾아|보여\s*줘|보여\s*주|뭐\s*있|목록|show|list|find|探して|見せて|找|显示/i
+const RULES = /규칙|넣은|넣어\s*둔|rules?|ルール|规则/i
+const THOSE = /그거|그것|그걸|이거|이것|이걸|저거|이\s*규칙들|그\s*규칙들|them|those|these|that one|それ|これ|那些|这些/i
 const ALL = /전부|모두|다\s*(꺼|켜|지워)|everything|all of (them|it)|all the rules|全部|すべて/i
 
 /**
@@ -437,11 +486,22 @@ const ALL = /전부|모두|다\s*(꺼|켜|지워)|everything|all of (them|it)|al
  * 규칙 꺼 줘" finds the rule that runs the tests). Null when the sentence is not one of these, or
  * no rule matches; "before deleting" is a wish for a new rule, not a delete.
  */
-export function matchEdit(text: string, known: readonly Known[]): Understood | null {
+export function matchEdit(text: string, known: readonly Known[], recent: readonly Known[] = []): Understood | null {
   if (/전에|before|前に|之前/i.test(text)) return null
   const verb = VERBS.find(([, w]) => w.test(text))
-  if (!verb) return null
+  if (!verb) {
+    // "show me the test rules": a list to act on
+    if (!FIND.test(text) || !RULES.test(text)) return null
+    const words = RECIPES.filter(r => r.words.test(text)).map(r => r.words)
+    const found = words.length ? known.filter(k => words.some(w => w.test(`${itemLabel(k.item)} ${k.item.text}`))) : [...known]
+    return found.length ? { ok: true, action: 'find', targets: found } : null
+  }
   const [action] = verb
+  // "turn those off": the rules on the card just shown
+  if (recent.length && THOSE.test(text)) {
+    const fit = recent.filter(k => (action === 'off' ? k.item.enabled : action === 'on' ? !k.item.enabled : true))
+    return fit.length ? { ok: true, action, targets: fit } : null
+  }
   const words = RECIPES.filter(r => r.words.test(text)).map(r => r.words)
   const quoted = [...text.matchAll(/["“'‘「]([^"”'’」]+)["”'’」]/g)].map(m => m[1].toLowerCase())
   const labelOf = (k: Known) => `${itemLabel(k.item)} ${k.item.text}`.toLowerCase()

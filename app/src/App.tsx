@@ -12,7 +12,7 @@ import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
 import { MomentList } from './components/hoochi/moment-list'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
-import { applyEdit, allTargets, revertEdit, type Edit } from './lib/edit'
+import { applyEdit, allTargets, revertEdit, targetKey as rowKey, touched, type Edit, type Target as Held } from './lib/edit'
 import {
   CODEX_ONLY,
   interpret,
@@ -778,14 +778,29 @@ export default function App() {
   }
   const knownRules = (): Known[] =>
     allTargets(config).map((x, i) => ({ ...x, ref: `r${i + 1}`, place: placeName(x) }))
+  /** The rules the last card left on screen, as they are now, so "turn those off" knows which. */
+  const onLastCard = (known: Known[]): Known[] => {
+    const card = [...exchanges].reverse().find(x => x.state === 'rule' || x.state === 'edit' || x.state === 'find')
+    if (!card) return []
+    const shown: Held[] =
+      card.state === 'find'
+        ? (card.found ?? []).filter(k => card.rows?.[rowKey(k)]?.action !== 'delete')
+        : card.state === 'edit' && card.edit
+          ? touched(card.edit, !!card.done)
+          : Object.entries(card.added ?? {}).map(([a, v]) => ({ agent: a as Agent, ...v.target, index: 0, item: { id: v.itemId } as Item }))
+    return shown.flatMap(t => known.filter(k => k.agent === t.agent && k.scope === t.scope && k.key === t.key && k.item.id === t.item.id))
+  }
   /** This computer's Claude Code reads the sentence; without it, the ready-made rules and words. */
   const understand = async (text: string): Promise<Understood & { fallback?: boolean }> => {
     const known = knownRules()
     const opts = placeOpts()
     const here = opts.find(p => scopeReady && p.scope === scope && p.key === key)?.ref ?? 'g'
+    const last = exchanges[exchanges.length - 1]
+    const shown = onLastCard(known)
+    const recent = last ? { said: last.said, refs: shown.map(k => k.ref) } : undefined
     try {
       const answer = await askClaude(
-        systemFor({ agent: 'claude', moments: momentList, skills: skillNames, lang, known, places: opts, here }),
+        systemFor({ agent: 'claude', moments: momentList, skills: skillNames, lang, known, places: opts, here, recent }),
         schemaFor(momentList, known.some(k => k.agent === 'codex') ? CODEX_ONLY : []),
         text,
         MODEL,
@@ -795,7 +810,7 @@ export default function App() {
     } catch {
       // no Claude Code here, or it failed: the ready-made rules answer
     }
-    const edit = matchEdit(text, known)
+    const edit = matchEdit(text, known, shown)
     if (edit) return { ...edit, fallback: true }
     const r = matchRecipe(text, lang, momentList)
     return r.ok ? { ok: true, action: 'add', rule: r.rule, fallback: true } : { ...r, fallback: true }
@@ -821,9 +836,14 @@ export default function App() {
   /** A change to the rules put in, made concrete: where each one ends up, and new ids for copies. */
   const editOf = (u: Understood): Edit | null => {
     if (!u.ok || u.action === 'add') return null
+    if (u.action === 'find') return null
     if (u.action === 'change') {
-      const to = u.to.place ? destFor(u.to.place, u.to.agent) : destFor({ scope: u.target.scope, key: u.target.key, agent: u.target.agent }, u.to.agent)
-      return { action: 'change', target: u.target, item: u.item, to: { agent: u.to.agent, ...to } }
+      const changes = u.changes.map(c => {
+        const who = u.to.agent ?? c.target.agent
+        const to = destFor(u.to.place ?? { scope: c.target.scope, key: c.target.key, agent: c.target.agent }, who)
+        return { target: c.target, item: c.item, to: { agent: who, ...to } }
+      })
+      return { action: 'change', changes }
     }
     if (u.action === 'copy') {
       const copies = u.targets.flatMap(k => {
@@ -850,6 +870,7 @@ export default function App() {
           if (!u.ok) return { ...x, state: 'unclear', say: u.say }
           if (u.action === 'add')
             return { ...x, state: 'rule', rule: u.rule, at: u.place, place: placeWords(placeOfRule(u.rule, 'claude', u.place)), fallback: u.fallback }
+          if (u.action === 'find') return { ...x, state: 'find', found: u.targets, fallback: u.fallback }
           const edit = editOf(u)
           return edit ? { ...x, state: 'edit', edit, fallback: u.fallback } : { ...x, state: 'unclear', say: t.chatCopyNone }
         }),
@@ -895,9 +916,33 @@ export default function App() {
   const applyChange = (x: Exchange) => {
     if (!x.edit || x.done) return
     save(applyEdit(config, x.edit))
-    if (x.edit.action === 'change') connectCodexFor([x.edit.to.agent])
+    if (x.edit.action === 'change') connectCodexFor(x.edit.changes.map(c => c.to.agent))
     if (x.edit.action === 'copy') connectCodexFor(x.edit.copies.map(c => c.to.agent))
     setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, done: true } : e)))
+  }
+  /** On a list of rules found: switch one off or on, or delete it, right away; and take that back. */
+  const rowAct = (x: Exchange, k: Known, action: 'off' | 'on' | 'delete') => {
+    const e: Edit = { action, targets: [k] }
+    save(applyEdit(config, e))
+    setExchanges(xs => xs.map(v => (v.id === x.id ? { ...v, rows: { ...v.rows, [rowKey(k)]: e } } : v)))
+  }
+  const rowUndo = (x: Exchange, k: Known) => {
+    const e = x.rows?.[rowKey(k)]
+    if (!e) return
+    save(revertEdit(config, e))
+    setExchanges(xs =>
+      xs.map(v => {
+        if (v.id !== x.id) return v
+        const rows = { ...v.rows }
+        delete rows[rowKey(k)]
+        return { ...v, rows }
+      }),
+    )
+  }
+  /** Open one rule found in the editor, at its own AI and place. */
+  const rowOpen = (k: Known) => {
+    if (k.agent !== agent) setAgent(k.agent)
+    goTo({ item: k.item, scope: k.scope, key: k.key, at: 0 })
   }
   const revertChange = (x: Exchange) => {
     if (!x.edit || !x.done) return
@@ -1394,6 +1439,9 @@ export default function App() {
             cannot={cannotAdd}
             onApply={applyChange}
             onRevert={revertChange}
+            onRow={rowAct}
+            onRowUndo={rowUndo}
+            onRowOpen={rowOpen}
             onSay={say}
             onAdd={addRule}
             onEdit={editRule}

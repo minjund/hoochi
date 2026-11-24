@@ -140,19 +140,57 @@ test('off, on, delete: the refs listed, nothing else', () => {
   assert.deepEqual(interpret(act({ action: 'on', targets: ['nope'], say: '어느 거요?' }), ctx), { ok: false, say: '어느 거요?' })
 })
 
+const change = (ref: string, over: object = {}) => ({
+  ref, event: 'Stop', kind: 'command', text: '', command: 'npm test', skill: '', mode: 'onFail', tools: '', once: false, ...over,
+})
+
 test('a change keeps the rule, checked against the AI it ends up with', () => {
-  const ch = interpret(act({ action: 'change', targets: ['r1'], command: 'pnpm test' }), ctx)
+  const ch = interpret(act({ action: 'change', targets: ['r1'], changes: [change('r1', { command: 'pnpm test' })] }), ctx)
   assert.ok(ch.ok && ch.action === 'change')
   if (!ch.ok || ch.action !== 'change') return
-  assert.equal(ch.item.id, 'a')
-  assert.equal(ch.item.command, 'pnpm test')
-  assert.equal(ch.to.place, null)
+  assert.equal(ch.changes.length, 1)
+  assert.equal(ch.changes[0].item.id, 'a')
+  assert.equal(ch.changes[0].item.command, 'pnpm test')
+  assert.deepEqual(ch.to, { agent: null, place: null })
   // moved to Codex in project shop: Codex's tool names, the place named
-  const mv = interpret(act({ action: 'change', targets: ['r1'], event: 'PreToolUse', tools: 'Edit, Write', agent: 'codex', place: 'p1' }), ctx)
-  assert.ok(mv.ok && mv.action === 'change' && mv.to.agent === 'codex' && mv.to.place?.key === '/shop' && mv.item.tools === 'apply_patch')
-  // a Codex rule changed to a moment Codex does not have is not understood
-  assert.equal(interpret(act({ action: 'change', targets: ['r3'], event: 'UserPromptSubmit', kind: 'text', text: 'x' }), ctx).ok, true)
-  assert.equal(interpret(act({ action: 'change', targets: ['r3'], event: 'SessionEnd', kind: 'text', text: 'x' }), ctx).ok, true, 'words become a command where they cannot reach')
+  const mv = interpret(
+    act({ action: 'change', changes: [change('r1', { event: 'PreToolUse', tools: 'Edit, Write' })], agent: 'codex', place: 'p1' }),
+    ctx,
+  )
+  assert.ok(mv.ok && mv.action === 'change' && mv.to.agent === 'codex' && mv.to.place?.key === '/shop')
+  assert.ok(mv.ok && mv.action === 'change' && mv.changes[0].item.tools === 'apply_patch')
+  // only moved: no new words, the rule stays as it is
+  const only = interpret(act({ action: 'change', targets: ['r2'], changes: [], place: 'p1' }), ctx)
+  assert.ok(only.ok && only.action === 'change' && only.changes[0].item.text === '한국어로 답해 줘.')
+  // nothing to change at all is not understood
+  assert.equal(interpret(act({ action: 'change', targets: ['r2'], changes: [] }), ctx).ok, false)
+})
+
+test('several rules changed at once, each checked on its own', () => {
+  const many = interpret(
+    act({ action: 'change', targets: ['r1', 'r3'], changes: [change('r1', { mode: 'always' }), change('r3', { event: 'PostToolUse', command: 'npm run lint', mode: 'always', tools: 'apply_patch' })] }),
+    ctx,
+  )
+  assert.ok(many.ok && many.action === 'change' && many.changes.length === 2)
+  assert.ok(many.ok && many.action === 'change' && many.changes.every(c => c.item.mode === 'always'))
+  // one that cannot be made (no such moment for Codex) is left out, the other stays
+  const some = interpret(
+    act({ action: 'change', changes: [change('r1', { mode: 'always' }), change('r3', { event: 'PostToolUseFailure' })] }),
+    ctx,
+  )
+  assert.ok(some.ok && some.action === 'change' && some.changes.map(c => c.target.ref).join() === 'r1')
+})
+
+test('find lists the rules that match, or says there are none', () => {
+  const f = interpret(act({ action: 'find', targets: ['r1', 'r3'] }), ctx)
+  assert.ok(f.ok && f.action === 'find' && f.targets.length === 2)
+  assert.deepEqual(interpret(act({ action: 'find', targets: [], say: '그런 규칙은 없어요.' }), ctx), { ok: false, say: '그런 규칙은 없어요.' })
+})
+
+test('the card just shown is in the instructions, so "these" means its rules', () => {
+  const sys = systemFor({ agent: 'claude', moments, skills: [], lang: 'ko', known, places, here: 'g', recent: { said: '린트 규칙 보여 줘', refs: ['r3', 'r1'] } })
+  assert.ok(sys.includes('Just before, the person said: "린트 규칙 보여 줘"'))
+  assert.ok(sys.includes('1. r3, 2. r1'))
 })
 
 test('a copy names another place or AI', () => {
@@ -182,4 +220,10 @@ test('without Claude Code, switching off, on or deleting by a rule\'s words', ()
   assert.equal(matchEdit('지우기 전에 이유부터', known), null, 'a wish for a new rule')
   assert.equal(matchEdit('삭제하기 전에 물어봐', known), null)
   assert.equal(matchEdit('날씨 꺼 줘', known), null, 'no rule with those words')
+  // a list to act on, and "these" after it
+  const found = matchEdit('테스트 규칙 보여 줘', known)
+  assert.ok(found?.ok && found.action === 'find' && found.targets.map(k => k.ref).join() === 'r1')
+  assert.equal(matchEdit('대화 시작할 때 브랜치 상태 보여 줘', known), null, 'a wish for a new rule, not a search')
+  const those = matchEdit('이거 다 꺼 줘', known, [known[0], known[1]])
+  assert.ok(those?.ok && those.action === 'off' && those.targets.map(k => k.ref).join() === 'r1,r2')
 })
