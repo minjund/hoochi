@@ -3,7 +3,9 @@ import { SLOTS, type Agent } from '../../lib/lifecycle'
 import { useEffect, useRef, useState } from 'react'
 
 import { IconButton } from '../ui/icon-button'
-import { MAIN_EVENTS } from './moment-list'
+
+/** The moments most people use; the picker shows them first. */
+const MAIN_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionEnd'])
 
 /** The other moments people look for most, shown first. */
 const COMMON = ['PermissionRequest', 'PostToolUseFailure', 'UserPromptExpansion', 'PreCompact', 'SubagentStop', 'PostModelSwitch', 'StopFailure']

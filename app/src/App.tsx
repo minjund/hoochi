@@ -10,8 +10,9 @@ import { SandwichBubble } from './components/hoochi/sandwich-bubble'
 import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
-import { MomentList } from './components/hoochi/moment-list'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
+import { RuleList } from './components/hoochi/rule-list'
+import { filterRows, rowsOf, type Row, type View } from './lib/rules-view'
 import { applyEdit, allTargets, revertEdit, targetKey as rowKey, touched, type Edit, type Target as Held } from './lib/edit'
 import {
   CODEX_ONLY,
@@ -32,7 +33,7 @@ import {
 } from './lib/understand'
 import { SendSheet, type Target } from './components/hoochi/send-sheet'
 import { MomentPicker } from './components/hoochi/moment-picker'
-import { alsoIn, hasAll, hiddenHere, sendTo, type PlaceRef } from './lib/copy'
+import { hasAll, sendTo, type PlaceRef } from './lib/copy'
 import hoochiIcon from './assets/hoochi-icon.svg'
 import { Button } from './components/ui/button'
 import { DropdownMenu } from './components/ui/dropdown-menu'
@@ -96,7 +97,6 @@ import {
   itemFilled,
   itemLabel,
   listOf,
-  mergeItems,
   CLAUDE_SLOTS,
   slotOf,
   SLOTS,
@@ -290,6 +290,8 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   // The full picture of every moment, behind "See every moment" (the main moments show as cards).
   const [showAll, setShowAll] = useState(false)
+  // The "What you put in" list: from the chat you are in, or everything; which AI, place, off or not working.
+  const [listView, setListView] = useState<View>({ mode: 'chat', ai: 'all', place: '', off: false, problems: false })
   // The first screen is one chat box; the moments are a page you open from it.
   const [page, setPage] = useState<'chat' | 'moments'>(browserFlags.select ? 'moments' : 'chat')
   const [exchanges, setExchanges] = useState<Exchange[]>([])
@@ -638,7 +640,6 @@ export default function App() {
     running.find(r => r.terminal === terminalKey)?.project ??
     places.terminals[terminalKey]?.cwd ??
     (latest?.place.terminal === terminalKey ? latest.place.project : '')
-  const terminalHasProject = terminalProject !== '' && isProject(terminalProject, terminalKey)
   // A chat is named by its project and its AI (the model, once its /context said which), never
   // by a number: numbers moved as chats opened and closed. Its color dot tells two alike apart.
   const chatName = (terminal: string, project: string, who: Agent) =>
@@ -719,25 +720,6 @@ export default function App() {
     const names = sendTargets.filter(x => places.some(p => p.scope === x.place.scope && p.key === x.place.key))
     act(r.config, t.sentDone(itemWords(items), names.map(x => x.name).join(' · ')))
   }
-  // What a broader place puts in at a moment that this place's own items hide.
-  const here: PlaceRef = { scope, key }
-  const hiddenFor = (event: string) => {
-    if (!scopeReady) return null
-    const found = hiddenHere(config, agent, here, terminalHasProject ? terminalProject : '', event)
-    if (found.length === 0) return null
-    const items = found.flatMap(h => h.items)
-    const from = found
-      .map(h => (h.place.scope === 'global' ? t.scopes.global : t.placeProject(folderName(h.place.key))))
-      .join(' · ')
-    return { what: itemWords(items), from, items }
-  }
-  const addHidden = (event: string) => {
-    const h = hiddenFor(event)
-    if (!h) return
-    const merged = mergeItems(list, h.items, newId)
-    act(withList(config, agent, scope, key, merged.list), t.copied(merged.added))
-  }
-
   // ---------- Saying it in words ----------
   // A new rule is made in Claude Code's moments (marking the ones Codex has too); each AI then has
   // its own button that puts it in, converted for that AI (`ruleFor`). A sentence can also change
@@ -968,16 +950,16 @@ export default function App() {
     setSelected(r.event)
   }
   /** What an item puts in, in a few words, with its tags. */
-  const wordsOf = (item: Item) => (
+  const wordsOf = (item: Item, tags = true) => (
     <>
       <i className="hw-moment-kind" data-kind={item.kind}>
         {t.kinds[item.kind]}
       </i>
       <span className="hw-moment-label">{itemLabel(item)}</span>
-      {item.kind === 'command' && item.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
-      {item.tools && <i className="hw-moment-tag">{item.tools}</i>}
-      {item.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
-      {!item.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
+      {tags && item.kind === 'command' && item.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+      {tags && item.tools && <i className="hw-moment-tag">{item.tools}</i>}
+      {tags && item.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
+      {tags && !item.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
     </>
   )
   const ruleWords = (rule: Rule) => wordsOf(itemOf(rule, '', 0))
@@ -1025,6 +1007,111 @@ export default function App() {
             </div>
     </>
   )
+  // ---------- What you put in ----------
+  const chatNow = latest ? { agent: latest.agent, project: latest.place.project, terminal: latest.place.terminal } : undefined
+  const ruleRows: Row[] = rowsOf(config, {
+    chat: chatNow,
+    activity,
+    codexOn: !codex || (codex.installed && codex.connected),
+    blocked: unreachable('claude', classic),
+  })
+  const rowWords = (r: Row) =>
+    `${eventName(r.item.event, lang, r.agent)} ${itemLabel(r.item)} ${t.kinds[r.item.kind]} ${placeName(r)} ${t.agents[r.agent]}`
+  const viewNow: View = chatNow ? listView : { ...listView, mode: 'all' }
+  const shownRows = filterRows(ruleRows, viewNow, mineQuery, rowWords)
+  const codexRules = ruleRows.filter(r => r.agent === 'codex').length
+  const knownOf = (r: Row): Known => ({ ...r, ref: '', place: placeName(r) })
+  /** Say it in words: the chat opens with this rule on a card, so the next sentence acts on it. */
+  const talkAbout = (r: Row) => {
+    setExchanges(xs => [...xs, { id: newId(), said: t.rlTalkSaid(itemLabel(r.item)), state: 'find', found: [knownOf(r)] }])
+    setPage('chat')
+  }
+  /** Put a rule in for the other AI too, at the same place (or its project, for a terminal). */
+  const copyToOtherAi = (r: Row) => {
+    const who: Agent = r.agent === 'claude' ? 'codex' : 'claude'
+    const fit = itemFor(r.item, who)
+    if (!fit.ok) {
+      setNotice({ kind: 'error', message: fit.why === 'no-moment' ? t.chatNoMoment(t.agents[who]) : t.chatNoWords(t.agents[who]) })
+      return
+    }
+    const to = destFor({ scope: r.scope, key: r.key, agent: r.agent }, who)
+    if (hasAll(config, who, to, [fit.item])) {
+      setNotice({ kind: 'error', message: t.chatCopyNone })
+      return
+    }
+    act(
+      applyEdit(config, { action: 'copy', copies: [{ item: { ...fit.item, id: newId(), added: Date.now() }, to: { agent: who, ...to } }] }),
+      t.rlCopiedTo(`${t.agents[who]} · ${placeWords(to)}`),
+      'list',
+    )
+    connectCodexFor([who])
+  }
+  /** The send sheet, at the rule's own AI and place. */
+  const sendElsewhere = (r: Row) => {
+    if (r.agent !== agent) setAgent(r.agent)
+    setScope(r.scope)
+    if (r.scope === 'project') setProjectKey(r.key)
+    if (r.scope === 'terminal') setTerminalKey(r.key)
+    holdFollow()
+    openSend([r.item.id])
+  }
+  const ruleList = (
+    <RuleList
+      lang={lang}
+      rows={ruleRows}
+      shown={shownRows}
+      view={viewNow}
+      query={mineQuery}
+      chat={
+        latest && chatNow
+          ? {
+              words: t.rlNowWords(chatName(latest.place.terminal, latest.place.project, latest.agent), t.agents[latest.agent]),
+              in: ruleRows.filter(r => r.reach === 'in' && r.item.enabled).length,
+              hidden: ruleRows.filter(r => r.reach === 'hidden').length,
+              color: colorOf(latest.place.terminal),
+            }
+          : null
+      }
+      codexWarn={codexRules > 0 && codex && !(codex.installed && codex.connected) ? { count: codexRules, installed: codex.installed } : null}
+      existing={[
+        ...existing.claude.map(hook => ({ agent: 'claude' as const, hook })),
+        ...existing.codex.map(hook => ({ agent: 'codex' as const, hook })),
+      ]}
+      context={
+        context ? <ContextGlance snap={context} focus="start" plugins={skillsNow.plugins} t={t} /> : null
+      }
+      momentName={(e, a) => eventName(e, lang, a)}
+      placeWords={p => placeWords(p)}
+      itemWords={i => wordsOf(i, false)}
+      ago={t.ago}
+      onView={setListView}
+      onQuery={setMineQuery}
+      onConnectCodex={() => codexDo(codexConnect, { step: 'connected-now' })}
+      onToggle={(r, on) => save(applyEdit(config, { action: on ? 'on' : 'off', targets: [r] }))}
+      onTalk={talkAbout}
+      onEdit={r => rowOpen(knownOf(r))}
+      onSend={sendElsewhere}
+      onSendAi={copyToOtherAi}
+      onDelete={r => act(applyEdit(config, { action: 'delete', targets: [r] }), t.mineDeleted(eventName(r.item.event, lang, r.agent)), 'list')}
+      onAddHere={r =>
+        r.hiddenBy &&
+        act(
+          applyEdit(config, { action: 'copy', copies: [{ item: { ...r.item, id: newId(), added: Date.now() }, to: { agent: r.agent, ...r.hiddenBy } }] }),
+          t.rlCopiedTo(placeWords(r.hiddenBy)),
+          'list',
+        )
+      }
+      onMake={() => setModal('pick')}
+      onToggleExisting={(_, hook, on) =>
+        void setExistingHook(existingProject, hook.id, on)
+          .then(setExisting)
+          .catch(failed)
+      }
+      onFlow={() => setShowAll(true)}
+      onSkills={() => setModal('skills')}
+    />
+  )
+
   const noticeBanner = notice && (
     <div className="hw-done" role={notice.kind === 'error' ? 'alert' : 'status'} data-notice={notice.kind}>
       <span>{notice.message}</span>
@@ -1474,7 +1561,8 @@ export default function App() {
         </main>
       ) : (
         <>
-      <div className="hw-controls">
+      {!slot && !showAll ? (
+        <div className="hw-controls hw-controls-slim">
         {unhookedNew.length > 0 && (
           <div className="hw-note hw-unhooked" role="status">
             <p>
@@ -1485,6 +1573,11 @@ export default function App() {
             </Button>
           </div>
         )}
+          {asking?.near === 'controls' && askBanner}
+          {noticeAt === 'controls' && noticeBanner}
+        </div>
+      ) : (
+      <div className="hw-controls">
         <div className="hw-row">
           <span className="hw-row-label">{t.rowAgent}</span>
           <SegmentedControl
@@ -1609,9 +1702,10 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       <main className="hw-body">
-        {!scopeReady ? null : slot ? (
+        {slot && !scopeReady ? null : slot ? (
           <SlotEditor
             key={`${slot.event}:${draft?.id ?? ''}`}
             slot={slot}
@@ -1649,35 +1743,7 @@ export default function App() {
           />
         ) : (
           <>
-            {!showAll && (
-            <MomentList
-              agent={agent}
-              lang={lang}
-              items={list}
-              activity={activity[agent]}
-              existing={existingCounts}
-              unreachable={unreachable(agent, classic)}
-              onSelect={setSelected}
-              hidden={hiddenFor}
-              onAddHidden={addHidden}
-              alsoIn={item => alsoIn(config, agent, here, item).length}
-              onAddOther={() => setModal('pick')}
-            />
-            )}
-            {!showAll && mine.length > 0 && (
-              <section className="hw-mine-all" aria-label={t.mineAllTitle}>
-                <div className="hw-mine-all-head">
-                  <h2 className="hw-moments-title">
-                    {t.mineAllTitle} <small>{mine.length}</small>
-                  </h2>
-                  <Button size="sm" variant="ghost" className="hw-delete-all" onClick={askDeleteAll}>
-                    {t.deleteAll}
-                  </Button>
-                </div>
-                <p className="hw-editor-hint">{t.mineAllHint(t.agents[agent])}</p>
-                {mineBody('page')}
-              </section>
-            )}
+            {!showAll && ruleList}
             {showAll && (
             <>
             <button type="button" className="hw-link hw-back-list" onClick={() => setShowAll(false)}>
@@ -1768,6 +1834,7 @@ export default function App() {
         )}
       </main>
 
+      {(slot || showAll || noticeAt === 'list') && (
       <footer className="hw-feed hw-mine" aria-label={t.mine}>
         <div className="hw-mine-head">
           {slot ? (
@@ -1775,9 +1842,11 @@ export default function App() {
               {t.mine} · {mine.length}
             </span>
           ) : (
-            <button type="button" className="hw-link" aria-pressed={showAll} onClick={() => setShowAll(v => !v)}>
-              {showAll ? t.backToList : t.flowView}
-            </button>
+            showAll && (
+              <button type="button" className="hw-link" aria-pressed onClick={() => setShowAll(false)}>
+                {t.backToList}
+              </button>
+            )
           )}
           {slot && mine.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
@@ -1786,9 +1855,10 @@ export default function App() {
           )}
         </div>
         {/* One line: the main moments above already show what is in; the list opens in a popup. */}
-        {mine.length === 0 && <p className="hw-editor-hint">{t.noneYet}</p>}
+        {slot && mine.length === 0 && <p className="hw-editor-hint">{t.noneYet}</p>}
         {noticeAt === 'list' && noticeBanner}
       </footer>
+      )}
         </>
       )}
 
