@@ -142,7 +142,18 @@ pub fn detect_project(cwd: &str) -> String {
     }
 }
 
-/// The narrowest scope with any item for this event wins.
+/// Whether an item puts anything in: an empty one (no words, command, skill or full rule row) does not.
+pub fn filled(item: &Value) -> bool {
+    match str_of(item, "kind") {
+        "command" => !str_of(item, "command").trim().is_empty(),
+        "skill" => !str_of(item, "skill").trim().is_empty(),
+        "rules" => !full_rules(item).is_empty(),
+        _ => !str_of(item, "text").trim().is_empty(),
+    }
+}
+
+/// The narrowest scope with any item for this event wins; an empty item does not claim its scope,
+/// so a narrower place with nothing set for the moment follows the wider one.
 pub fn pick<'a>(agent: &'a Value, event: &str, project: &str, terminal: &str) -> Option<(&'static str, String, Vec<&'a Value>)> {
     let scopes: [(&'static str, String, Option<&Value>); 3] = [
         ("terminal", terminal.to_string(), agent.get("terminals").and_then(|t| t.get(terminal))),
@@ -152,7 +163,7 @@ pub fn pick<'a>(agent: &'a Value, event: &str, project: &str, terminal: &str) ->
     for (scope, key, list) in scopes {
         let here: Vec<&Value> = list
             .and_then(Value::as_array)
-            .map(|l| l.iter().filter(|i| i.get("event").and_then(Value::as_str) == Some(event)).collect())
+            .map(|l| l.iter().filter(|i| i.get("event").and_then(Value::as_str) == Some(event) && filled(i)).collect())
             .unwrap_or_default();
         if !here.is_empty() {
             return Some((scope, key, here));
@@ -720,6 +731,18 @@ mod tests {
         let seen = note_seen(&seen, "PreToolUse", "shell", 7);
         assert_eq!(seen["PreToolUse"], json!({ "at": 7, "tools": ["shell", "apply_patch"] }));
         assert_eq!(note_seen(&Value::Null, "Stop", "", 1)["Stop"]["tools"], json!([]));
+    }
+
+    #[test]
+    fn an_empty_item_does_not_claim_its_place() {
+        let agent = json!({
+            "global": [item("g", "Stop", "say done", true)],
+            "projects": { "/p": [item("e", "Stop", "  ", true), { "id": "r", "event": "Stop", "kind": "rules", "rules": [] }] },
+            "terminals": { "t": [item("off", "Stop", "quiet", false)] }
+        });
+        assert_eq!(pick(&agent, "Stop", "/p", "x").unwrap().0, "global");
+        // A switched-off one still does.
+        assert_eq!(pick(&agent, "Stop", "/p", "t").unwrap().0, "terminal");
     }
 
     #[test]

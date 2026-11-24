@@ -1,6 +1,6 @@
 {
   "name": "hoochi",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "description": "Why doesn't my hook run? Checks every Claude Code and Codex hook the way the agent does and shows the first thing that stops it, then lets you fix it or put in new ones, from a little floating window.",
   "license": "MIT",
   "types": "./types/index.d.ts",

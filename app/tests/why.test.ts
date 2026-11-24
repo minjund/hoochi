@@ -106,3 +106,8 @@ test('a matcher is matched as Claude Code does: all, a name, or a whole regex', 
   assert.ok(matcherMatches('mcp__.*', 'mcp__github__search'))
   assert.ok(matcherMatches('(', '('), 'a broken regex falls back to names')
 })
+
+test('an empty rule puts nothing in, and says so first', () => {
+  assert.equal(reasonOf('claude', item({ text: '  ' }), ctx()), 'empty')
+  assert.equal(reasonOf('claude', item({ kind: 'rules', text: '', rules: [{ when: '', skill: 'tdd' }] }), ctx()), 'empty')
+})

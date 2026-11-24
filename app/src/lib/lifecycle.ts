@@ -261,11 +261,15 @@ export function withList(config: Config, who: Agent, scope: Scope, key: string, 
   return { ...config, [who]: next }
 }
 
-/** Which scope decides a moment at a place: the narrowest one that has any item for it. */
+/**
+ * Which scope decides a moment at a place: the narrowest one that has any item for it that puts
+ * something in (a switched-off one counts; an empty one does not), as the plugin and the Codex hook pick.
+ */
 export function decidingScope(agent: AgentConfig, event: string, place: Place): Scope | undefined {
-  if ((agent.terminals[place.terminal] ?? []).some(i => i.event === event)) return 'terminal'
-  if ((agent.projects[place.project] ?? []).some(i => i.event === event)) return 'project'
-  if (agent.global.some(i => i.event === event)) return 'global'
+  const has = (list: Item[] = []) => list.some(i => i.event === event && itemFilled(i))
+  if (has(agent.terminals[place.terminal])) return 'terminal'
+  if (has(agent.projects[place.project])) return 'project'
+  if (has(agent.global)) return 'global'
   return undefined
 }
 

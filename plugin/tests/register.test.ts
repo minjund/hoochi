@@ -305,6 +305,16 @@ test('this terminal beats this project, which beats everywhere', async ($, on) =
   expect((await prompt($))).toEqual(['terminal'])
 })
 
+test('an empty item in the project does not silence the global one there', async ($, on) => {
+  machine(on, {
+    [CONFIG]: v2({
+      global: [item({ id: 'g', text: 'Answer in English.' })],
+      projects: { '/work/app': [item({ id: 'p', kind: 'rules', text: '', rules: [] }), item({ id: 'q', text: '   ' })] },
+    }),
+  })
+  expect(await prompt($)).toEqual(['Answer in English.'])
+})
+
 test('another terminal of the same project gets the project items', async ($, on) => {
   machine(
     on,
@@ -389,7 +399,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.44/Hoochi-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.45/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -407,7 +417,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.44'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.45'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hoochi/Hoochi.app'

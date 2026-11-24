@@ -63,3 +63,17 @@ test('by moment in a chat\'s order, Codex\'s own moments in their place', () => 
   assert.deepEqual(byMoment(rows).map(([e]) => e), ['UserPromptSubmit', 'PreModelRequest', 'Stop'])
   assert.deepEqual(placesOf(rows).map(p => p.scope), ['global', 'project', 'project'])
 })
+
+test('a narrower place with only an empty rule at a moment follows the wider place there', () => {
+  const c: Config = {
+    version: 2,
+    claude: { global: [item('g')], projects: { '/shop': [item('blank', { text: '' })] }, terminals: { t1: [item('none', { kind: 'rules', text: '', rules: [] })] } },
+    codex: emptyAgent(),
+  }
+  const r = rowsOf(c, { chat, activity, codexOn: true, blocked: new Set() })
+  assert.equal(r.find(x => x.item.id === 'g')!.reach, 'in', 'not hidden by empty rules')
+  assert.equal(r.find(x => x.item.id === 'blank')!.problem, 'empty')
+  // A switched-off one still claims its place: it silences the wider rule there.
+  const off: Config = { ...c, claude: { ...c.claude, projects: { '/shop': [item('quiet', { enabled: false })] }, terminals: {} } }
+  assert.equal(rowsOf(off, { chat, activity, codexOn: true, blocked: new Set() }).find(x => x.item.id === 'g')!.reach, 'hidden')
+})

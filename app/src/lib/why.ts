@@ -6,7 +6,7 @@
  * through the ones that apply to it, with what Claude Code recorded of its runs. The first check
  * that fails is the answer; the screens put each check in words.
  */
-import { slotOf, type Activity, type Agent, type Item, type ItemRun, type Run, type Scope, type Seen } from './lifecycle.ts'
+import { itemFilled, slotOf, type Activity, type Agent, type Item, type ItemRun, type Run, type Scope, type Seen } from './lifecycle.ts'
 import { CLAUDE_TOOL, CODEX_TOOL } from './understand.ts'
 
 /** ok: passed · bad: this is why it does not run · warn: likely trouble · idle: nothing to tell yet */
@@ -15,6 +15,8 @@ export type Status = 'ok' | 'bad' | 'warn' | 'idle'
 export type Check =
   | { key: 'on' }
   | { key: 'off' }
+  /** nothing filled in: it puts nothing in, and does not hide the rules of wider places */
+  | { key: 'empty' }
   | { key: 'plugin' }
   /** the plugin has never written anything: it is not installed, or no chat has run since */
   | { key: 'no-plugin' }
@@ -148,6 +150,7 @@ export function whyRule(agent: Agent, item: Item, o: RuleContext): Why {
   const steps: Step[] = []
   const add = (status: Status, check: Check) => steps.push({ status, check })
   add(item.enabled ? 'ok' : 'bad', item.enabled ? { key: 'on' } : { key: 'off' })
+  if (!itemFilled(item)) add('bad', { key: 'empty' })
 
   if (agent === 'codex')
     add(o.codexOn ? 'ok' : 'bad', o.codexOn ? { key: 'codex-on' } : { key: 'codex-off', installed: o.codexInstalled })

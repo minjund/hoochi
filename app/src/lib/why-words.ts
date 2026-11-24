@@ -30,7 +30,7 @@ export const WHY_UI = {
     troubleHint: 'Press one to see why.',
     troubleMore: (n: number) => `${n} more`,
     outside: 'Hooks set up elsewhere',
-    outsideHint: (n: number) => `${n} · from your settings and plugins. hoochi reads what Claude Code recorded of their runs`,
+    outsideHint: 'From your settings files and plugins. How their runs ended comes from what Claude Code recorded.',
     outsideNone: 'None at this place.',
     ruleOf: 'Put in with hoochi',
   },
@@ -43,7 +43,7 @@ export const WHY_UI = {
     troubleHint: '누르면 이유가 보여요.',
     troubleMore: (n: number) => `${n}개 더`,
     outside: '밖에서 만든 훅',
-    outsideHint: (n: number) => `${n}개 · 설정 파일과 플러그인에 있는 것. Claude Code가 남긴 실행 기록을 읽어요`,
+    outsideHint: '설정 파일과 플러그인에 있는 훅이에요. 어떻게 끝났는지는 Claude Code가 남긴 실행 기록에서 읽어요.',
     outsideNone: '이 자리에는 없어요.',
     ruleOf: '후치로 넣은 것',
   },
@@ -56,7 +56,7 @@ export const WHY_UI = {
     troubleHint: '押すと理由が見えます。',
     troubleMore: (n: number) => `ほか ${n} 件`,
     outside: 'ほかで設定されたフック',
-    outsideHint: (n: number) => `${n} 件 · 設定ファイルとプラグインのもの。Claude Code が残した実行記録を読みます`,
+    outsideHint: '設定ファイルとプラグインにあるフックです。どう終わったかは Claude Code が残した実行記録から読みます。',
     outsideNone: 'この場所にはありません。',
     ruleOf: 'hoochi で入れたもの',
   },
@@ -69,7 +69,7 @@ export const WHY_UI = {
     troubleHint: '点一下就能看到原因。',
     troubleMore: (n: number) => `还有 ${n} 个`,
     outside: '别处设置的钩子',
-    outsideHint: (n: number) => `${n} 个 · 来自设置文件和插件。hoochi 会读取 Claude Code 留下的运行记录`,
+    outsideHint: '来自设置文件和插件的钩子。运行结果读取自 Claude Code 留下的记录。',
     outsideNone: '这个位置没有。',
     ruleOf: '用 hoochi 放进去的',
   },
@@ -94,6 +94,7 @@ function en(c: Check, h: WhyHelp): string {
   switch (c.key) {
     case 'on': return "It's on."
     case 'off': return "It's switched off."
+    case 'empty': return 'Nothing is filled in, so it puts nothing in (and does not hide the rules of wider places).'
     case 'plugin': return 'The Claude Code plugin is reporting.'
     case 'no-plugin': return 'No word from the Claude Code plugin yet. Check that it is installed and that a chat has run since.'
     case 'codex-on': return "Codex's hooks are connected."
@@ -136,6 +137,7 @@ function ko(c: Check, h: WhyHelp): string {
   switch (c.key) {
     case 'on': return '켜져 있어요.'
     case 'off': return '꺼져 있어요.'
+    case 'empty': return '채워진 내용이 없어서 아무것도 안 넣어요 (더 넓은 곳 규칙을 가리지도 않아요).'
     case 'plugin': return 'Claude Code 플러그인이 소식을 보내고 있어요.'
     case 'no-plugin': return 'Claude Code 플러그인에서 아직 소식이 없어요. 설치됐는지, 그 뒤로 채팅이 돌았는지 확인하세요.'
     case 'codex-on': return 'Codex 훅이 연결돼 있어요.'
@@ -176,6 +178,7 @@ function ja(c: Check, h: WhyHelp): string {
   switch (c.key) {
     case 'on': return 'オンです。'
     case 'off': return 'オフになっています。'
+    case 'empty': return '中身が空なので何も入りません（より広い場所のルールを隠すこともありません）。'
     case 'plugin': return 'Claude Code のプラグインから知らせが届いています。'
     case 'no-plugin': return 'Claude Code のプラグインからまだ知らせがありません。インストールされているか、その後チャットが動いたか確かめてください。'
     case 'codex-on': return 'Codex のフックはつながっています。'
@@ -216,6 +219,7 @@ function zh(c: Check, h: WhyHelp): string {
   switch (c.key) {
     case 'on': return '已开启。'
     case 'off': return '已关闭。'
+    case 'empty': return '内容是空的，所以什么也不会放进去（也不会遮住更宽位置的规则）。'
     case 'plugin': return 'Claude Code 插件正在报告。'
     case 'no-plugin': return '还没收到 Claude Code 插件的消息。请确认已安装，并且之后有对话运行过。'
     case 'codex-on': return 'Codex 的钩子已连接。'

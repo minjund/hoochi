@@ -2618,3 +2618,44 @@ button.hw-existing-text:hover b {
 .hw-rule-card .hw-step {
   display: none;
 }
+
+/* ---------- the lists, each in its popup ---------- */
+.hw-rl-in-popup {
+  gap: 12px;
+}
+.hw-list-card .hw-modal-head b small {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--hw-soft);
+}
+.hw-modal-head .hw-modal-back {
+  flex-shrink: 0;
+  margin-right: 10px;
+  font-size: 14px;
+}
+.hw-modal-head:has(.hw-modal-back) b {
+  flex: 1;
+  min-width: 0;
+}
+.hw-rl-ways .hw-rl-bad {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(200, 70, 60, 0.12);
+  color: #b8392f;
+}
+.dark .hw-rl-ways .hw-rl-bad {
+  color: #ff8f84;
+}
+
+.hw-rl-in-popup .hw-rl-sub {
+  margin: 0 2px;
+}
+.hw-rl-in-popup .hw-rl-list-head {
+  justify-content: flex-end;
+}
+.hw-rl-ways + .hw-rl-picture {
+  margin-top: 0;
+}

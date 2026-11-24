@@ -25,6 +25,8 @@ export type OutsideRow = { agent: Agent; hook: ExistingHook; why: Why }
  * elsewhere too, or deletes it. Adding is done in words; "Make one yourself" is the one way in.
  */
 export function RuleList({
+  part,
+  onOpenList,
   picture,
   pictureAi,
   onPictureAi,
@@ -57,6 +59,10 @@ export function RuleList({
   onOpenHook,
   onSkills,
 }: {
+  /** page: what is not working, the picture and the ways in; rules / outside: a list, in a popup */
+  part: 'page' | 'rules' | 'outside'
+  /** open a list in its popup (the rules ones not working only, when `problems`) */
+  onOpenList(which: 'rules' | 'outside', problems?: boolean): void
   /** the lifecycle picture of one AI, and which AI it is */
   picture: ReactNode
   pictureAi: Agent
@@ -194,14 +200,10 @@ export function RuleList({
   const order = momentOrder()
   const q = query.trim().toLowerCase()
   const outsideShown = outside
-    .filter(
-      o =>
-        (view.ai === 'all' || o.agent === view.ai) &&
-        (!view.off || o.hook.off) &&
-        (!view.problems || isTrouble(o.why)) &&
-        (!q || `${o.hook.origin?.name ?? ''} ${o.hook.name} ${momentName(o.hook.event, o.agent)} ${o.hook.body ?? ''}`.toLowerCase().includes(q)),
-    )
+    .filter(o => !q || `${o.hook.origin?.name ?? ''} ${o.hook.name} ${momentName(o.hook.event, o.agent)} ${o.hook.body ?? ''}`.toLowerCase().includes(q))
     .sort((a, b) => order.indexOf(a.hook.event) - order.indexOf(b.hook.event))
+  const ruleTrouble = rows.filter(r => r.problem).length
+  const outsideTrouble = outside.filter(o => !o.hook.off && isTrouble(o.why)).length
 
   // What is stuck or failing, rules first: the answer to "why doesn't my hook run?".
   const trouble = [
@@ -256,76 +258,10 @@ export function RuleList({
     )
   }
 
-  return (
-    <section className="hw-rl" aria-label={t.tabMine}>
-      <div className="hw-rl-now" data-trouble={trouble.length > 0 || undefined}>
-        {chat && (
-          <p className="hw-rl-now-chat">
-            <span className="hw-now-dot" style={{ background: chat.color }} aria-hidden="true" />
-            <span>
-              <b>{chat.words}</b>
-              <small>{t.rlNowCount(chat.in, chat.hidden)}</small>
-            </span>
-          </p>
-        )}
-        <div className="hw-rl-trouble">
-          <h3>
-            {trouble.length > 0 ? (
-              <>
-                <i aria-hidden="true">✕</i> {w.trouble(trouble.length)}
-              </>
-            ) : (
-              <>
-                <i aria-hidden="true">✓</i> {w.troubleNone}
-              </>
-            )}
-          </h3>
-          {trouble.length > 0 && (
-            <>
-              <p>{w.troubleHint}</p>
-              <ul>
-                {trouble.slice(0, TROUBLE_SHOWN).map(x => (
-                  <li key={x.key}>
-                    <button type="button" onClick={x.open}>
-                      <span className="hw-rl-trouble-what">
-                        <span className="hw-rl-ai" data-agent={x.agent} aria-label={t.agents[x.agent]} />
-                        <b>{x.what}</b>
-                        <small>{momentName(x.event, x.agent)}</small>
-                      </span>
-                      {x.why.reason && <span className="hw-rl-trouble-why">{whyWords(lang, x.why.reason.check, help)}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {trouble.length > TROUBLE_SHOWN && (
-                <button type="button" className="hw-link" onClick={() => set({ problems: true })}>
-                  {w.troubleMore(trouble.length - TROUBLE_SHOWN)}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="hw-rl-picture">
-        <div className="hw-rl-picture-head">
-          <p className="hw-diagram-hint">{t.diagramHint}</p>
-          <div className="hw-rl-seg" role="group" aria-label={t.rowAgent}>
-            {(['claude', 'codex'] as const).map(a => (
-              <button key={a} type="button" aria-pressed={pictureAi === a} onClick={() => onPictureAi(a)}>
-                {t.agents[a]}
-              </button>
-            ))}
-          </div>
-        </div>
-        {picture}
-        <p className="hw-rl-legend">{t.legend}</p>
-      </div>
-
+  if (part === 'rules')
+    return (
+      <section className="hw-rl hw-rl-in-popup" aria-label={t.rlListTitle}>
       <div className="hw-rl-list-head">
-        <h3 className="hw-rl-heading">
-          {t.rlListTitle} <small>{rows.length}</small>
-        </h3>
         {chat && (
           <div className="hw-rl-seg" role="group" aria-label={t.rlModeLabel}>
             <button type="button" aria-pressed={view.mode === 'all'} onClick={() => set({ mode: 'all' })}>
@@ -387,24 +323,101 @@ export function RuleList({
         + {t.rlMake}
       </button>
 
-      <div className="hw-rl-list-head">
-        <h3 className="hw-rl-heading">
-          {w.outside} <small>{outside.length}</small>
-        </h3>
-      </div>
-      <p className="hw-rl-sub">{w.outsideHint(outside.length)}</p>
+      </section>
+    )
+  if (part === 'outside')
+    return (
+      <section className="hw-rl hw-rl-in-popup" aria-label={w.outside}>
+      <p className="hw-rl-sub">{w.outsideHint}</p>
       {outsideShown.length === 0 ? (
         <p className="hw-rl-empty">{outside.length === 0 ? w.outsideNone : t.rlNoMatch}</p>
       ) : (
         <ul className="hw-rl-rows hw-rl-outside">{outsideShown.map(outsideRow)}</ul>
       )}
 
-      <h4 className="hw-rl-label">{t.rlMore}</h4>
-      <div className="hw-rl-fold">
+      </section>
+    )
+
+  const entry = (title: string, n: number, bad: number, open: () => void) => (
+    <button type="button" onClick={open}>
+      {title} <small>{n}</small>
+      {bad > 0 && <em className="hw-rl-bad">✕ {bad}</em>}
+    </button>
+  )
+  return (
+    <section className="hw-rl" aria-label={t.tabMine}>
+      <div className="hw-rl-now" data-trouble={trouble.length > 0 || undefined}>
+        {chat && (
+          <p className="hw-rl-now-chat">
+            <span className="hw-now-dot" style={{ background: chat.color }} aria-hidden="true" />
+            <span>
+              <b>{chat.words}</b>
+              <small>{t.rlNowCount(chat.in, chat.hidden)}</small>
+            </span>
+          </p>
+        )}
+        <div className="hw-rl-trouble">
+          <h3>
+            {trouble.length > 0 ? (
+              <>
+                <i aria-hidden="true">✕</i> {w.trouble(trouble.length)}
+              </>
+            ) : (
+              <>
+                <i aria-hidden="true">✓</i> {w.troubleNone}
+              </>
+            )}
+          </h3>
+          {trouble.length > 0 && (
+            <>
+              <p>{w.troubleHint}</p>
+              <ul>
+                {trouble.slice(0, TROUBLE_SHOWN).map(x => (
+                  <li key={x.key}>
+                    <button type="button" onClick={x.open}>
+                      <span className="hw-rl-trouble-what">
+                        <span className="hw-rl-ai" data-agent={x.agent} aria-label={t.agents[x.agent]} />
+                        <b>{x.what}</b>
+                        <small>{momentName(x.event, x.agent)}</small>
+                      </span>
+                      {x.why.reason && <span className="hw-rl-trouble-why">{whyWords(lang, x.why.reason.check, help)}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {trouble.length > TROUBLE_SHOWN && (
+                <button type="button" className="hw-link" onClick={() => onOpenList(ruleTrouble > 0 ? 'rules' : 'outside', true)}>
+                  {w.troubleMore(trouble.length - TROUBLE_SHOWN)}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="hw-rl-fold hw-rl-ways">
+        {entry(t.rlListTitle, rows.length, ruleTrouble, () => onOpenList('rules'))}
+        {entry(w.outside, outside.length, outsideTrouble, () => onOpenList('outside'))}
         <button type="button" onClick={onSkills}>
           {t.rlSkills} <small>{t.rlSkillsHint}</small>
         </button>
       </div>
+
+      <div className="hw-rl-picture">
+        <div className="hw-rl-picture-head">
+          <p className="hw-diagram-hint">{t.diagramHint}</p>
+          <div className="hw-rl-seg" role="group" aria-label={t.rowAgent}>
+            {(['claude', 'codex'] as const).map(a => (
+              <button key={a} type="button" aria-pressed={pictureAi === a} onClick={() => onPictureAi(a)}>
+                {t.agents[a]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {picture}
+        <p className="hw-rl-legend">{t.legend}</p>
+      </div>
+
     </section>
   )
 }

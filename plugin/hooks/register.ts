@@ -28,7 +28,7 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.44'
+export const APP_VERSION = '0.1.45'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 /** How much of a failed command's output the window keeps, to say why it failed. */
@@ -162,10 +162,19 @@ export function parseConfig(raw: string): Config {
   return { version: 2, claude: { ...emptyAgent(), global: parseItems(o.items) }, codex: emptyAgent() }
 }
 
+/** Whether an item puts anything in: an empty one (no words, command, skill or full rule row) does not. */
+export function filled(i: Item): boolean {
+  if (i.kind === 'command') return i.command.trim() !== ''
+  if (i.kind === 'skill') return i.skill.trim() !== ''
+  if (i.kind === 'rules') return fullRules(i.rules).length > 0
+  return i.text.trim() !== ''
+}
+
 /**
  * The items for one moment: the narrowest scope with any item for it wins
  * (this terminal, else this project, else everywhere). A switched-off item still
- * claims its scope, so an "off" item can silence a wider one.
+ * claims its scope, so an "off" item can silence a wider one; an empty one does
+ * not, so a narrower place with nothing set for the moment follows the wider one.
  */
 export function pick(
   agent: AgentConfig,
@@ -178,7 +187,7 @@ export function pick(
     ['global', '', agent.global],
   ]
   for (const [scope, key, list] of scopes) {
-    const here = (list ?? []).filter(i => i.event === event)
+    const here = (list ?? []).filter(i => i.event === event && filled(i))
     if (here.length > 0) return { scope, key, items: here }
   }
   return undefined

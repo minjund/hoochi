@@ -241,7 +241,7 @@ const HideIcon = (
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
 /** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | 'send' | 'pick' | 'rule' | 'hook' | null
+type Modal = 'mine' | 'skills' | 'send' | 'pick' | 'rule' | 'hook' | 'rules' | 'outside' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -305,6 +305,8 @@ export default function App() {
   const [page, setPage] = useState<'chat' | 'moments'>('moments')
   // An outside hook set in the popup: its AI and id.
   const [hookOpen, setHookOpen] = useState<{ agent: Agent; id: string } | null>(null)
+  // The list a rule's or a hook's popup was opened from: closing that popup goes back to it.
+  const [listBack, setListBack] = useState<'rules' | 'outside' | null>(null)
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   // A rule from a sentence, opened in the editor to adjust before it is saved.
   const [draft, setDraft] = useState<Item | null>(null)
@@ -341,11 +343,11 @@ export default function App() {
         .catch(() => undefined)
     const close = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || document.querySelector('.hw-confirm[data-asking]')) return
-      setModal(null)
+      setModal((modal === 'rule' || modal === 'hook') && listBack ? listBack : null)
     }
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
-  }, [modal])
+  }, [modal, listBack])
   // The hover card counts only skills that can be switched, so it needs the installed plugins;
   // read again with each new /context, since a plugin may have been switched since.
   const contextAt = context?.at
@@ -1204,8 +1206,20 @@ export default function App() {
   }
   const pictureWho: Agent = pictureAi ?? chatNow?.agent ?? agent
   const pictureOfChat = !!chatNow && pictureWho === chatNow.agent
-  const ruleList = (
+  /** A rule's or a hook's popup closes back to the list it was opened from, if any. */
+  const closeToList = () => setModal(listBack)
+  /** The popup to open a rule or a hook in, remembering the list it is opened from. */
+  const openFromHere = (next: 'rule' | 'hook') => {
+    setListBack(modal === 'rules' || modal === 'outside' ? modal : null)
+    setModal(next)
+  }
+  const ruleList = (part: 'page' | 'rules' | 'outside') => (
     <RuleList
+      part={part}
+      onOpenList={(which, problems) => {
+        if (problems) setListView(v => ({ ...v, problems: true }))
+        setModal(which)
+      }}
       picture={flowPicture(
         pictureWho,
         pictureOfChat ? ruleRows.filter(r => r.agent === pictureWho && r.reach === 'in').map(r => r.item) : config[pictureWho].global,
@@ -1241,7 +1255,7 @@ export default function App() {
       onToggle={(r, on) => save(applyEdit(config, { action: on ? 'on' : 'off', targets: [r] }))}
       onOpen={r => {
         setRuleOpen({ agent: r.agent, scope: r.scope, key: r.key, id: r.item.id })
-        setModal('rule')
+        openFromHere('rule')
       }}
       onTalk={talkAbout}
       onEdit={r => rowOpen(knownOf(r))}
@@ -1260,7 +1274,7 @@ export default function App() {
       onToggleExisting={(_, hook, on) => switchHook(hook, on)}
       onOpenHook={o => {
         setHookOpen({ agent: o.agent, id: o.hook.id })
-        setModal('hook')
+        openFromHere('hook')
       }}
       onSkills={() => setModal('skills')}
     />
@@ -1906,7 +1920,7 @@ export default function App() {
           />
         ) : (
           <>
-            {ruleList}
+            {ruleList('page')}
           </>
         )}
       </main>
@@ -1976,10 +1990,15 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-label={t.rlOpen}
-          onClick={e => e.target === e.currentTarget && setModal(null)}
+          onClick={e => e.target === e.currentTarget && closeToList()}
         >
           <div className="hw-modal-card hw-rule-card">
             <div className="hw-modal-head">
+              {listBack && (
+                <button type="button" className="hw-link hw-modal-back" onClick={closeToList}>
+                  ‹ {t.back}
+                </button>
+              )}
               <b>{t.ruleTitle(eventName(openRow.item.event, lang, openRow.agent), t.agents[openRow.agent], placeWords(openRow))}</b>
               <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
             </div>
@@ -1996,7 +2015,7 @@ export default function App() {
                 onSave={item => putRule(openRow, item)}
                 onSwitch={enabled => putRule(openRow, { ...openRow.item, enabled })}
                 onRemove={() => {
-                  setModal(null)
+                  closeToList()
                   deleteRow(openRow)
                 }}
                 onDirty={() => undefined}
@@ -2011,16 +2030,42 @@ export default function App() {
           </div>
         </div>
       )}
+      {(modal === 'rules' || modal === 'outside') && (
+        <div
+          className="hw-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={modal === 'rules' ? t.rlListTitle : WHY_UI[lang].outside}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
+        >
+          <div className="hw-modal-card hw-list-card">
+            <div className="hw-modal-head">
+              <b>
+                {modal === 'rules' ? t.rlListTitle : WHY_UI[lang].outside}{' '}
+                <small>{modal === 'rules' ? ruleRows.length : outsideRows.length}</small>
+              </b>
+              <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
+            </div>
+            {inModal}
+            <div className="hw-modal-list">{ruleList(modal)}</div>
+          </div>
+        </div>
+      )}
       {modal === 'hook' && openHook && (
         <div
           className="hw-modal"
           role="dialog"
           aria-modal="true"
           aria-label={WHY_UI[lang].checks}
-          onClick={e => e.target === e.currentTarget && setModal(null)}
+          onClick={e => e.target === e.currentTarget && closeToList()}
         >
           <div className="hw-modal-card hw-hook-card">
             <div className="hw-modal-head">
+              {listBack && (
+                <button type="button" className="hw-link hw-modal-back" onClick={closeToList}>
+                  ‹ {t.back}
+                </button>
+              )}
               <b>
                 {openHook.hook.origin?.name ?? openHook.hook.name} · {eventName(openHook.hook.event, lang, openHook.agent)} ·{' '}
                 {t.agents[openHook.agent]}
