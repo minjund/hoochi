@@ -1978,9 +1978,6 @@ button.hw-existing-text:hover b {
   border-color: var(--hw-green-line);
   color: var(--hw-green-ink);
 }
-.hw-chat-mine {
-  align-self: center;
-}
 .hw-chat-log {
   flex: 1;
   min-height: 0;
@@ -2082,15 +2079,6 @@ button.hw-existing-text:hover b {
   font-size: 14px;
   font-weight: 600;
   line-height: 36px;
-}
-.hw-chat-foot {
-  display: flex;
-  justify-content: flex-start;
-  padding: 6px 20px 8px;
-}
-.hw-back-chat {
-  display: inline-block;
-  margin-bottom: 8px;
 }
 
 .hw-chat-rule-what .hw-moment-label {
@@ -2233,4 +2221,137 @@ button.hw-existing-text:hover b {
 .hw-moment-label {
   flex: 1 1 60%;
   min-width: 0;
+}
+.hw-chat-rule-acts {
+  flex-wrap: wrap;
+}
+.hw-chat-rule-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.hw-chat-rule-done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hw-green-ink);
+}
+
+/* ---------- the two pages, one tap apart: say it in words / what you put in ---------- */
+.hw-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 12px 20px 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--hw-tint);
+  border: 1px solid var(--hw-line);
+}
+.hw-tabs button {
+  all: unset;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  border-radius: 9px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--hw-soft);
+  cursor: pointer;
+}
+.hw-tabs button:hover {
+  color: var(--hw-ink);
+}
+.hw-tabs button:focus-visible {
+  outline: 2px solid var(--hw-green);
+}
+.hw-tabs button[aria-selected='true'] {
+  background: var(--hw-card);
+  color: var(--hw-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), inset 0 0 0 1.5px var(--hw-green-line);
+}
+.hw-tabs-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--hw-accent);
+  color: var(--hw-green-ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ---------- everything put in, on the moments page ---------- */
+.hw-mine-all {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--hw-line-strong);
+}
+.hw-mine-all-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hw-mine-all-head .hw-moments-title {
+  margin: 0;
+}
+.hw-mine-all-head small {
+  font-size: 0.7em;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-mine-all > .hw-editor-hint {
+  margin: 0;
+}
+.hw-mine-all .hw-modal-list {
+  overflow: visible;
+}
+
+/* ---------- a change to what is put in, from a sentence ---------- */
+.hw-chat-edit-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hw-chat-edit-row {
+  display: grid;
+  gap: 4px;
+}
+.hw-chat-edit-row + .hw-chat-edit-row {
+  padding-top: 10px;
+  border-top: 1px dashed var(--hw-line);
+}
+.hw-chat-edit-row[data-mark='before'] .hw-chat-rule-what,
+.hw-chat-edit-row[data-mark='gone'] .hw-chat-rule-what {
+  color: var(--hw-soft);
+  text-decoration: line-through;
+  text-decoration-color: var(--hw-line-strong);
+}
+.hw-chat-edit-row[data-mark='before'] .hw-chat-rule-when,
+.hw-chat-edit-row[data-mark='gone'] .hw-chat-rule-when {
+  color: var(--hw-soft);
+}
+.hw-chat-edit-arrow {
+  margin: -4px 0;
+  color: var(--hw-soft);
+  font-size: 15px;
+  line-height: 1;
+}
+.hw-chat-edit-arrow + .hw-chat-edit-row {
+  padding-top: 0;
+  border-top: 0;
+}
+.hw-chat-rule-add[data-danger] {
+  background: #c8463c;
+  border-color: #c8463c;
+  color: #fff;
 }

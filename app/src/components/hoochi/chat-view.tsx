@@ -1,23 +1,34 @@
 import { UI, type Lang } from '../../lib/i18n'
-import type { Rule } from '../../lib/understand'
+import type { Edit } from '../../lib/edit'
+import type { Agent, Item, Scope } from '../../lib/lifecycle'
+import type { PlaceOpt, Rule } from '../../lib/understand'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 /** One exchange: what you said, and what hoochi made of it. */
 export type Exchange = {
   id: string
   said: string
-  state: 'thinking' | 'rule' | 'added' | 'unclear'
+  state: 'thinking' | 'rule' | 'edit' | 'unclear'
   rule?: Rule
+  /** the place the sentence named for a new rule, if any */
+  at?: PlaceOpt
+  /** a change to the rules already put in, and whether it is done (it can be taken back) */
+  edit?: Edit
+  done?: boolean
   /** the place it goes in, as words */
   place?: string
   /** what hoochi says when it could not make a rule of it */
   say?: string
-  /** it was matched from the ready-made rules (Claude Code could not be asked) */
+  /** it was matched from the ready-made rules or by words (Claude Code could not be asked) */
   fallback?: boolean
-  /** the item put in, and where, to take it back out */
-  itemId?: string
-  target?: { scope: 'global' | 'project' | 'terminal'; key: string }
+  /** for each AI it was put in for: the item, and where (as words too), to take it back out */
+  added?: Partial<Record<Agent, Added>>
 }
+
+export type Added = { itemId: string; target: { scope: 'global' | 'project' | 'terminal'; key: string }; place: string }
+
+/** Each AI gets its own button: a rule goes in for Claude Code, Codex, or both. */
+const AGENTS: readonly Agent[] = ['claude', 'codex']
 
 /**
  * The first screen: one chat box. You say what you want in your own words; hoochi answers with
@@ -27,31 +38,40 @@ export function ChatView({
   lang,
   exchanges,
   where,
-  mine,
   momentName,
   ruleWords,
+  itemWords,
+  whereOf,
+  cannot,
   onSay,
+  onApply,
+  onRevert,
   onAdd,
   onEdit,
   onUndo,
   onPick,
-  onSeeMine,
 }: {
   lang: Lang
   exchanges: Exchange[]
   /** the chip that picks the AI and the place, drawn by the caller */
   where: ReactNode
-  /** how many things are put in, everywhere */
-  mine: number
   momentName(event: string): string
   /** what a rule puts in, in a few words ("명령 npm test") */
   ruleWords(rule: Rule): ReactNode
+  /** what an item already put in puts in, in a few words */
+  itemWords(item: Item): ReactNode
+  /** which AI, which place, which moment, in words */
+  whereOf(at: { agent: Agent; scope: Scope; key: string }, event: string): string
+  /** why this rule cannot go in for that AI, or "" when it can */
+  cannot(rule: Rule, agent: Agent): string
   onSay(text: string): void
-  onAdd(x: Exchange): void
+  onAdd(x: Exchange, agent: Agent): void
   onEdit(x: Exchange): void
-  onUndo(x: Exchange): void
+  onUndo(x: Exchange, agent: Agent): void
+  /** do what an edit card says, and take it back */
+  onApply(x: Exchange): void
+  onRevert(x: Exchange): void
   onPick(): void
-  onSeeMine(): void
 }) {
   const t = UI[lang]
   const [text, setText] = useState('')
@@ -122,11 +142,6 @@ export function ChatView({
             </button>
           ))}
         </div>
-        {mine > 0 && (
-          <button type="button" className="hw-link hw-chat-mine" onClick={onSeeMine}>
-            {t.chatSeeMine(mine)}
-          </button>
-        )}
       </div>
     )
   }
@@ -146,46 +161,180 @@ export function ChatView({
                 </button>
               </div>
             )}
-            {(x.state === 'rule' || x.state === 'added') && x.rule && (
-              <div className="hw-chat-hoo">
-                {x.state === 'rule' && <p>{t.chatSuggest}</p>}
-                <div className="hw-chat-rule" data-added={x.state === 'added' || undefined}>
-                  <span className="hw-chat-rule-when">
-                    {x.state === 'added' ? `✓ ${t.chatAdded} · ` : ''}
-                    {momentName(x.rule.event)} · {x.place}
-                  </span>
-                  <span className="hw-chat-rule-what">{ruleWords(x.rule)}</span>
-                  {x.state === 'rule' && x.rule.why && <span className="hw-chat-rule-why">{x.rule.why}</span>}
-                  {x.state === 'rule' && x.fallback && <span className="hw-chat-rule-note">{t.chatFallback}</span>}
-                  <div className="hw-chat-rule-acts">
-                    {x.state === 'rule' ? (
-                      <>
-                        <button type="button" className="hw-cta hw-chat-rule-add" onClick={() => onAdd(x)}>
-                          {t.chatAdd}
-                        </button>
-                        <button type="button" className="hw-chat-rule-edit" onClick={() => onEdit(x)}>
-                          {t.chatEdit}
-                        </button>
-                      </>
-                    ) : (
-                      <button type="button" className="hw-link" onClick={() => onUndo(x)}>
-                        {t.undo}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+            {x.state === 'edit' && x.edit && (
+              <EditCard lang={lang} x={x} edit={x.edit} itemWords={itemWords} whereOf={whereOf} onApply={onApply} onRevert={onRevert} />
+            )}
+            {x.state === 'rule' && x.rule && (
+              <RuleCard
+                lang={lang}
+                x={x}
+                rule={x.rule}
+                momentName={momentName}
+                ruleWords={ruleWords}
+                cannot={cannot}
+                onAdd={onAdd}
+                onEdit={onEdit}
+                onUndo={onUndo}
+              />
             )}
           </div>
         ))}
         <div ref={end} />
       </div>
-      <div className="hw-chat-foot">
-        <button type="button" className="hw-link" onClick={onSeeMine}>
-          {t.chatSeeMine(mine)}
-        </button>
-      </div>
       {input}
+    </div>
+  )
+}
+
+/** One rule: when, what, why, then one button per AI to put it in, and one to adjust it. */
+function RuleCard({
+  lang,
+  x,
+  rule,
+  momentName,
+  ruleWords,
+  cannot,
+  onAdd,
+  onEdit,
+  onUndo,
+}: {
+  lang: Lang
+  x: Exchange
+  rule: Rule
+  momentName(event: string): string
+  ruleWords(rule: Rule): ReactNode
+  cannot(rule: Rule, agent: Agent): string
+  onAdd(x: Exchange, agent: Agent): void
+  onEdit(x: Exchange): void
+  onUndo(x: Exchange, agent: Agent): void
+}) {
+  const t = UI[lang]
+  const added = AGENTS.filter(a => x.added?.[a])
+  const notes = AGENTS.filter(a => !x.added?.[a]).flatMap(a => {
+    const why = cannot(rule, a)
+    return why ? [why] : []
+  })
+  return (
+    <div className="hw-chat-hoo">
+      {added.length === 0 && <p>{t.chatSuggest}</p>}
+      <div className="hw-chat-rule" data-added={added.length > 0 || undefined}>
+        <span className="hw-chat-rule-when">
+          {momentName(rule.event)} · {x.place}
+        </span>
+        <span className="hw-chat-rule-what">{ruleWords(rule)}</span>
+        {added.length === 0 && rule.why && <span className="hw-chat-rule-why">{rule.why}</span>}
+        {added.length === 0 && x.fallback && <span className="hw-chat-rule-note">{t.chatFallback}</span>}
+        {added.map(a => (
+          <span key={a} className="hw-chat-rule-done" data-agent={a}>
+            ✓ {t.chatAddedTo(t.agents[a], x.added![a]!.place)}
+            <button type="button" className="hw-link" onClick={() => onUndo(x, a)}>
+              {t.undo}
+            </button>
+          </span>
+        ))}
+        <div className="hw-chat-rule-acts">
+          {AGENTS.filter(a => !x.added?.[a]).map(a => (
+            <button
+              key={a}
+              type="button"
+              className="hw-cta hw-chat-rule-add"
+              data-agent={a}
+              disabled={cannot(rule, a) !== ''}
+              onClick={() => onAdd(x, a)}
+            >
+              {t.chatAddTo(t.agents[a])}
+            </button>
+          ))}
+          {added.length === 0 && (
+            <button type="button" className="hw-chat-rule-edit" onClick={() => onEdit(x)}>
+              {t.chatEdit}
+            </button>
+          )}
+        </div>
+        {notes.map(n => (
+          <span key={n} className="hw-chat-rule-note">
+            {n}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A change to the rules already put in: what it touches (before and after, for a change), then one
+ * button that does it; once done, it can be taken back.
+ */
+function EditCard({
+  lang,
+  x,
+  edit,
+  itemWords,
+  whereOf,
+  onApply,
+  onRevert,
+}: {
+  lang: Lang
+  x: Exchange
+  edit: Edit
+  itemWords(item: Item): ReactNode
+  whereOf(at: { agent: Agent; scope: Scope; key: string }, event: string): string
+  onApply(x: Exchange): void
+  onRevert(x: Exchange): void
+}) {
+  const t = UI[lang]
+  const n = edit.action === 'change' ? 1 : edit.action === 'copy' ? edit.copies.length : edit.targets.length
+  const row = (key: string, where: string, item: Item, mark?: 'before' | 'gone' | 'off') => (
+    <li key={key} className="hw-chat-edit-row" data-mark={mark}>
+      <span className="hw-chat-rule-when">{where}</span>
+      <span className="hw-chat-rule-what">{itemWords(item)}</span>
+    </li>
+  )
+  const rows =
+    edit.action === 'change'
+      ? [
+          row('before', whereOf(edit.target, edit.target.item.event), edit.target.item, 'before'),
+          <li key="arrow" className="hw-chat-edit-arrow" aria-hidden="true">
+            ↓
+          </li>,
+          row('after', whereOf(edit.to, edit.item.event), edit.item),
+        ]
+      : edit.action === 'copy'
+        ? edit.copies.map(c => row(c.item.id, whereOf(c.to, c.item.event), c.item))
+        : edit.targets.map(k =>
+            row(
+              `${k.agent}-${k.scope}-${k.key}-${k.item.id}`,
+              whereOf(k, k.item.event),
+              x.done && edit.action !== 'delete' ? { ...k.item, enabled: edit.action === 'on' } : k.item,
+              x.done && edit.action === 'delete' ? 'gone' : undefined,
+            ),
+          )
+  return (
+    <div className="hw-chat-hoo">
+      {!x.done && <p>{t.chatEditSay[edit.action](n)}</p>}
+      <div className="hw-chat-rule hw-chat-edit" data-action={edit.action} data-added={x.done || undefined}>
+        <ul className="hw-chat-edit-list">{rows}</ul>
+        {!x.done && x.fallback && <span className="hw-chat-rule-note">{t.chatEditFallback}</span>}
+        {x.done ? (
+          <span className="hw-chat-rule-done">
+            ✓ {t.chatEditDone[edit.action](n)}
+            <button type="button" className="hw-link" onClick={() => onRevert(x)}>
+              {t.undo}
+            </button>
+          </span>
+        ) : (
+          <div className="hw-chat-rule-acts">
+            <button
+              type="button"
+              className="hw-cta hw-chat-rule-add"
+              data-danger={edit.action === 'delete' || undefined}
+              onClick={() => onApply(x)}
+            >
+              {t.chatEditDo[edit.action](n)}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

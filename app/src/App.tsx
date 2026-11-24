@@ -12,7 +12,24 @@ import { SkillsPanel } from './components/hoochi/skills-panel'
 import { SlotEditor } from './components/hoochi/slot-editor'
 import { MomentList } from './components/hoochi/moment-list'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
-import { itemOf, matchRecipe, MODEL, momentsOf, ruleOf, schemaFor, systemFor, type Rule, type Understood } from './lib/understand'
+import { applyEdit, allTargets, revertEdit, type Edit } from './lib/edit'
+import {
+  CODEX_ONLY,
+  interpret,
+  itemFor,
+  itemOf,
+  matchEdit,
+  matchRecipe,
+  MODEL,
+  momentsOf,
+  ruleFor,
+  schemaFor,
+  systemFor,
+  type Known,
+  type PlaceOpt,
+  type Rule,
+  type Understood,
+} from './lib/understand'
 import { SendSheet, type Target } from './components/hoochi/send-sheet'
 import { MomentPicker } from './components/hoochi/moment-picker'
 import { alsoIn, hasAll, hiddenHere, sendTo, type PlaceRef } from './lib/copy'
@@ -80,6 +97,7 @@ import {
   itemLabel,
   listOf,
   mergeItems,
+  CLAUDE_SLOTS,
   slotOf,
   SLOTS,
   unreachable,
@@ -721,81 +739,247 @@ export default function App() {
   }
 
   // ---------- Saying it in words ----------
-  const momentList = momentsOf(SLOTS[agent], e => eventName(e, lang, agent), e => eventHint(e, lang, agent))
+  // A new rule is made in Claude Code's moments (marking the ones Codex has too); each AI then has
+  // its own button that puts it in, converted for that AI (`ruleFor`). A sentence can also change
+  // the rules already put in: reword or move one, copy some, switch some off or on, delete some.
+  const momentList = momentsOf(CLAUDE_SLOTS, e => eventName(e, lang, 'claude'), e => eventHint(e, lang, 'claude')).map(m => {
+    const c = slotOf(m.event, 'codex')
+    return { ...m, codex: !!c && (c.canInject || !m.canInject) }
+  })
   const skillNames = skills.map(s => s.name)
-  /** This computer's Claude Code makes a rule of the sentence; without it, the ready-made rules. */
+  /** The AI a terminal's chats run, so only that AI's rules go in there. */
+  const terminalAgentOf = (k: string): Agent =>
+    running.find(r => r.terminal === k)?.agent ?? (places.terminals[k]?.agent === 'codex' ? 'codex' : 'claude')
+  /** The places a sentence can name: everywhere, the projects and terminals that have rules or are open. */
+  const placeOpts = (): PlaceOpt[] => {
+    const projects = new Set<string>()
+    const terminals = new Set<string>()
+    for (const a of ['claude', 'codex'] as const) {
+      Object.keys(config[a].projects).forEach(k => projects.add(k))
+      Object.keys(config[a].terminals).forEach(k => terminals.add(k))
+    }
+    for (const r of running) {
+      if (r.hasProject) projects.add(r.project)
+      terminals.add(r.terminal)
+    }
+    if (projectKey) projects.add(projectKey)
+    if (terminalKey) terminals.add(terminalKey)
+    return [
+      { ref: 'g', scope: 'global', key: '', words: t.scopes.global },
+      ...[...projects].map((key, i) => ({ ref: `p${i + 1}`, scope: 'project' as const, key, words: `${placeName({ scope: 'project', key })} (${key})` })),
+      ...[...terminals].map((key, i) => ({
+        ref: `t${i + 1}`,
+        scope: 'terminal' as const,
+        key,
+        words: placeName({ scope: 'terminal', key }),
+        agent: terminalAgentOf(key),
+      })),
+    ]
+  }
+  const knownRules = (): Known[] =>
+    allTargets(config).map((x, i) => ({ ...x, ref: `r${i + 1}`, place: placeName(x) }))
+  /** This computer's Claude Code reads the sentence; without it, the ready-made rules and words. */
   const understand = async (text: string): Promise<Understood & { fallback?: boolean }> => {
+    const known = knownRules()
+    const opts = placeOpts()
+    const here = opts.find(p => scopeReady && p.scope === scope && p.key === key)?.ref ?? 'g'
     try {
       const answer = await askClaude(
-        systemFor({ agent, moments: momentList, skills: skillNames, lang }),
-        schemaFor(momentList),
+        systemFor({ agent: 'claude', moments: momentList, skills: skillNames, lang, known, places: opts, here }),
+        schemaFor(momentList, known.some(k => k.agent === 'codex') ? CODEX_ONLY : []),
         text,
         MODEL,
       )
-      const r = ruleOf(answer, momentList, skillNames)
+      const r = interpret(answer, { moments: momentList, skills: skillNames, known, places: opts })
       if (r.ok || r.say) return r
     } catch {
       // no Claude Code here, or it failed: the ready-made rules answer
     }
-    return { ...matchRecipe(text, lang, momentList), fallback: true }
+    const edit = matchEdit(text, known)
+    if (edit) return { ...edit, fallback: true }
+    const r = matchRecipe(text, lang, momentList)
+    return r.ok ? { ok: true, action: 'add', rule: r.rule, fallback: true } : { ...r, fallback: true }
   }
-  const placeOfRule = (rule: Rule): PlaceRef =>
-    rule.scope === 'global' || !scopeReady ? { scope: 'global', key: '' } : { scope, key }
+  /**
+   * Where something goes in for one AI. A terminal belongs to one AI, so for the other one it goes
+   * in that terminal's project instead (or everywhere when it has none).
+   */
+  const destFor = (p: { scope: Scope; key: string; agent?: Agent }, who: Agent): PlaceRef => {
+    if (p.scope !== 'terminal' || (p.agent ?? terminalAgentOf(p.key)) === who) return { scope: p.scope, key: p.key }
+    const project =
+      running.find(r => r.terminal === p.key && r.hasProject)?.project ??
+      (places.terminals[p.key]?.cwd && isProject(places.terminals[p.key].cwd, p.key) ? places.terminals[p.key].cwd : '')
+    return project ? { scope: 'project', key: project } : { scope: 'global', key: '' }
+  }
+  /** Where a new rule goes in for one AI: the place it names, else everywhere or the place picked. */
+  const placeOfRule = (rule: Rule, who: Agent = agent, at?: PlaceOpt): PlaceRef => {
+    if (at) return destFor(at, who)
+    if (rule.scope === 'global' || !scopeReady || scope === 'global') return { scope: 'global', key: '' }
+    return destFor({ scope, key }, who)
+  }
   const placeWords = (p: PlaceRef) => (p.scope === 'global' ? t.scopes.global : placeName(p))
+  /** A change to the rules put in, made concrete: where each one ends up, and new ids for copies. */
+  const editOf = (u: Understood): Edit | null => {
+    if (!u.ok || u.action === 'add') return null
+    if (u.action === 'change') {
+      const to = u.to.place ? destFor(u.to.place, u.to.agent) : destFor({ scope: u.target.scope, key: u.target.key, agent: u.target.agent }, u.to.agent)
+      return { action: 'change', target: u.target, item: u.item, to: { agent: u.to.agent, ...to } }
+    }
+    if (u.action === 'copy') {
+      const copies = u.targets.flatMap(k => {
+        const who = u.to.agent ?? k.agent
+        const to = destFor(u.to.place ?? { scope: k.scope, key: k.key, agent: k.agent }, who)
+        if (who === k.agent && to.scope === k.scope && to.key === k.key) return []
+        const fit = itemFor(k.item, who)
+        if (!fit.ok) return []
+        // Not twice: a copy already there (same moment and words) is left out.
+        if (hasAll(config, who, to, [fit.item])) return []
+        return [{ item: { ...fit.item, id: newId(), added: Date.now() }, to: { agent: who, ...to } }]
+      })
+      return copies.length ? { action: 'copy', copies } : null
+    }
+    return { action: u.action, targets: u.targets }
+  }
   const say = (text: string) => {
     const id = newId()
     setExchanges(xs => [...xs, { id, said: text, state: 'thinking' }])
     void understand(text).then(u =>
       setExchanges(xs =>
-        xs.map(x =>
-          x.id !== id
-            ? x
-            : u.ok
-              ? { ...x, state: 'rule', rule: u.rule, place: placeWords(placeOfRule(u.rule)), fallback: u.fallback }
-              : { ...x, state: 'unclear', say: u.say },
-        ),
+        xs.map(x => {
+          if (x.id !== id) return x
+          if (!u.ok) return { ...x, state: 'unclear', say: u.say }
+          if (u.action === 'add')
+            return { ...x, state: 'rule', rule: u.rule, at: u.place, place: placeWords(placeOfRule(u.rule, 'claude', u.place)), fallback: u.fallback }
+          const edit = editOf(u)
+          return edit ? { ...x, state: 'edit', edit, fallback: u.fallback } : { ...x, state: 'unclear', say: t.chatCopyNone }
+        }),
       ),
     )
   }
-  const addRule = (x: Exchange) => {
-    if (!x.rule) return
-    const p = placeOfRule(x.rule)
-    const item = itemOf(x.rule, newId(), Date.now())
-    save(withList(config, agent, p.scope, p.key, [...listOf(config[agent], p.scope, p.key), item]))
-    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, state: 'added', itemId: item.id, target: p } : e)))
+  /** Why a rule cannot go in for that AI, in words; "" when it can. */
+  const cannotAdd = (rule: Rule, who: Agent) => {
+    if (who === 'codex' && codex && !codex.installed) return t.codexMissing
+    const r = ruleFor(rule, who)
+    return r.ok ? '' : r.why === 'no-moment' ? t.chatNoMoment(t.agents[who]) : t.chatNoWords(t.agents[who])
   }
-  const undoRule = (x: Exchange) => {
-    if (!x.itemId || !x.target) return
-    const { scope: s0, key: k0 } = x.target
-    save(withList(config, agent, s0, k0, listOf(config[agent], s0, k0).filter(i => i.id !== x.itemId)))
-    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, state: 'rule', itemId: undefined, target: undefined } : e)))
+  /** Codex runs what hoochi puts in only once its hooks point here: putting one in connects it. */
+  const connectCodexFor = (agents: Agent[]) => {
+    if (agents.includes('codex') && codex?.installed && !codex.connected) codexDo(codexConnect, { step: 'connected-now' })
+  }
+  const addRule = (x: Exchange, who: Agent) => {
+    if (!x.rule) return
+    const r = ruleFor(x.rule, who)
+    if (!r.ok) return
+    const p = placeOfRule(r.rule, who, x.at)
+    const item = itemOf(r.rule, newId(), Date.now())
+    save(withList(config, who, p.scope, p.key, [...listOf(config[who], p.scope, p.key), item]))
+    connectCodexFor([who])
+    const added = { itemId: item.id, target: p, place: placeWords(p) }
+    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, added: { ...e.added, [who]: added } } : e)))
+  }
+  const undoRule = (x: Exchange, who: Agent) => {
+    const a = x.added?.[who]
+    if (!a) return
+    const { scope: s0, key: k0 } = a.target
+    save(withList(config, who, s0, k0, listOf(config[who], s0, k0).filter(i => i.id !== a.itemId)))
+    setExchanges(xs =>
+      xs.map(e => {
+        if (e.id !== x.id) return e
+        const rest = { ...e.added }
+        delete rest[who]
+        return { ...e, added: rest }
+      }),
+    )
+  }
+  /** Do what the card says to the rules put in; and take it back. */
+  const applyChange = (x: Exchange) => {
+    if (!x.edit || x.done) return
+    save(applyEdit(config, x.edit))
+    if (x.edit.action === 'change') connectCodexFor([x.edit.to.agent])
+    if (x.edit.action === 'copy') connectCodexFor(x.edit.copies.map(c => c.to.agent))
+    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, done: true } : e)))
+  }
+  const revertChange = (x: Exchange) => {
+    if (!x.edit || !x.done) return
+    save(revertEdit(config, x.edit))
+    setExchanges(xs => xs.map(e => (e.id === x.id ? { ...e, done: false } : e)))
   }
   const editRule = (x: Exchange) => {
     if (!x.rule) return
-    const p = placeOfRule(x.rule)
+    // The editor opens on the AI picked, or on Claude Code when the rule cannot go in for it.
+    const mine = ruleFor(x.rule, agent)
+    const who: Agent = mine.ok ? agent : 'claude'
+    const r = mine.ok ? mine.rule : x.rule
+    if (who !== agent) setAgent(who)
+    const p = placeOfRule(r, who, x.at)
     if (p.scope !== scope) {
       setScope(p.scope)
       holdFollow()
     }
-    setDraft(itemOf(x.rule, newId(), Date.now()))
+    if (p.scope === 'project') setProjectKey(p.key)
+    if (p.scope === 'terminal') setTerminalKey(p.key)
+    setDraft(itemOf(r, newId(), Date.now()))
     // The editor shows over either page; going back returns to the chat it came from.
-    setSelected(x.rule.event)
+    setSelected(r.event)
   }
-  const ruleWords = (rule: Rule) => {
-    const item = itemOf(rule, '', 0)
-    return (
-      <>
-        <i className="hw-moment-kind" data-kind={rule.kind}>
-          {t.kinds[rule.kind]}
-        </i>
-        <span className="hw-moment-label">{itemLabel(item)}</span>
-        {rule.kind === 'command' && rule.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
-        {rule.tools && <i className="hw-moment-tag">{rule.tools}</i>}
-        {rule.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
-      </>
-    )
-  }
+  /** What an item puts in, in a few words, with its tags. */
+  const wordsOf = (item: Item) => (
+    <>
+      <i className="hw-moment-kind" data-kind={item.kind}>
+        {t.kinds[item.kind]}
+      </i>
+      <span className="hw-moment-label">{itemLabel(item)}</span>
+      {item.kind === 'command' && item.mode === 'onFail' && <i className="hw-moment-tag">{t.tagOnFail}</i>}
+      {item.tools && <i className="hw-moment-tag">{item.tools}</i>}
+      {item.once && <i className="hw-moment-tag">{t.tagOnce}</i>}
+      {!item.enabled && <i className="hw-moment-tag">{t.tagOff}</i>}
+    </>
+  )
+  const ruleWords = (rule: Rule) => wordsOf(itemOf(rule, '', 0))
+  /** Which AI, which place, which moment: the line above a rule on a change card. */
+  const whereOf = (at: { agent: Agent } & PlaceRef, event: string) =>
+    `${t.agents[at.agent]} · ${placeWords(at)} · ${eventName(event, lang, at.agent)}`
 
+  /** Everything put in for this AI, by place then by moment: inline on the moments page and in the popup. */
+  const mineBody = (at: 'page' | 'modal') => (
+    <>
+            {mine.length > 6 && (
+              <input
+                className="hw-pick-search hw-mine-search"
+                type="search"
+                placeholder={t.mineSearch}
+                aria-label={t.mineSearch}
+                value={mineQuery}
+                onChange={e => setMineQuery(e.currentTarget.value)}
+              />
+            )}
+            {asking?.near === 'modal' && (at === 'modal') === (modal === 'mine') && askBanner}
+            {at === 'modal' && inModal}
+            <div className="hw-modal-list">
+              {groups.map(g => ({ ...g, shown: g.rows.filter(mineFound) })).filter(g => g.shown.length > 0).map(g => (
+                <section key={`${g.scope}-${g.key}`} className="hw-mine-place">
+                  <h4>
+                    <span>{g.name}</span>
+                    <small>{t.itemsCount(g.rows.length)}</small>
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      icon={TrashIcon}
+                      label={t.deleteGroup(g.name)}
+                      onClick={() => askDeleteGroup(g)}
+                    />
+                  </h4>
+                  {byMoment(g.shown).map(([event, rows]) => (
+                    <div key={event} className="hw-mine-moment">
+                      <p className="hw-mine-moment-name">{eventName(event, lang, agent)}</p>
+                      {rows.map(m => mineRow(m))}
+                    </div>
+                  ))}
+                </section>
+              ))}
+            </div>
+    </>
+  )
   const noticeBanner = notice && (
     <div className="hw-done" role={notice.kind === 'error' ? 'alert' : 'status'} data-notice={notice.kind}>
       <span>{notice.message}</span>
@@ -1179,36 +1363,49 @@ export default function App() {
           </div>
         )}
 
+      {!slot && (
+        <nav className="hw-tabs" role="tablist" aria-label={t.tabsLabel}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={page === 'chat'}
+            onClick={() => {
+              setPage('chat')
+              setShowAll(false)
+            }}
+          >
+            {t.tabSay}
+          </button>
+          <button type="button" role="tab" aria-selected={page === 'moments'} onClick={() => setPage('moments')}>
+            {t.tabMine}
+            <b className="hw-tabs-count">{mine.length}</b>
+          </button>
+        </nav>
+      )}
       {page === 'chat' && !slot ? (
         <main className="hw-body hw-body-chat">
           <ChatView
             lang={lang}
             exchanges={exchanges}
-            mine={mine.length}
-            momentName={e => eventName(e, lang, agent)}
+            momentName={e => eventName(e, lang, 'claude')}
             ruleWords={ruleWords}
+            itemWords={wordsOf}
+            whereOf={whereOf}
+            cannot={cannotAdd}
+            onApply={applyChange}
+            onRevert={revertChange}
             onSay={say}
             onAdd={addRule}
             onEdit={editRule}
             onUndo={undoRule}
             onPick={() => setModal('pick')}
-            onSeeMine={() => setPage('moments')}
             where={
               <DropdownMenu
                 align="start"
                 side="top"
                 aria-label={t.scopeLabel}
                 items={[
-                  ...(['claude', 'codex'] as const).map(a => ({
-                    label: t.agents[a],
-                    type: 'radio' as const,
-                    checked: agent === a,
-                    onSelect: () => {
-                      setAgent(a)
-                      holdFollow()
-                    },
-                  })),
-                  { label: t.scopes.global, type: 'radio' as const, divider: true, checked: scope === 'global', onSelect: () => { setScope('global'); holdFollow() } },
+                  { label: t.scopes.global, type: 'radio' as const, checked: scope === 'global', onSelect: () => { setScope('global'); holdFollow() } },
                   {
                     label: projectKey ? `${t.scopes.project} · ${folderName(projectKey)}` : t.scopes.project,
                     type: 'radio' as const,
@@ -1220,7 +1417,7 @@ export default function App() {
                 ]}
                 trigger={({ triggerProps }) => (
                   <button type="button" className="hw-chat-where" {...triggerProps}>
-                    {t.agents[agent]} · {scopeReady ? placeWords({ scope, key }) : t.scopes.global} ▾
+                    {scopeReady ? placeWords({ scope, key }) : t.scopes.global} ▾
                   </button>
                 )}
               />
@@ -1405,11 +1602,6 @@ export default function App() {
         ) : (
           <>
             {!showAll && (
-              <button type="button" className="hw-link hw-back-chat" onClick={() => setPage('chat')}>
-                {t.backToChat}
-              </button>
-            )}
-            {!showAll && (
             <MomentList
               agent={agent}
               lang={lang}
@@ -1423,6 +1615,20 @@ export default function App() {
               alsoIn={item => alsoIn(config, agent, here, item).length}
               onAddOther={() => setModal('pick')}
             />
+            )}
+            {!showAll && mine.length > 0 && (
+              <section className="hw-mine-all" aria-label={t.mineAllTitle}>
+                <div className="hw-mine-all-head">
+                  <h2 className="hw-moments-title">
+                    {t.mineAllTitle} <small>{mine.length}</small>
+                  </h2>
+                  <Button size="sm" variant="ghost" className="hw-delete-all" onClick={askDeleteAll}>
+                    {t.deleteAll}
+                  </Button>
+                </div>
+                <p className="hw-editor-hint">{t.mineAllHint(t.agents[agent])}</p>
+                {mineBody('page')}
+              </section>
             )}
             {showAll && (
             <>
@@ -1525,7 +1731,7 @@ export default function App() {
               {showAll ? t.backToList : t.flowView}
             </button>
           )}
-          {mine.length > 0 && (
+          {slot && mine.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setModal('mine')}>
               {t.seeAll(mine.length)}
             </Button>
@@ -1603,41 +1809,7 @@ export default function App() {
               />
             </div>
             <p className="hw-editor-hint">{t.mineHint}</p>
-            {mine.length > 6 && (
-              <input
-                className="hw-pick-search hw-mine-search"
-                type="search"
-                placeholder={t.mineSearch}
-                aria-label={t.mineSearch}
-                value={mineQuery}
-                onChange={e => setMineQuery(e.currentTarget.value)}
-              />
-            )}
-            {asking?.near === 'modal' && askBanner}
-            {inModal}
-            <div className="hw-modal-list">
-              {groups.map(g => ({ ...g, shown: g.rows.filter(mineFound) })).filter(g => g.shown.length > 0).map(g => (
-                <section key={`${g.scope}-${g.key}`} className="hw-mine-place">
-                  <h4>
-                    <span>{g.name}</span>
-                    <small>{t.itemsCount(g.rows.length)}</small>
-                    <IconButton
-                      size="sm"
-                      variant="ghost"
-                      icon={TrashIcon}
-                      label={t.deleteGroup(g.name)}
-                      onClick={() => askDeleteGroup(g)}
-                    />
-                  </h4>
-                  {byMoment(g.shown).map(([event, rows]) => (
-                    <div key={event} className="hw-mine-moment">
-                      <p className="hw-mine-moment-name">{eventName(event, lang, agent)}</p>
-                      {rows.map(m => mineRow(m))}
-                    </div>
-                  ))}
-                </section>
-              ))}
-            </div>
+            {mineBody('modal')}
           </div>
         </div>
       )}
