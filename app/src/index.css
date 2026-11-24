@@ -2340,3 +2340,62 @@ button.hw-existing-text:hover b {
   font-weight: 600;
   color: var(--hw-soft);
 }
+
+/* ---------- one more ask before deleting, in place ---------- */
+.hw-ask-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(217, 87, 76, 0.4);
+  background: rgba(217, 87, 76, 0.1);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.hw-ask-delete > div {
+  display: flex;
+  gap: 6px;
+}
+.hw-ask-delete button {
+  all: unset;
+  cursor: pointer;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 32px;
+}
+.hw-ask-delete .hw-ask-delete-no {
+  border: 1px solid var(--hw-line-strong);
+  background: var(--hw-card);
+}
+.hw-ask-delete .hw-ask-delete-yes {
+  background: #c8463c;
+  color: #fff;
+}
+.hw-ask-delete button:focus-visible {
+  outline: 2px solid var(--hw-green);
+  outline-offset: 2px;
+}
+.hw-rl-open {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.hw-rl-open:hover {
+  background: var(--hw-tint);
+}
+.hw-rl-open:focus-visible {
+  outline: 2px solid var(--hw-green);
+}
+/* In the popup there is no step 1 above it: the title says when. */
+.hw-rule-card .hw-step {
+  display: none;
+}

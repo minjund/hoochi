@@ -4,6 +4,7 @@ import { itemFilled, type Agent, type Item, type ItemKind, type Slot, type Skill
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '../ui/button'
+import { ConfirmDelete } from './confirm-delete'
 import { Card, CardContent } from '../ui/card'
 import { IconButton } from '../ui/icon-button'
 import { SegmentedControl } from '../ui/segmented-control'
@@ -291,7 +292,8 @@ export function SlotEditor({
   )
 }
 
-function ItemCard({
+/** One item: what goes in and how, saved with Save; Delete asks once more. */
+export function ItemCard({
   item,
   slot,
   skills,
@@ -329,6 +331,7 @@ function ItemCard({
   const saved = draftOf(item)
   const [draft, setDraft] = useState<Draft>(saved)
   const [base, setBase] = useState<Draft>(saved)
+  const [asking, setAsking] = useState(false)
   if (!same(base, saved)) {
     setBase(saved)
     if (same(draft, base)) setDraft(saved)
@@ -515,7 +518,7 @@ function ItemCard({
                 {t.sendOne}
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={onRemove}>
+            <Button variant="ghost" size="sm" onClick={() => (isNew ? onRemove() : setAsking(true))}>
               {isNew ? t.cancel : t.remove}
             </Button>
             {dirty && !isNew && (
@@ -534,6 +537,17 @@ function ItemCard({
             </Button>
           </div>
         </div>
+        {asking && (
+          <ConfirmDelete
+            lang={lang}
+            message={t.askDeleteOne(1)}
+            onYes={() => {
+              setAsking(false)
+              onRemove()
+            }}
+            onNo={() => setAsking(false)}
+          />
+        )}
         <p className="hw-item-ran">
           {lastRun ? t.lastRan(t.ago(Math.max(0, Date.now() - lastRun))) : t.neverRan}
         </p>

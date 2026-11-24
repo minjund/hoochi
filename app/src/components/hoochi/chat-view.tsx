@@ -1,5 +1,6 @@
 import { UI, type Lang } from '../../lib/i18n'
 import { targetKey, type Edit } from '../../lib/edit'
+import { ConfirmDelete } from './confirm-delete'
 import type { Agent, Item, Scope } from '../../lib/lifecycle'
 import type { Known, PlaceOpt, Rule } from '../../lib/understand'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
@@ -305,6 +306,7 @@ function EditCard({
   onRevert(x: Exchange): void
 }) {
   const t = UI[lang]
+  const [asking, setAsking] = useState(false)
   const n = edit.action === 'change' ? edit.changes.length : edit.action === 'copy' ? edit.copies.length : edit.targets.length
   const row = (key: string, where: string, item: Item, mark?: 'before' | 'gone' | 'off') => (
     <li key={key} className="hw-chat-edit-row" data-mark={mark}>
@@ -349,16 +351,28 @@ function EditCard({
             </button>
           </span>
         ) : (
-          <div className="hw-chat-rule-acts">
-            <button
-              type="button"
-              className="hw-cta hw-chat-rule-add"
-              data-danger={edit.action === 'delete' || undefined}
-              onClick={() => onApply(x)}
-            >
-              {t.chatEditDo[edit.action](n)}
-            </button>
-          </div>
+          asking ? (
+            <ConfirmDelete
+              lang={lang}
+              message={t.askDeleteOne(n)}
+              onYes={() => {
+                setAsking(false)
+                onApply(x)
+              }}
+              onNo={() => setAsking(false)}
+            />
+          ) : (
+            <div className="hw-chat-rule-acts">
+              <button
+                type="button"
+                className="hw-cta hw-chat-rule-add"
+                data-danger={edit.action === 'delete' || undefined}
+                onClick={() => (edit.action === 'delete' ? setAsking(true) : onApply(x))}
+              >
+                {t.chatEditDo[edit.action](n)}
+              </button>
+            </div>
+          )
         )}
       </div>
     </div>
@@ -390,6 +404,7 @@ function FindCard({
   onRowOpen(k: Known): void
 }) {
   const t = UI[lang]
+  const [asking, setAsking] = useState<string | null>(null)
   return (
     <div className="hw-chat-hoo">
       <p>{t.chatFound(found.length)}</p>
@@ -418,12 +433,23 @@ function FindCard({
                       <button type="button" className="hw-chat-find-btn" onClick={() => onRowOpen(k)}>
                         {t.chatEdit}
                       </button>
-                      <button type="button" className="hw-chat-find-btn" data-danger onClick={() => onRow(x, k, 'delete')}>
+                      <button type="button" className="hw-chat-find-btn" data-danger onClick={() => setAsking(targetKey(k))}>
                         {t.chatEditDo.delete(1)}
                       </button>
                     </>
                   )}
                 </div>
+                {!done && asking === targetKey(k) && (
+                  <ConfirmDelete
+                    lang={lang}
+                    message={t.askDeleteOne(1)}
+                    onYes={() => {
+                      setAsking(null)
+                      onRow(x, k, 'delete')
+                    }}
+                    onNo={() => setAsking(null)}
+                  />
+                )}
               </li>
             )
           })}

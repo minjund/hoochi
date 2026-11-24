@@ -9,7 +9,7 @@ import {
 import { SandwichBubble } from './components/hoochi/sandwich-bubble'
 import { ContextGlance, type ContextFocus } from './components/hoochi/context-view'
 import { SkillsPanel } from './components/hoochi/skills-panel'
-import { SlotEditor } from './components/hoochi/slot-editor'
+import { ItemCard, SlotEditor } from './components/hoochi/slot-editor'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
 import { RuleList } from './components/hoochi/rule-list'
 import { filterRows, rowsOf, type Row, type View } from './lib/rules-view'
@@ -235,7 +235,7 @@ const HideIcon = (
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
 /** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | 'send' | 'pick' | null
+type Modal = 'mine' | 'skills' | 'send' | 'pick' | 'rule' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -293,6 +293,8 @@ export default function App() {
   const [listView, setListView] = useState<View>({ mode: 'all', ai: 'all', place: '', off: false, problems: false })
   // Whose lifecycle the picture shows: the AI of the chat in view, unless another one is picked.
   const [pictureAi, setPictureAi] = useState<Agent | null>(null)
+  // The rule set in the popup: its AI, place and id (read from the config each time).
+  const [ruleOpen, setRuleOpen] = useState<{ agent: Agent; scope: Scope; key: string; id: string } | null>(null)
   // The first screen is one chat box; the moments are a page you open from it.
   const [page, setPage] = useState<'chat' | 'moments'>(browserFlags.select ? 'moments' : 'chat')
   const [exchanges, setExchanges] = useState<Exchange[]>([])
@@ -1138,6 +1140,14 @@ export default function App() {
     )
     connectCodexFor([who])
   }
+  /** The rule in the popup, as it is now; null once it is gone. */
+  const openRow = ruleOpen
+    ? ruleRows.find(r => r.agent === ruleOpen.agent && r.scope === ruleOpen.scope && r.key === ruleOpen.key && r.item.id === ruleOpen.id)
+    : undefined
+  const putRule = (r: Row, item: Item) =>
+    save(withList(config, r.agent, r.scope, r.key, listOf(config[r.agent], r.scope, r.key).map(i => (i.id === item.id ? item : i))))
+  const deleteRow = (r: Row) =>
+    act(applyEdit(config, { action: 'delete', targets: [r] }), t.mineDeleted(eventName(r.item.event, lang, r.agent)), 'list')
   /** The send sheet, at the rule's own AI and place. */
   const sendElsewhere = (r: Row) => {
     if (r.agent !== agent) setAgent(r.agent)
@@ -1186,11 +1196,15 @@ export default function App() {
       onQuery={setMineQuery}
       onConnectCodex={() => codexDo(codexConnect, { step: 'connected-now' })}
       onToggle={(r, on) => save(applyEdit(config, { action: on ? 'on' : 'off', targets: [r] }))}
+      onOpen={r => {
+        setRuleOpen({ agent: r.agent, scope: r.scope, key: r.key, id: r.item.id })
+        setModal('rule')
+      }}
       onTalk={talkAbout}
       onEdit={r => rowOpen(knownOf(r))}
       onSend={sendElsewhere}
       onSendAi={copyToOtherAi}
-      onDelete={r => act(applyEdit(config, { action: 'delete', targets: [r] }), t.mineDeleted(eventName(r.item.event, lang, r.agent)), 'list')}
+      onDelete={deleteRow}
       onAddHere={r =>
         r.hiddenBy &&
         act(
@@ -1897,6 +1911,46 @@ export default function App() {
           onSend={sendItems}
           onClose={() => setModal(null)}
         />
+      )}
+      {modal === 'rule' && openRow && slotOf(openRow.item.event, openRow.agent) && (
+        <div
+          className="hw-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.rlOpen}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
+        >
+          <div className="hw-modal-card hw-rule-card">
+            <div className="hw-modal-head">
+              <b>{t.ruleTitle(eventName(openRow.item.event, lang, openRow.agent), t.agents[openRow.agent], placeWords(openRow))}</b>
+              <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
+            </div>
+            {inModal}
+            <div className="hw-modal-list">
+              <ItemCard
+                key={rowKey(openRow)}
+                item={openRow.item}
+                slot={slotOf(openRow.item.event, openRow.agent)!}
+                skills={skills}
+                lang={lang}
+                agent={openRow.agent}
+                onSave={item => putRule(openRow, item)}
+                onSwitch={enabled => putRule(openRow, { ...openRow.item, enabled })}
+                onRemove={() => {
+                  setModal(null)
+                  deleteRow(openRow)
+                }}
+                onDirty={() => undefined}
+                lastRun={openRow.lastRun}
+                where={placeWords(openRow)}
+                onSend={() => {
+                  setModal(null)
+                  sendElsewhere(openRow)
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
       {modal === 'mine' && (
         <div

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import type { ExistingHook } from '../../lib/backend'
 import { targetKey } from '../../lib/edit'
@@ -7,6 +7,7 @@ import { slotOf, type Agent, type Item, type Scope } from '../../lib/lifecycle'
 import { byMoment, placeId, placesOf, type Row, type View } from '../../lib/rules-view'
 import { DropdownMenu } from '../ui/dropdown-menu'
 import { Switch } from '../ui/switch'
+import { ConfirmDelete } from './confirm-delete'
 
 type Place = { scope: Scope; key: string }
 
@@ -36,6 +37,7 @@ export function RuleList({
   onQuery,
   onConnectCodex,
   onToggle,
+  onOpen,
   onTalk,
   onEdit,
   onSend,
@@ -70,6 +72,8 @@ export function RuleList({
   onQuery(q: string): void
   onConnectCodex(): void
   onToggle(r: Row, on: boolean): void
+  /** set this rule in a popup */
+  onOpen(r: Row): void
   onTalk(r: Row): void
   onEdit(r: Row): void
   onSend(r: Row): void
@@ -81,6 +85,8 @@ export function RuleList({
   onSkills(): void
 }) {
   const t = UI[lang]
+  // The row whose delete waits for a second yes.
+  const [asking, setAsking] = useState<string | null>(null)
   const set = (p: Partial<View>) => onView({ ...view, ...p })
   const count = (f: (r: Row) => boolean) => rows.filter(f).length
   const inChat = view.mode === 'chat' && chat !== null
@@ -104,7 +110,9 @@ export function RuleList({
   const row = (r: Row) => (
     <li key={targetKey(r)} className="hw-rl-row" data-off={!r.item.enabled || undefined} data-hidden={r.reach === 'hidden' || undefined}>
       <div className="hw-rl-main">
-        <div className="hw-rl-what">{itemWords(r.item)}</div>
+        <button type="button" className="hw-rl-open" title={t.rlOpen} onClick={() => onOpen(r)}>
+          <span className="hw-rl-what">{itemWords(r.item)}</span>
+        </button>
         <div className="hw-rl-meta">
           <span className="hw-rl-ai" data-agent={r.agent}>
             {t.agents[r.agent]}
@@ -123,6 +131,17 @@ export function RuleList({
             </button>
           </p>
         )}
+        {asking === targetKey(r) && (
+          <ConfirmDelete
+            lang={lang}
+            message={t.askDeleteOne(1)}
+            onYes={() => {
+              setAsking(null)
+              onDelete(r)
+            }}
+            onNo={() => setAsking(null)}
+          />
+        )}
       </div>
       <div className="hw-rl-side">
         <Switch size="sm" aria-label={t.mineSwitch(momentName(r.item.event, r.agent))} checked={r.item.enabled} onChange={e => onToggle(r, e.currentTarget.checked)} />
@@ -130,11 +149,12 @@ export function RuleList({
           align="end"
           aria-label={t.rlMenu}
           items={[
+            { label: t.rlOpen, onSelect: () => onOpen(r) },
             { label: t.rlTalk, description: t.rlTalkHint, onSelect: () => onTalk(r) },
             { label: t.rlEdit, onSelect: () => onEdit(r) },
             { label: t.rlSend, onSelect: () => onSend(r) },
             { label: t.rlSendAi(t.agents[r.agent === 'claude' ? 'codex' : 'claude']), onSelect: () => onSendAi(r) },
-            { label: t.rlDelete, danger: true, divider: true, onSelect: () => onDelete(r) },
+            { label: t.rlDelete, danger: true, divider: true, onSelect: () => setAsking(targetKey(r)) },
           ]}
           trigger={({ triggerProps, open }) => (
             <button type="button" className="hw-rl-more" data-open={open || undefined} aria-label={t.rlMenu} {...triggerProps}>
