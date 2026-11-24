@@ -11,7 +11,10 @@ import { ContextGlance, type ContextFocus } from './components/hoochi/context-vi
 import { SkillsPanel } from './components/hoochi/skills-panel'
 import { ItemCard, SlotEditor } from './components/hoochi/slot-editor'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
-import { RuleList } from './components/hoochi/rule-list'
+import { RuleList, type OutsideRow } from './components/hoochi/rule-list'
+import { WhyPanel } from './components/hoochi/why-panel'
+import { isTrouble, whyOutside } from './lib/why'
+import { VERDICT, WHY_UI, whyWords, type WhyHelp } from './lib/why-words'
 import { filterRows, rowsOf, type Row, type View } from './lib/rules-view'
 import { applyEdit, allTargets, revertEdit, targetKey as rowKey, touched, type Edit, type Target as Held } from './lib/edit'
 import {
@@ -55,6 +58,7 @@ import {
   askClaude,
   newId,
   existingHooks,
+  hookRuns,
   readState,
   setExistingHook,
   setPlugin,
@@ -68,7 +72,9 @@ import {
   type ContextSnapshot,
   type SkillState,
   type UpdateState,
+  type ExistingHook,
   type ExistingHooks,
+  type HookRun,
   type Running,
   type Skill,
 } from './lib/backend'
@@ -235,7 +241,7 @@ const HideIcon = (
 const EMPTY_CONFIG: Config = { version: 2, claude: emptyAgent(), codex: emptyAgent() }
 
 /** The popup open over the panel: your whole list, or every skill. One at a time. */
-type Modal = 'mine' | 'skills' | 'send' | 'pick' | 'rule' | null
+type Modal = 'mine' | 'skills' | 'send' | 'pick' | 'rule' | 'hook' | null
 
 /** Connecting Codex: what the last press did, or that one is under way. */
 type CodexFlow = { step: 'idle' } | { step: 'busy' } | { step: 'connected-now' } | { step: 'failed'; error: string }
@@ -295,8 +301,10 @@ export default function App() {
   const [pictureAi, setPictureAi] = useState<Agent | null>(null)
   // The rule set in the popup: its AI, place and id (read from the config each time).
   const [ruleOpen, setRuleOpen] = useState<{ agent: Agent; scope: Scope; key: string; id: string } | null>(null)
-  // The first screen is one chat box; the moments are a page you open from it.
-  const [page, setPage] = useState<'chat' | 'moments'>(browserFlags.select ? 'moments' : 'chat')
+  // The first screen is the Lifecycle page ("why doesn't my hook run?"); saying it in words is the other tab.
+  const [page, setPage] = useState<'chat' | 'moments'>('moments')
+  // An outside hook set in the popup: its AI and id.
+  const [hookOpen, setHookOpen] = useState<{ agent: Agent; id: string } | null>(null)
   const [exchanges, setExchanges] = useState<Exchange[]>([])
   // A rule from a sentence, opened in the editor to adjust before it is saved.
   const [draft, setDraft] = useState<Item | null>(null)
@@ -313,6 +321,8 @@ export default function App() {
   const [codexFlow, setCodexFlow] = useState<CodexFlow>({ step: 'idle' })
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
+  // What Claude Code recorded of the hooks it ran lately, to say how outside hooks are doing.
+  const [recorded, setRecorded] = useState<HookRun[]>([])
   const [notice, setNotice] = useState<Notice<Config> | null>(null)
   const [modal, setModal] = useState<Modal>(null)
   // A change to many items at once waits here for a yes (askFlow in machines.ts).
@@ -762,7 +772,16 @@ export default function App() {
     ]
   }
   const knownRules = (): Known[] =>
-    allTargets(config).map((x, i) => ({ ...x, ref: `r${i + 1}`, place: placeName(x) }))
+    allTargets(config).map((x, i) => {
+      const row = ruleRows.find(r => rowKey(r) === rowKey(x))
+      const why = row?.why
+      const health = why
+        ? isTrouble(why) && why.reason
+          ? `not working: ${whyWords('en', why.reason.check, whyHelpEn)}`
+          : VERDICT.en[why.verdict].toLowerCase()
+        : undefined
+      return { ...x, ref: `r${i + 1}`, place: placeName(x), ...(health ? { health, trouble: !!why && isTrouble(why) } : {}) }
+    })
   /** The rules the last card left on screen, as they are now, so "turn those off" knows which. */
   const onLastCard = (known: Known[]): Known[] => {
     const card = [...exchanges].reverse().find(x => x.state === 'rule' || x.state === 'edit' || x.state === 'find')
@@ -1107,8 +1126,34 @@ export default function App() {
     chat: chatNow,
     activity,
     codexOn: !codex || (codex.installed && codex.connected),
+    codexInstalled: !codex || codex.installed,
     blocked: unreachable('claude', classic),
   })
+  const whyHelp: WhyHelp = { ago: at => t.ago(Date.now() - at), place: p => placeWords(p) }
+  // For the instructions Claude reads: in English, as the rest of them.
+  const whyHelpEn: WhyHelp = { ago: at => UI.en.ago(Date.now() - at), place: p => placeWords(p) }
+  /** How a rule found in the chat is doing, for its row on the find card. */
+  const stateOf = (k: Known) => {
+    const row = ruleRows.find(r => rowKey(r) === rowKey(k))
+    if (!row) return undefined
+    const why = row.why
+    const shown = why.reason ?? [...why.steps].reverse().find(s => s.status === 'ok')
+    return {
+      trouble: isTrouble(why),
+      label: VERDICT[lang][why.verdict],
+      words: shown ? whyWords(lang, shown.check, whyHelp) : '',
+    }
+  }
+  const outsideRows: OutsideRow[] = (['claude', 'codex'] as const).flatMap(who =>
+    existing[who].map(hook => ({ agent: who, hook, why: whyOutside(who, hook, { activity: activity[who], runs: recorded }) })),
+  )
+  const troubleCount =
+    ruleRows.filter(r => r.problem).length + outsideRows.filter(o => !o.hook.off && isTrouble(o.why)).length
+  const openHook = hookOpen ? outsideRows.find(o => o.agent === hookOpen.agent && o.hook.id === hookOpen.id) : undefined
+  const switchHook = (hook: ExistingHook, on: boolean) =>
+    void setExistingHook(existingProject, hook.id, on)
+      .then(setExisting)
+      .catch(failed)
   const rowWords = (r: Row) =>
     `${eventName(r.item.event, lang, r.agent)} ${itemLabel(r.item)} ${t.kinds[r.item.kind]} ${placeName(r)} ${t.agents[r.agent]}`
   const viewNow: View = chatNow ? listView : { ...listView, mode: 'all' }
@@ -1184,10 +1229,8 @@ export default function App() {
           : null
       }
       codexWarn={codexRules > 0 && codex && !(codex.installed && codex.connected) ? { count: codexRules, installed: codex.installed } : null}
-      existing={[
-        ...existing.claude.map(hook => ({ agent: 'claude' as const, hook })),
-        ...existing.codex.map(hook => ({ agent: 'codex' as const, hook })),
-      ]}
+      outside={outsideRows}
+      help={whyHelp}
       momentName={(e, a) => eventName(e, lang, a)}
       placeWords={p => placeWords(p)}
       itemWords={i => wordsOf(i, false)}
@@ -1214,11 +1257,11 @@ export default function App() {
         )
       }
       onMake={() => setModal('pick')}
-      onToggleExisting={(_, hook, on) =>
-        void setExistingHook(existingProject, hook.id, on)
-          .then(setExisting)
-          .catch(failed)
-      }
+      onToggleExisting={(_, hook, on) => switchHook(hook, on)}
+      onOpenHook={o => {
+        setHookOpen({ agent: o.agent, id: o.hook.id })
+        setModal('hook')
+      }}
       onSkills={() => setModal('skills')}
     />
   )
@@ -1293,6 +1336,22 @@ export default function App() {
       window.clearInterval(id)
     }
   }, [expanded, visible, existingProject])
+  // Claude Code's records of the hooks it ran, while the Lifecycle page or a hook's popup is open.
+  const readsRuns = expanded && visible && ((page === 'moments' && !selected) || modal === 'hook')
+  useEffect(() => {
+    if (!readsRuns) return
+    let alive = true
+    const read = () =>
+      void hookRuns()
+        .then(runs => alive && setRecorded(runs))
+        .catch(() => undefined)
+    read()
+    const id = window.setInterval(read, EXISTING_MS)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [readsRuns])
 
   const activeCount = useMemo(() => {
     const all = (a: typeof config.claude) => [
@@ -1603,19 +1662,17 @@ export default function App() {
 
       {!slot && (
         <nav className="hw-tabs" role="tablist" aria-label={t.tabsLabel}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={page === 'chat'}
-            onClick={() => {
-              setPage('chat')
-            }}
-          >
-            {t.tabSay}
-          </button>
           <button type="button" role="tab" aria-selected={page === 'moments'} onClick={() => setPage('moments')}>
             {t.tabMine}
             <b className="hw-tabs-count">{ruleRows.length}</b>
+            {troubleCount > 0 && (
+              <b className="hw-tabs-count" data-trouble title={WHY_UI[lang].trouble(troubleCount)}>
+                ✕ {troubleCount}
+              </b>
+            )}
+          </button>
+          <button type="button" role="tab" aria-selected={page === 'chat'} onClick={() => setPage('chat')}>
+            {t.tabSay}
           </button>
         </nav>
       )}
@@ -1634,6 +1691,7 @@ export default function App() {
             onRow={rowAct}
             onRowUndo={rowUndo}
             onRowOpen={rowOpen}
+            stateOf={stateOf}
             onSay={say}
             onAdd={addRule}
             onEdit={editRule}
@@ -1927,6 +1985,7 @@ export default function App() {
             </div>
             {inModal}
             <div className="hw-modal-list">
+              <WhyPanel lang={lang} why={openRow.why} help={whyHelp} />
               <ItemCard
                 key={rowKey(openRow)}
                 item={openRow.item}
@@ -1948,6 +2007,53 @@ export default function App() {
                   sendElsewhere(openRow)
                 }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+      {modal === 'hook' && openHook && (
+        <div
+          className="hw-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={WHY_UI[lang].checks}
+          onClick={e => e.target === e.currentTarget && setModal(null)}
+        >
+          <div className="hw-modal-card hw-hook-card">
+            <div className="hw-modal-head">
+              <b>
+                {openHook.hook.origin?.name ?? openHook.hook.name} · {eventName(openHook.hook.event, lang, openHook.agent)} ·{' '}
+                {t.agents[openHook.agent]}
+              </b>
+              <IconButton size="sm" variant="ghost" icon={HideIcon} label={t.close} onClick={() => setModal(null)} />
+            </div>
+            {inModal}
+            <div className="hw-modal-list">
+              <div className="hw-hook-switch">
+                <span
+                  className="hw-rl-state"
+                  data-s={openHook.hook.off ? 'idle' : isTrouble(openHook.why) ? 'bad' : openHook.why.verdict === 'working' ? 'in' : 'idle'}
+                >
+                  {VERDICT[lang][openHook.why.verdict]}
+                </span>
+                <span className="hw-rl-tag">{t.existingFrom(openHook.hook.from)}</span>
+                {openHook.hook.matcher && <span className="hw-rl-tag">{openHook.hook.matcher}</span>}
+                <Switch
+                  size="sm"
+                  aria-label={t.existingSwitch(openHook.hook.name)}
+                  checked={!openHook.hook.off}
+                  onChange={e => switchHook(openHook.hook, e.currentTarget.checked)}
+                />
+              </div>
+              <WhyPanel lang={lang} why={openHook.why} help={whyHelp} />
+              {openHook.hook.body && (
+                <section className="hw-why">
+                  <h4>{WHY_UI[lang].runs}</h4>
+                  {openHook.hook.about && <p className="hw-hook-about">{openHook.hook.about}</p>}
+                  <pre className="hw-why-out">{openHook.hook.body}</pre>
+                  {openHook.hook.file && <p className="hw-hook-file">{openHook.hook.file}</p>}
+                </section>
+              )}
             </div>
           </div>
         </div>

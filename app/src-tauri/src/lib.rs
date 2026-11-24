@@ -17,6 +17,7 @@ use serde_json::Value;
 
 pub mod codex;
 pub mod existing;
+pub mod hookruns;
 pub mod origin;
 pub mod rename;
 pub mod running;
@@ -99,6 +100,12 @@ fn read_state() -> Snapshot {
 #[tauri::command]
 async fn existing_hooks(project: String) -> Value {
     existing::existing(&project)
+}
+
+/// What Claude Code recorded of the hooks it ran lately, newest first.
+#[tauri::command]
+async fn hook_runs() -> Value {
+    hookruns::hook_runs()
 }
 
 /// Switches one existing hook off or back on; returns the fresh list.
@@ -493,6 +500,7 @@ pub fn run() {
             codex_disconnect,
             running_chats,
             existing_hooks,
+            hook_runs,
             set_existing_hook,
             context_usage,
             check_update,

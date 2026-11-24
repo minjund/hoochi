@@ -45,7 +45,8 @@ export type Place = { project: string; terminal: string; terminalLabel: string }
 export type Places = {
   /** `git` is set by the app: whether the folder is a git project */
   projects: Record<string, { lastSeen: number; git?: boolean }>
-  terminals: Record<string, { label: string; cwd: string; agent: string; lastSeen: number }>
+  /** `session`: the chat running there now (newer plugins and the Codex hook say it) */
+  terminals: Record<string, { label: string; cwd: string; agent: string; lastSeen: number; session?: string }>
 }
 
 export type Fired = {
@@ -59,11 +60,33 @@ export type Fired = {
   id?: string
 }
 
+/** One time an item ran; for a command, how it ended. Mirrors plugin/types/index.d.ts. */
+export type Run = {
+  at: number
+  /** commands only: its exit code (none when it did not finish) */
+  exit?: number
+  ms?: number
+  /** commands only: why it did not finish (it timed out, or did not start) */
+  error?: string
+  /** commands only, when it did not end with 0: the first of what it printed */
+  out?: string
+}
+
+/** An item's runs: how many, how many did not end with 0, the last one and the last of those. */
+export type ItemRun = { runs: number; fails: number; last: Run; fail?: Run }
+
+/** A moment that came: when last, and the tools it came with lately (newest first). */
+export type Seen = { at: number; tools: string[] }
+
 export type Activity = {
   lastEvent: string
   lastAt: number
   counts: Record<string, number>
   recent: Fired[]
+  /** each item's runs, by its id (older plugins write none) */
+  runs?: Record<string, ItemRun>
+  /** each moment: when it last came and with which tools (older plugins write none) */
+  seen?: Record<string, Seen>
   place?: Place
   /** when and where you last opened or typed a chat */
   lastChat?: { at: number; place: Place }

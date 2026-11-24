@@ -53,6 +53,7 @@ export function ChatView({
   onRow,
   onRowUndo,
   onRowOpen,
+  stateOf,
   onAdd,
   onEdit,
   onUndo,
@@ -82,6 +83,8 @@ export function ChatView({
   onRow(x: Exchange, k: Known, action: 'off' | 'on' | 'delete'): void
   onRowUndo(x: Exchange, k: Known): void
   onRowOpen(k: Known): void
+  /** how a rule is doing now: a short label and why, to answer "why doesn't it run?" */
+  stateOf?(k: Known): { trouble: boolean; label: string; words: string } | undefined
   onPick(): void
 }) {
   const t = UI[lang]
@@ -185,6 +188,7 @@ export function ChatView({
                 onRow={onRow}
                 onRowUndo={onRowUndo}
                 onRowOpen={onRowOpen}
+                stateOf={stateOf}
               />
             )}
             {x.state === 'rule' && x.rule && (
@@ -393,6 +397,7 @@ function FindCard({
   onRow,
   onRowUndo,
   onRowOpen,
+  stateOf,
 }: {
   lang: Lang
   x: Exchange
@@ -402,6 +407,7 @@ function FindCard({
   onRow(x: Exchange, k: Known, action: 'off' | 'on' | 'delete'): void
   onRowUndo(x: Exchange, k: Known): void
   onRowOpen(k: Known): void
+  stateOf?(k: Known): { trouble: boolean; label: string; words: string } | undefined
 }) {
   const t = UI[lang]
   const [asking, setAsking] = useState<string | null>(null)
@@ -417,6 +423,14 @@ function FindCard({
               <li key={targetKey(k)} className="hw-chat-edit-row" data-mark={done?.action === 'delete' ? 'gone' : undefined}>
                 <span className="hw-chat-rule-when">{whereOf(k, k.item.event)}</span>
                 <span className="hw-chat-rule-what">{itemWords(item)}</span>
+                {(() => {
+                  const st = !done ? stateOf?.(k) : undefined
+                  return st ? (
+                    <span className="hw-chat-find-state" data-trouble={st.trouble || undefined}>
+                      <b>{st.label}</b> {st.words}
+                    </span>
+                  ) : null
+                })()}
                 <div className="hw-chat-find-acts">
                   {done ? (
                     <span className="hw-chat-rule-done">

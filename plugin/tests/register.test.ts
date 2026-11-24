@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
-import { noteOnce, oldPluginInstalled, parseOnce } from '../hooks/register'
+import { newerOf, noteOnce, noteRuns, noteSeen, oldPluginInstalled, parseOnce } from '../hooks/register'
 
 type On = Parameters<TestBody>[1]
 
@@ -389,7 +389,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.43/Hoochi-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.44/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -407,7 +407,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.43'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.44'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hoochi/Hoochi.app'
@@ -495,6 +495,78 @@ test('each record names the item it came from, so a deleted item can be told apa
   await prompt($)
   const recent = JSON.parse(fs.get(ACTIVITY) ?? '{}').recent
   expect(recent.at(-1)).toMatchObject({ id: 'g1', label: 'answer in English', scope: 'global' })
+})
+
+test('each run is kept by item: how a command ended, how long it took, and what a failure printed', async ($, on) => {
+  const { fs } = machine(
+    on,
+    {
+      [CONFIG]: v2({
+        global: [
+          item({ id: 'w', text: 'answer in English' }),
+          item({ id: 'lint', kind: 'command', command: 'npm run lint' }),
+          item({ id: 'ok', kind: 'command', command: 'true' }),
+        ],
+      }),
+    },
+    { 'npm run lint': { exitCode: 127, stdout: 'sh: npm: command not found' }, true: { exitCode: 0, stdout: 'fine' } },
+  )
+
+  await prompt($)
+  const runs = JSON.parse(fs.get(ACTIVITY) ?? '{}').runs
+  expect(runs.w).toMatchObject({ runs: 1, fails: 0 })
+  expect(runs.w.last.exit).toBeUndefined()
+  expect(runs.lint).toMatchObject({ runs: 1, fails: 1, last: { exit: 127, out: 'sh: npm: command not found' } })
+  expect(runs.lint.last.ms).toBeGreaterThan(0)
+  expect(runs.lint.fail.exit).toBe(127)
+  // A command that ended with 0 keeps none of what it printed.
+  expect(runs.ok.last).toMatchObject({ exit: 0 })
+  expect(runs.ok.last.out).toBeUndefined()
+})
+
+test('each moment is kept with when it last came and the tools it came with, newest first', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({}) })
+
+  await tool($, 'Read')
+  await tool($, 'Bash')
+  await tool($, 'Read')
+  const seen = JSON.parse(fs.get(ACTIVITY) ?? '{}').seen
+  expect(seen.PreToolUse.tools).toEqual(['Read', 'Bash'])
+  expect(seen.PostToolUse.tools).toEqual(['Read', 'Bash'])
+  expect(seen.PreToolUse.at).toBeGreaterThan(0)
+})
+
+test('the last failure stays after later runs pass, and the items run longest ago go first', () => {
+  const failedRun = { at: 1, exit: 1, out: 'boom' }
+  let runs = noteRuns(undefined, [{ id: 'a', run: failedRun }])
+  runs = noteRuns(runs, [{ id: 'a', run: { at: 2, exit: 0 } }])
+  expect(runs.a).toEqual({ runs: 2, fails: 1, last: { at: 2, exit: 0 }, fail: failedRun })
+  // Did not finish: a failure too.
+  runs = noteRuns(runs, [{ id: 'a', run: { at: 3, error: 'timed out' } }])
+  expect(runs.a?.fails).toBe(2)
+
+  const many = noteRuns(
+    undefined,
+    Array.from({ length: 205 }, (_, i) => ({ id: `i${i}`, run: { at: i } })),
+  )
+  expect(Object.keys(many)).toHaveLength(200)
+  expect(many.i0).toBeUndefined()
+  expect(many.i204).toBeDefined()
+})
+
+test("another chat's records are kept: for each item and moment, whichever happened last", () => {
+  const mine = { a: { at: 5 }, b: { at: 1 } }
+  const disk = { b: { at: 9 }, c: { at: 2 } }
+  expect(newerOf(mine, disk, v => v.at)).toEqual({ a: { at: 5 }, b: { at: 9 }, c: { at: 2 } })
+  expect(noteSeen({ X: { at: 1, tools: ['A', 'B'] } }, 'X', 'B', 7)).toEqual({ X: { at: 7, tools: ['B', 'A'] } })
+  expect(noteSeen(undefined, 'Stop', '', 3)).toEqual({ Stop: { at: 3, tools: [] } })
+})
+
+test('the window learns which chat runs in a terminal, to find what Claude Code recorded of its hooks', async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: v2({}) })
+  await prompt($)
+  const places = JSON.parse(fs.get('/home/me/.hoochi/places.json') ?? '{}')
+  expect(places.terminals['whitebox:terminal:t1'].session).toBe('s1')
 })
 
 const CODEX_ACTIVITY = '/home/me/.hoochi/activity-codex.json'

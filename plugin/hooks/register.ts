@@ -10,8 +10,11 @@ import type {
   SkillGroup,
   Fired,
   Item,
+  ItemRun,
   Place,
+  Run,
   Scope,
+  Seen,
   SkillRule,
 } from '../types'
 
@@ -25,9 +28,15 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.43'
+export const APP_VERSION = '0.1.44'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
+/** How much of a failed command's output the window keeps, to say why it failed. */
+const RUN_OUTPUT = 600
+/** Items whose runs are kept; the ones run longest ago go first. */
+const RUNS_KEPT = 200
+/** Tools kept per moment, newest first, to tell why a tool filter never matched. */
+const TOOLS_KEPT = 6
 const COMMAND_TIMEOUT_MS = 30_000
 
 /** Events whose answer reaches the model: text and skills go only here. */
@@ -295,7 +304,7 @@ async function readConfig($: EngineInterface, dir: string): Promise<Config> {
 }
 
 /** Remembers this project and terminal for the window's scope picker. */
-async function notePlace($: EngineInterface, dir: string, place: Place) {
+async function notePlace($: EngineInterface, dir: string, place: Place, session = '') {
   let known: Loose = {}
   try {
     known = JSON.parse((await readText($, `${dir}/places.json`)) ?? '{}') as Loose
@@ -306,28 +315,78 @@ async function notePlace($: EngineInterface, dir: string, place: Place) {
   const projects = { ...((known.projects as Loose | undefined) ?? {}), [place.project]: { lastSeen: now } }
   const terminals = {
     ...((known.terminals as Loose | undefined) ?? {}),
-    [place.terminal]: { label: place.terminalLabel, cwd: place.project, agent: 'claude', lastSeen: now },
+    [place.terminal]: {
+      label: place.terminalLabel,
+      cwd: place.project,
+      agent: 'claude',
+      lastSeen: now,
+      // The chat there now, so the window can find what Claude Code recorded of its hooks.
+      ...(session ? { session } : {}),
+    },
   }
   await $.fs
     .write(`${dir}/places.json`, JSON.stringify({ projects, terminals }, null, 2))
     .catch(() => undefined)
 }
 
-/** Runs a command item; undefined when its output should not go in. */
-async function runCommand($: EngineInterface, item: Item, cwd: string): Promise<string | undefined> {
+/** The first of what a failed command printed: its errors first. */
+export function failOutput(stdout: string, stderr: string): string {
+  const t = [stderr, stdout].map(s => s.trim()).filter(Boolean).join('\n')
+  return t.length > RUN_OUTPUT ? `${t.slice(0, RUN_OUTPUT)}…` : t
+}
+
+/** Runs a command item: what goes to the model (none when its output should not go in), and how it ended. */
+async function runCommand($: EngineInterface, item: Item, cwd: string): Promise<{ text?: string; run: Run }> {
+  const at = await $.clock.now()
   try {
     const r = await $.process.run(['/bin/sh', '-c', item.command], {
       cwd: cwd || undefined,
       timeoutMs: COMMAND_TIMEOUT_MS,
       env: await $.process.hookEnv(),
     })
-    if (item.mode === 'onFail' && r.exitCode === 0) return undefined
+    const ms = (await $.clock.now()) - at
+    const run: Run = { at, exit: r.exitCode, ms, ...(r.exitCode !== 0 ? { out: failOutput(r.stdout, r.stderr) } : {}) }
+    if (item.mode === 'onFail' && r.exitCode === 0) return { run }
     const out = clip([r.stdout, r.stderr].filter(Boolean).join('\n'))
-    return `$ ${item.command} (exit ${r.exitCode})${out ? `\n${out}` : ''}`
+    return { text: `$ ${item.command} (exit ${r.exitCode})${out ? `\n${out}` : ''}`, run }
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err)
-    return `$ ${item.command} (did not finish: ${why})`
+    const ms = (await $.clock.now()) - at
+    return { text: `$ ${item.command} (did not finish: ${why})`, run: { at, ms, error: why } }
   }
+}
+
+/** Whether a run went wrong: a command that did not end with 0, or did not finish. */
+export const failed = (r: Run) => r.error !== undefined || (r.exit !== undefined && r.exit !== 0)
+
+/** The runs with these added, keeping the items run most lately. */
+export function noteRuns(
+  runs: Record<string, ItemRun> | undefined,
+  done: readonly { id: string; run: Run }[],
+): Record<string, ItemRun> {
+  const out: Record<string, ItemRun> = { ...runs }
+  for (const { id, run } of done) {
+    const had = out[id]
+    const bad = failed(run)
+    out[id] = {
+      runs: (had?.runs ?? 0) + 1,
+      fails: (had?.fails ?? 0) + (bad ? 1 : 0),
+      last: run,
+      ...(bad ? { fail: run } : had?.fail ? { fail: had.fail } : {}),
+    }
+  }
+  const ids = Object.keys(out)
+  if (ids.length <= RUNS_KEPT) return out
+  const at = (id: string) => out[id]?.last.at ?? 0
+  const keep = new Set(ids.sort((a, b) => at(b) - at(a)).slice(0, RUNS_KEPT))
+  return Object.fromEntries(Object.entries(out).filter(([id]) => keep.has(id)))
+}
+
+/** The moments seen with this one added: when it came, and its tool first among the latest. */
+export function noteSeen(seen: Record<string, Seen> | undefined, event: string, tool: string, at: number): Record<string, Seen> {
+  const had = seen?.[event]?.tools ?? []
+  const tools = tool ? [tool, ...had.filter(t => t !== tool)].slice(0, TOOLS_KEPT) : had
+  return { ...seen, [event]: { at, tools } }
 }
 
 async function appPath($: EngineInterface, dir: string): Promise<string | undefined> {
@@ -454,12 +513,37 @@ function newestChat(a: Chat | undefined, b: Chat | undefined): Chat | undefined 
 }
 
 async function chatOnDisk($: EngineInterface, path: string): Promise<Chat | undefined> {
+  return (await activityOnDisk($, path)).lastChat
+}
+
+/** What the file holds now: other chats write it too. */
+async function activityOnDisk($: EngineInterface, path: string): Promise<Pick<Activity, 'lastChat' | 'runs' | 'seen'>> {
   try {
-    const chat = (JSON.parse((await readText($, path)) ?? '{}') as Loose).lastChat as Chat | undefined
-    return chat && typeof chat.at === 'number' && chat.place ? chat : undefined
+    const o = JSON.parse((await readText($, path)) ?? '{}') as Loose
+    const chat = o.lastChat as Chat | undefined
+    const map = <T>(v: unknown) => (v && typeof v === 'object' ? (v as Record<string, T>) : undefined)
+    return {
+      lastChat: chat && typeof chat.at === 'number' && chat.place ? chat : undefined,
+      runs: map<ItemRun>(o.runs),
+      seen: map<Seen>(o.seen),
+    }
   } catch {
-    return undefined
+    return {}
   }
+}
+
+/** Two chats' records of the same things: for each one, the record of what happened last. */
+export function newerOf<T>(
+  a: Record<string, T> | undefined,
+  b: Record<string, T> | undefined,
+  at: (v: T) => number,
+): Record<string, T> {
+  const out: Record<string, T> = { ...a }
+  for (const [k, v] of Object.entries(b ?? {})) {
+    const had = out[k]
+    if (had === undefined || (at(v) ?? 0) > (at(had) ?? 0)) out[k] = v
+  }
+  return out
 }
 
 /**
@@ -790,6 +874,7 @@ async function gather($: EngineInterface, event: string, m: Moment): Promise<str
   const at = await $.clock.now()
   const fired: Fired[] = []
   const ranIds = new Set<string>()
+  const runs: { id: string; run: Run }[] = []
   const parts: string[] = []
   const canInject = INJECTABLE.has(event) && m.speak !== false
   const isSecondPass = m.secondPass === true
@@ -798,16 +883,18 @@ async function gather($: EngineInterface, event: string, m: Moment): Promise<str
   for (const item of items) {
     if (isSecondPass) break
     if (item.kind === 'command') {
-      const out = await runCommand($, item, cwd)
+      const { text, run } = await runCommand($, item, cwd)
       fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope, id: item.id })
+      runs.push({ id: item.id, run })
       ranIds.add(item.id)
-      if (out !== undefined && canInject) parts.push(out)
+      if (text !== undefined && canInject) parts.push(text)
     } else if (canInject) {
       const words =
         item.kind === 'skill' ? skillText(item.skill) : item.kind === 'rules' ? rulesText(item.rules) : item.text
       if (words.trim() === '') continue
       parts.push(words)
       fired.push({ event, at, kind: item.kind, label: labelOf(item), tool, scope, id: item.id })
+      runs.push({ id: item.id, run: { at } })
       ranIds.add(item.id)
     }
   }
@@ -819,10 +906,12 @@ async function gather($: EngineInterface, event: string, m: Moment): Promise<str
     await $.fs.write(oncePath, JSON.stringify(log)).catch(() => undefined)
   }
 
-  if (HERE.has(event) && interactive) await notePlace($, dir, place).catch(() => undefined)
+  if (HERE.has(event) && interactive) await notePlace($, dir, place, session).catch(() => undefined)
 
   if (!QUIET.has(event) || fired.length > 0) {
     const before0 = await read($, activity)
+    const disk = await activityOnDisk($, `${dir}/activity-claude.json`)
+    const runsNow = newerOf(before0.runs, disk.runs, r => r.last?.at ?? 0)
     // Other Claude Code chats write this file too: keep the newest "where you last chatted",
     // so a chat working in the background never takes it back from the one you are typing in.
     // A chat opened here (not one compacting on its own); a message is counted by prompt.submit.
@@ -832,8 +921,11 @@ async function gather($: EngineInterface, event: string, m: Moment): Promise<str
       lastAt: at,
       counts: { ...before0.counts, [event]: (before0.counts[event] ?? 0) + 1 },
       recent: [...before0.recent, ...fired].slice(-40),
+      // Each item's runs and each moment, as whichever chat saw them last.
+      runs: runs.length > 0 ? noteRuns(runsNow, runs) : runsNow,
+      seen: noteSeen(newerOf(before0.seen, disk.seen, v => v.at ?? 0), event, tool, at),
       place,
-      lastChat: newestChat(mine, await chatOnDisk($, `${dir}/activity-claude.json`)),
+      lastChat: newestChat(mine, disk.lastChat),
     }
     await update($, activity, () => seen)
     await $.fs.write(`${dir}/activity-claude.json`, JSON.stringify(seen)).catch(() => undefined)

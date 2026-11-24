@@ -45,6 +45,12 @@ const CONTEXT: &[&str] = &["SessionStart", "UserPromptSubmit", "PreToolUse", "Po
 const CONTINUES: &[&str] = &["Stop", "SubagentStop"];
 const TOOL_EVENTS: &[&str] = &["PreToolUse", "PostToolUse", "PermissionRequest"];
 const MAX_OUTPUT: usize = 4000;
+/// How much of a failed command's output the window keeps, to say why it failed.
+const RUN_OUTPUT: usize = 600;
+/// Items whose runs are kept; the ones run longest ago go first.
+const RUNS_KEPT: usize = 200;
+/// Tools kept per moment, newest first, to tell why a tool filter never matched.
+const TOOLS_KEPT: usize = 6;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 /// What every hoochi command in hooks.json contains, after the quoted app path.
 const MARK: &str = " hook codex ";
@@ -173,8 +179,25 @@ fn clip(text: &str) -> String {
     }
 }
 
-/// Runs a shell command with a time limit; None when its output should not go in.
-fn run_command(command: &str, only_on_fail: bool, cwd: &str) -> Option<String> {
+/// What a command run gives: the words for Codex (None when its output should not go in) and how it ended.
+pub struct Ran {
+    pub text: Option<String>,
+    pub run: Value,
+}
+
+/// The first of what a failed command printed: its errors first.
+fn fail_output(out: &str, err: &str) -> String {
+    let t = [err.trim(), out.trim()].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("\n");
+    if t.chars().count() > RUN_OUTPUT {
+        t.chars().take(RUN_OUTPUT).collect::<String>() + "…"
+    } else {
+        t
+    }
+}
+
+/// Runs a shell command with a time limit.
+fn run_command(command: &str, only_on_fail: bool, cwd: &str) -> Ran {
+    let at = now_ms();
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c").arg(command).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if !cwd.is_empty() {
@@ -182,7 +205,12 @@ fn run_command(command: &str, only_on_fail: bool, cwd: &str) -> Option<String> {
     }
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return Some(format!("$ {command} (did not start: {e})")),
+        Err(e) => {
+            return Ran {
+                text: Some(format!("$ {command} (did not start: {e})")),
+                run: json!({ "at": at, "ms": 0, "error": format!("did not start: {e}") }),
+            }
+        }
     };
     let started = Instant::now();
     let status = loop {
@@ -205,15 +233,77 @@ fn run_command(command: &str, only_on_fail: bool, cwd: &str) -> Option<String> {
     if let Some(mut s) = child.stderr.take() {
         let _ = s.read_to_string(&mut err);
     }
+    let ms = started.elapsed().as_millis() as u64;
     let Some(status) = status else {
-        return Some(format!("$ {command} (did not finish in 30 seconds)"));
+        return Ran {
+            text: Some(format!("$ {command} (did not finish in 30 seconds)")),
+            run: json!({ "at": at, "ms": ms, "error": "did not finish in 30 seconds", "out": fail_output(&out, &err) }),
+        };
     };
     let code = status.code().unwrap_or(-1);
+    let run = if code == 0 {
+        json!({ "at": at, "exit": code, "ms": ms })
+    } else {
+        json!({ "at": at, "exit": code, "ms": ms, "out": fail_output(&out, &err) })
+    };
     if only_on_fail && code == 0 {
-        return None;
+        return Ran { text: None, run };
     }
     let text = clip(&[out, err].into_iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n"));
-    Some(if text.is_empty() { format!("$ {command} (exit {code})") } else { format!("$ {command} (exit {code})\n{text}") })
+    let text = if text.is_empty() { format!("$ {command} (exit {code})") } else { format!("$ {command} (exit {code})\n{text}") };
+    Ran { text: Some(text), run }
+}
+
+/// Whether a run went wrong: a command that did not end with 0, or did not finish.
+fn run_failed(run: &Value) -> bool {
+    run.get("error").is_some() || run.get("exit").and_then(Value::as_i64).is_some_and(|c| c != 0)
+}
+
+/// The runs with these added, keeping the items run most lately (as the plugin's `noteRuns`).
+pub fn note_runs(runs: &Value, done: &[(String, Value)]) -> Value {
+    let mut out = runs.as_object().cloned().unwrap_or_default();
+    for (id, run) in done {
+        let had = out.get(id).cloned().unwrap_or(Value::Null);
+        let bad = run_failed(run);
+        let mut entry = json!({
+            "runs": had.get("runs").and_then(Value::as_u64).unwrap_or(0) + 1,
+            "fails": had.get("fails").and_then(Value::as_u64).unwrap_or(0) + u64::from(bad),
+            "last": run,
+        });
+        if bad {
+            entry["fail"] = run.clone();
+        } else if let Some(f) = had.get("fail") {
+            entry["fail"] = f.clone();
+        }
+        out.insert(id.clone(), entry);
+    }
+    if out.len() > RUNS_KEPT {
+        let at = |v: &Value| v.pointer("/last/at").and_then(Value::as_u64).unwrap_or(0);
+        let mut ids: Vec<(String, u64)> = out.iter().map(|(k, v)| (k.clone(), at(v))).collect();
+        ids.sort_by(|a, b| b.1.cmp(&a.1));
+        for (id, _) in ids.into_iter().skip(RUNS_KEPT) {
+            out.remove(&id);
+        }
+    }
+    Value::Object(out)
+}
+
+/// The moments seen with this one added: when it came, and its tool first among the latest.
+pub fn note_seen(seen: &Value, event: &str, tool: &str, at: u64) -> Value {
+    let mut out = seen.as_object().cloned().unwrap_or_default();
+    let had: Vec<String> = out
+        .get(event)
+        .and_then(|s| s.get("tools"))
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default();
+    let tools: Vec<String> = if tool.is_empty() {
+        had
+    } else {
+        std::iter::once(tool.to_string()).chain(had.into_iter().filter(|t| t != tool)).take(TOOLS_KEPT).collect()
+    };
+    out.insert(event.to_string(), json!({ "at": at, "tools": tools }));
+    Value::Object(out)
 }
 
 /// The rows of a "rules" item that say both when and which skill, spaces folded.
@@ -251,7 +341,7 @@ fn label_of(item: &Value) -> String {
     }
 }
 
-fn note_place(project: &str, terminal: &str, label: &str) {
+fn note_place(project: &str, terminal: &str, label: &str, session: &str) {
     let path = data_dir().join("places.json");
     let mut known = read_json(&path);
     if !known.is_object() {
@@ -265,7 +355,10 @@ fn note_place(project: &str, terminal: &str, label: &str) {
     }
     let terminals = obj.entry("terminals").or_insert_with(|| json!({}));
     if let Some(t) = terminals.as_object_mut() {
-        t.insert(terminal.to_string(), json!({ "label": label, "cwd": project, "agent": "codex", "lastSeen": now }));
+        t.insert(
+            terminal.to_string(),
+            json!({ "label": label, "cwd": project, "agent": "codex", "lastSeen": now, "session": session }),
+        );
     }
     let _ = write_json(&path, &known);
 }
@@ -333,7 +426,7 @@ pub fn run_hook(event: &str) -> i32 {
     let (terminal, terminal_label) = detect_terminal(&session_id);
     let here = event == "SessionStart" || event == "UserPromptSubmit";
     if here {
-        note_place(&project, &terminal, &terminal_label);
+        note_place(&project, &terminal, &terminal_label, &session_id);
     }
 
     let config = load_config();
@@ -361,14 +454,16 @@ pub fn run_hook(event: &str) -> i32 {
     let mut parts = Vec::new();
     let mut fired = Vec::new();
     let mut ran = Vec::new();
+    let mut runs: Vec<(String, Value)> = Vec::new();
     if !second_pass {
         for item in &items {
             match str_of(item, "kind") {
                 "command" => {
-                    let out = run_command(str_of(item, "command"), str_of(item, "mode") == "onFail", &cwd);
-                    if let (Some(text), true) = (out, can_speak) {
+                    let done = run_command(str_of(item, "command"), str_of(item, "mode") == "onFail", &cwd);
+                    if let (Some(text), true) = (done.text, can_speak) {
                         parts.push(text);
                     }
+                    runs.push((str_of(item, "id").to_string(), done.run));
                 }
                 "skill" if can_speak => parts.push(format!(
                     "Use the \"{}\" skill for this before you go on.",
@@ -384,6 +479,9 @@ pub fn run_hook(event: &str) -> i32 {
                 _ => continue,
             }
             fired.push(json!({ "event": event, "at": at, "kind": str_of(item, "kind"), "label": label_of(item), "tool": tool, "scope": scope, "id": str_of(item, "id") }));
+            if str_of(item, "kind") != "command" {
+                runs.push((str_of(item, "id").to_string(), json!({ "at": at })));
+            }
             ran.push(str_of(item, "id").to_string());
         }
     }
@@ -422,6 +520,10 @@ pub fn run_hook(event: &str) -> i32 {
     recent.extend(fired);
     let skip = recent.len().saturating_sub(40);
     seen["recent"] = Value::Array(recent.into_iter().skip(skip).collect());
+    if !runs.is_empty() {
+        seen["runs"] = note_runs(&seen["runs"], &runs);
+    }
+    seen["seen"] = note_seen(&seen["seen"], event, &tool, at);
     let _ = write_json(&path, &seen);
 
     if let Some(out) = answer(event, &parts) {
@@ -606,6 +708,21 @@ mod tests {
     }
 
     #[test]
+    fn runs_keep_the_last_failure_and_moments_their_tools() {
+        let runs = note_runs(&Value::Null, &[("a".into(), json!({ "at": 1, "exit": 1, "out": "boom" }))]);
+        let runs = note_runs(&runs, &[("a".into(), json!({ "at": 2, "exit": 0 }))]);
+        assert_eq!(runs["a"], json!({ "runs": 2, "fails": 1, "last": { "at": 2, "exit": 0 }, "fail": { "at": 1, "exit": 1, "out": "boom" } }));
+        let runs = note_runs(&runs, &[("a".into(), json!({ "at": 3, "error": "did not finish in 30 seconds" }))]);
+        assert_eq!(runs["a"]["fails"], 2);
+
+        let seen = note_seen(&Value::Null, "PreToolUse", "shell", 5);
+        let seen = note_seen(&seen, "PreToolUse", "apply_patch", 6);
+        let seen = note_seen(&seen, "PreToolUse", "shell", 7);
+        assert_eq!(seen["PreToolUse"], json!({ "at": 7, "tools": ["shell", "apply_patch"] }));
+        assert_eq!(note_seen(&Value::Null, "Stop", "", 1)["Stop"]["tools"], json!([]));
+    }
+
+    #[test]
     fn tool_filter() {
         assert!(tool_matches("", "Bash"));
         assert!(tool_matches("Bash, Edit", "Edit"));
@@ -614,9 +731,12 @@ mod tests {
 
     #[test]
     fn only_on_fail_skips_success() {
-        assert!(run_command("true", true, "").is_none());
-        let out = run_command("echo boom; exit 3", true, "").unwrap();
+        let done = run_command("echo boom; exit 3", true, "");
+        let out = done.text.unwrap();
         assert!(out.contains("(exit 3)") && out.contains("boom"));
+        assert_eq!(done.run["exit"], 3);
+        assert_eq!(done.run["out"], "boom");
+        assert!(run_command("true", true, "").text.is_none());
     }
 
     #[test]

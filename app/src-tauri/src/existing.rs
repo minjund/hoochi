@@ -282,6 +282,9 @@ fn collect(
                         "body": body, "timeout": timeout, "about": about,
                         "file": file.replace(&home().to_string_lossy().to_string(), "~"),
                         "origin": crate::origin::origin(hook),
+                        // Exactly as written, to find its runs in what Claude Code recorded.
+                        "command": hook.get("command").and_then(Value::as_str).unwrap_or_default(),
+                        "status": hook.get("statusMessage").and_then(Value::as_str).unwrap_or_default(),
                     }),
                     place: at,
                 });

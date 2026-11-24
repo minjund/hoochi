@@ -1874,6 +1874,13 @@ button.hw-existing-text:hover b {
   font-weight: 700;
   text-align: center;
 }
+.hw-tabs-count[data-trouble] {
+  background: rgba(200, 70, 60, 0.12);
+  color: #b8392f;
+}
+.dark .hw-tabs-count[data-trouble] {
+  color: #ff8f84;
+}
 /* ---------- everything put in, on the moments page ---------- */
 
 /* ---------- a change to what is put in, from a sentence ---------- */
@@ -1919,6 +1926,24 @@ button.hw-existing-text:hover b {
 }
 
 /* ---------- rules found: a list to act on, row by row ---------- */
+.hw-chat-find-state {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--hw-soft);
+}
+.hw-chat-find-state b {
+  font-weight: 600;
+  color: var(--hw-green-ink);
+}
+.hw-chat-find-state[data-trouble],
+.hw-chat-find-state[data-trouble] b {
+  color: #b8392f;
+}
+.dark .hw-chat-find-state[data-trouble],
+.dark .hw-chat-find-state[data-trouble] b {
+  color: #ff8f84;
+}
 .hw-chat-find-acts {
   display: flex;
   flex-wrap: wrap;
@@ -1967,25 +1992,121 @@ button.hw-existing-text:hover b {
   --hw-claude: #e8a36f;
   --hw-codex: #8fa8ff;
 }
+.hw-rl {
+  --hw-bad: #b8392f;
+  --hw-bad-tint: rgba(200, 70, 60, 0.08);
+  --hw-bad-line: rgba(200, 70, 60, 0.3);
+  --hw-warn: #9a6a00;
+}
+.dark .hw-rl,
+.dark .hw-modal {
+  --hw-bad: #ff8f84;
+  --hw-bad-tint: rgba(255, 120, 108, 0.1);
+  --hw-bad-line: rgba(255, 120, 108, 0.35);
+  --hw-warn: #f0c86a;
+}
+.hw-modal {
+  --hw-bad: #b8392f;
+  --hw-warn: #9a6a00;
+}
+/* ---------- the top of the Lifecycle page: the chat in view, then what is not working ---------- */
 .hw-rl-now {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--hw-line);
   background: var(--hw-card);
 }
-.hw-rl-now p {
-  flex: 1;
-  min-width: 0;
+.hw-rl-now[data-trouble] {
+  border-color: var(--hw-bad-line);
+}
+.hw-rl-now-chat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0;
   font-size: 15px;
   line-height: 1.45;
 }
-.hw-rl-now small {
+.hw-rl-now-chat > span:last-child {
+  flex: 1;
+  min-width: 0;
+}
+.hw-rl-now-chat small {
   display: block;
   font-size: 13.5px;
+  color: var(--hw-soft);
+}
+.hw-rl-trouble h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15.5px;
+  color: var(--hw-green-ink);
+}
+.hw-rl-now[data-trouble] .hw-rl-trouble h3 {
+  color: var(--hw-bad);
+}
+.hw-rl-trouble h3 i {
+  font-style: normal;
+}
+.hw-rl-trouble > p {
+  margin: 2px 0 8px;
+  font-size: 13.5px;
+  color: var(--hw-soft);
+}
+.hw-rl-trouble ul {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+.hw-rl-trouble li > button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--hw-bad-tint);
+}
+.hw-rl-trouble li > button:hover {
+  background: color-mix(in srgb, var(--hw-bad) 14%, transparent);
+}
+.hw-rl-trouble li > button:focus-visible {
+  outline: 2px solid var(--hw-green);
+}
+.hw-rl-trouble-what {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14.5px;
+}
+.hw-rl-trouble-what b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.hw-rl-trouble-what small {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--hw-soft);
+}
+.hw-rl-trouble-why {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--hw-bad);
+}
+.hw-rl-sub {
+  margin: -6px 2px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--hw-soft);
 }
 .hw-rl-seg {
@@ -2192,6 +2313,22 @@ button.hw-existing-text:hover b {
 .hw-rl-state[data-s='idle'] {
   font-weight: 500;
 }
+.hw-rl-state[data-s='bad'] {
+  color: var(--hw-bad);
+}
+.hw-hook-switch .hw-rl-state[data-s='bad'] {
+  color: var(--hw-bad);
+}
+.hw-hook-switch .hw-rl-state[data-s='in'] {
+  color: var(--hw-green-ink);
+}
+.hw-rl-row:has(.hw-rl-state[data-s='bad']) {
+  background: var(--hw-bad-tint);
+}
+.hw-rl .hw-rl-why[data-v='stuck'],
+.hw-rl .hw-rl-why[data-v='failing'] {
+  color: var(--hw-bad);
+}
 .hw-rl-why {
   margin: 0;
   font-size: 13.5px;
@@ -2394,6 +2531,88 @@ button.hw-existing-text:hover b {
 }
 .hw-rl-open:focus-visible {
   outline: 2px solid var(--hw-green);
+}
+/* ---------- why a hook runs or not: in the popups ---------- */
+.hw-why {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--hw-line);
+  border-radius: 12px;
+  background: var(--hw-card);
+}
+.hw-why h4,
+.hw-why h5 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hw-soft);
+}
+.hw-why-steps {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hw-why-steps li {
+  display: flex;
+  gap: 9px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.hw-why-steps i {
+  flex-shrink: 0;
+  width: 18px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+.hw-why-steps li[data-s='ok'] i {
+  color: var(--hw-green);
+}
+.hw-why-steps li[data-s='bad'] {
+  color: var(--hw-bad);
+}
+.hw-why-steps li[data-s='warn'] {
+  color: var(--hw-warn);
+}
+.hw-why-steps li[data-s='idle'] {
+  color: var(--hw-soft);
+}
+.hw-why-steps li[data-reason] {
+  font-weight: 600;
+}
+.hw-why-out {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--hw-tint);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hw-hook-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.hw-hook-switch > :last-child {
+  margin-left: auto;
+}
+.hw-hook-about,
+.hw-hook-file {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--hw-soft);
+  overflow-wrap: anywhere;
 }
 /* In the popup there is no step 1 above it: the title says when. */
 .hw-rule-card .hw-step {

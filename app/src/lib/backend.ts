@@ -77,11 +77,13 @@ if (browserFlags.demo) {
             tools: 'Bash',
           }),
           item('e', 'SessionEnd', 'command', { command: 'date >> ~/.hoochi/sessions.log' }),
+          item('l', 'PostToolUse', 'command', { command: 'npx prettier --write .', tools: 'edit' }),
         ],
         projects: {
           [place.project]: [
             item('c', 'Stop', 'command', { command: 'npm test', mode: 'onFail' }),
             item('d', 'Stop', 'skill', { skill: 'code-review', enabled: false }),
+            item('k', 'Stop', 'command', { command: 'pnpm lint' }),
             item('h', 'UserPromptSubmit', 'rules', {
               rules: [
                 { when: 'adding a feature or fixing a bug', skill: 'tdd' },
@@ -110,8 +112,10 @@ if (browserFlags.demo) {
   // `?chat=home`: the last chat was typed in a terminal outside any project folder
   const home = { project: '/Users/me', terminal: 'whitebox:terminal:e5', terminalLabel: 'Whitebox e5' }
   const homeLast = browserFlags.chat === 'home'
-  const activity = (lastEvent: string, lastChat: object) =>
+  const seen = (ago: number, tools: string[] = []) => ({ at: now - ago, tools })
+  const activity = (lastEvent: string, lastChat: object, extra: object = {}) =>
     JSON.stringify({
+      ...extra,
       lastEvent,
       lastAt: now + 60_000,
       counts: { SessionStart: 1, UserPromptSubmit: 6, PreToolUse: 23, PostToolUse: 22, Stop: 5 },
@@ -142,6 +146,22 @@ if (browserFlags.demo) {
     activity(
       'PreToolUse',
       homeLast ? { at: now - 1000, place: home } : { at: codexLast ? now - 60_000 : now - 9000, place },
+      {
+        runs: {
+          f: { runs: 6, fails: 0, last: { at: now - 9000 } },
+          c: { runs: 5, fails: 1, last: { at: now - 4000, exit: 1, ms: 8200, out: '1 failing\n  cart › applies the coupon' } },
+          k: { runs: 5, fails: 5, last: { at: now - 4000, exit: 127, ms: 12, out: 'sh: pnpm: command not found' } },
+          e: { runs: 2, fails: 1, last: { at: now - 3_600_000, exit: 0, ms: 4 }, fail: { at: now - 7_200_000, exit: 1, ms: 3, out: 'sh: ~/.hoochi/sessions.log: Permission denied' } },
+        },
+        seen: {
+          SessionStart: seen(3_600_000),
+          UserPromptSubmit: seen(9000),
+          PreToolUse: seen(5000, ['Bash', 'Read', 'Edit']),
+          PostToolUse: seen(5000, ['Bash', 'Read', 'Edit']),
+          Stop: seen(4000),
+          SessionEnd: seen(3_600_000),
+        },
+      },
     ),
   )
   localStorage.setItem(
@@ -207,6 +227,8 @@ export function parseActivity(text: string): Activity {
       lastAt: typeof a.lastAt === 'number' ? a.lastAt : 0,
       counts: a.counts && typeof a.counts === 'object' ? a.counts : {},
       recent: Array.isArray(a.recent) ? a.recent : [],
+      ...(a.runs && typeof a.runs === 'object' ? { runs: a.runs } : {}),
+      ...(a.seen && typeof a.seen === 'object' ? { seen: a.seen } : {}),
       place: a.place,
       lastChat: a.lastChat && typeof a.lastChat.at === 'number' && a.lastChat.place ? a.lastChat : undefined,
     }
@@ -317,10 +339,65 @@ export type ExistingHook = {
   about?: string
   /** the file it is written in (a settings file, a plugin's folder, Codex's hooks.json) */
   file?: string
+  /** exactly as written (its command, or empty), and the line Claude Code shows while it runs */
+  command?: string
+  status?: string
   /** the app that put it there, when that can be told (it runs from the app, or the app serves its address) */
   origin?: { name: string; path: string } | null
 }
 export type ExistingHooks = Record<'claude' | 'codex', ExistingHook[]>
+
+/** A hook Claude Code ran, as its transcript recorded it (`hook_runs` in app/src-tauri/src/hookruns.rs). */
+export type HookRun = {
+  at: number
+  session: string
+  cwd: string
+  event: string
+  /** what it ran for: the tool ("Bash"), or how the chat started ("clear") */
+  on: string
+  /** its command as written (or the line it shows while running) */
+  command: string
+  /** ok · error (ended with another code than 0 or 2) · blocked (ended with 2: it stopped Claude on purpose) · timeout · cancelled */
+  result: 'ok' | 'error' | 'blocked' | 'timeout' | 'cancelled'
+  exit?: number
+  ms?: number
+  limitMs?: number
+  out?: string
+}
+
+export async function hookRuns(): Promise<HookRun[]> {
+  if (inApp) return invoke('hook_runs')
+  if (!browserFlags.demo) return []
+  const now = Date.now()
+  const run = (ago: number, event: string, command: string, extra: Partial<HookRun> = {}): HookRun => ({
+    at: now - ago,
+    session: 'demo',
+    cwd: '/Users/me/Projects/shop',
+    event,
+    on: '',
+    command,
+    result: 'ok',
+    exit: 0,
+    ms: 40,
+    ...extra,
+  })
+  return [
+    run(30_000, 'Stop', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/memory.mjs" Stop', {
+      result: 'error',
+      exit: 1,
+      out: 'Error: connect ECONNREFUSED 127.0.0.1:8484',
+    }),
+    run(40_000, 'PreToolUse', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/Desk Pet.mjs" PreToolUse', { on: 'Bash' }),
+    run(3_600_000, 'Stop', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/memory.mjs" Stop'),
+    run(600_000, 'SessionStart', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/notes.mjs" SessionStart', {
+      on: 'startup',
+      result: 'timeout',
+      exit: undefined,
+      ms: 30_020,
+      limitMs: 30_000,
+    }),
+  ]
+}
 
 export async function existingHooks(project: string): Promise<ExistingHooks> {
   if (inApp) return invoke('existing_hooks', { project })
@@ -336,6 +413,7 @@ export async function existingHooks(project: string): Promise<ExistingHooks> {
     name,
     detail: `${name} hook`,
     body: `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${name.replace('skill: ', '')}.mjs" ${event}`,
+    command: `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${name.replace('skill: ', '')}.mjs" ${event}`,
     timeout: event === 'SessionStart' ? 30 : null,
     about: name.startsWith('skill:') ? 'Keeps your notes in step at the start of a chat.' : '',
     from,

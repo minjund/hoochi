@@ -6,13 +6,15 @@
  */
 import { allTargets, type Target } from './edit.ts'
 import { CLAUDE_SLOTS, CODEX_SLOTS, decidingScope, type Activity, type Agent, type Config, type Scope } from './lifecycle.ts'
+import { isTrouble, whyRule, type Check, type Why } from './why.ts'
 
 /** The chat the window follows: its AI, project and terminal. */
 export type Chat = { agent: Agent; project: string; terminal: string }
 
 /** in: it goes in at this chat · hidden: a narrower place's rules win · other: not this chat's */
 export type Reach = 'in' | 'hidden' | 'other'
-export type Problem = 'hidden' | 'codex-off' | 'blocked'
+/** What stops a rule: the check that says why (see why.ts). */
+export type Problem = Check['key']
 
 export type Row = Target & {
   /** set only when there is a chat to look from */
@@ -21,6 +23,9 @@ export type Row = Target & {
   hiddenBy?: { scope: Scope; key: string }
   /** when it last ran (ms), from what the AI recorded */
   lastRun?: number
+  /** why it runs or does not, check by check */
+  why: Why
+  /** set when something stops it or it fails */
   problem?: Problem
 }
 
@@ -50,11 +55,19 @@ export function momentOrder(): string[] {
 
 export function rowsOf(
   config: Config,
-  o: { chat?: Chat; activity: Record<Agent, Activity>; codexOn: boolean; blocked: ReadonlySet<string> },
+  o: {
+    chat?: Chat
+    activity: Record<Agent, Activity>
+    codexOn: boolean
+    /** whether Codex is installed at all (it says what to do when it is not connected) */
+    codexInstalled?: boolean
+    blocked: ReadonlySet<string>
+  },
 ): Row[] {
   return allTargets(config).map(t => {
-    const ran = o.activity[t.agent].recent.filter(f => f.id === t.item.id).map(f => f.at)
-    const row: Row = { ...t, ...(ran.length ? { lastRun: Math.max(...ran) } : {}) }
+    const a = o.activity[t.agent]
+    const ran = [a.runs?.[t.item.id]?.last.at ?? 0, ...a.recent.filter(f => f.id === t.item.id).map(f => f.at)].filter(n => n > 0)
+    const row: Omit<Row, 'why'> & { why?: Why } = { ...t, ...(ran.length ? { lastRun: Math.max(...ran) } : {}) }
     if (o.chat) {
       const c = o.chat
       const reaches =
@@ -70,10 +83,16 @@ export function rowsOf(
         }
       }
     }
-    if (row.reach === 'hidden') row.problem = 'hidden'
-    else if (t.agent === 'codex' && !o.codexOn) row.problem = 'codex-off'
-    else if (t.agent === 'claude' && o.blocked.has(t.item.event)) row.problem = 'blocked'
-    return row
+    const why = whyRule(t.agent, t.item, {
+      activity: a,
+      codexOn: o.codexOn,
+      codexInstalled: o.codexInstalled ?? true,
+      blocked: o.blocked,
+      reach: row.reach,
+      hiddenBy: row.hiddenBy,
+      lastRun: row.lastRun,
+    })
+    return { ...row, why, ...(isTrouble(why) && why.reason ? { problem: why.reason.check.key } : {}) }
   })
 }
 

@@ -1,0 +1,252 @@
+// "Why doesn't my hook run?" in words, in four languages: each check of why.ts as one sentence,
+// each verdict as a short label, and the few headings the page and the popup use.
+
+import type { Lang } from './i18n.ts'
+import type { Scope } from './lifecycle.ts'
+import type { Check, Verdict } from './why.ts'
+
+/** What the sentences need from the window: how long ago a time was, and a place's name. */
+export type WhyHelp = { ago(at: number): string; place(p: { scope: Scope; key: string }): string }
+
+/** A duration: milliseconds under a second, else seconds in the language's unit (30s, 30초, 30秒). */
+const secsIn = (unit: string) => (ms?: number) =>
+  ms === undefined ? '' : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1).replace(/\.0$/, '')}${unit}`
+const list = (xs: readonly string[]) => xs.join(', ')
+
+export const VERDICT: Record<Lang, Record<Verdict, string>> = {
+  en: { off: 'Off', stuck: "Doesn't run", failing: 'Fails', warn: 'Check this', working: 'Works', waiting: 'Not run yet' },
+  ko: { off: '꺼짐', stuck: '안 돌아요', failing: '실패', warn: '확인 필요', working: '잘 돌아요', waiting: '아직 안 돌았어요' },
+  ja: { off: 'オフ', stuck: '動きません', failing: '失敗', warn: '要確認', working: '動いています', waiting: 'まだ動いていません' },
+  zh: { off: '已关闭', stuck: '不会运行', failing: '失败', warn: '需要检查', working: '运行正常', waiting: '还没运行过' },
+}
+
+export const WHY_UI = {
+  en: {
+    checks: 'Why it runs or not',
+    output: 'What it printed',
+    runs: 'What it runs',
+    trouble: (n: number) => (n === 1 ? '1 hook not working' : `${n} hooks not working`),
+    troubleNone: 'Nothing stuck or failing.',
+    troubleHint: 'Press one to see why.',
+    troubleMore: (n: number) => `${n} more`,
+    outside: 'Hooks set up elsewhere',
+    outsideHint: (n: number) => `${n} · from your settings and plugins. hoochi reads what Claude Code recorded of their runs`,
+    outsideNone: 'None at this place.',
+    ruleOf: 'Put in with hoochi',
+  },
+  ko: {
+    checks: '왜 돌고, 왜 안 도나',
+    output: '출력',
+    runs: '실행하는 것',
+    trouble: (n: number) => `안 도는 훅 ${n}개`,
+    troubleNone: '막히거나 실패한 훅이 없어요.',
+    troubleHint: '누르면 이유가 보여요.',
+    troubleMore: (n: number) => `${n}개 더`,
+    outside: '밖에서 만든 훅',
+    outsideHint: (n: number) => `${n}개 · 설정 파일과 플러그인에 있는 것. Claude Code가 남긴 실행 기록을 읽어요`,
+    outsideNone: '이 자리에는 없어요.',
+    ruleOf: '후치로 넣은 것',
+  },
+  ja: {
+    checks: '動く理由・動かない理由',
+    output: '出力',
+    runs: '実行するもの',
+    trouble: (n: number) => `動いていないフック ${n} 件`,
+    troubleNone: '止まっている・失敗しているフックはありません。',
+    troubleHint: '押すと理由が見えます。',
+    troubleMore: (n: number) => `ほか ${n} 件`,
+    outside: 'ほかで設定されたフック',
+    outsideHint: (n: number) => `${n} 件 · 設定ファイルとプラグインのもの。Claude Code が残した実行記録を読みます`,
+    outsideNone: 'この場所にはありません。',
+    ruleOf: 'hoochi で入れたもの',
+  },
+  zh: {
+    checks: '为什么运行，为什么不运行',
+    output: '输出',
+    runs: '运行的内容',
+    trouble: (n: number) => `没在运行的钩子 ${n} 个`,
+    troubleNone: '没有卡住或失败的钩子。',
+    troubleHint: '点一下就能看到原因。',
+    troubleMore: (n: number) => `还有 ${n} 个`,
+    outside: '别处设置的钩子',
+    outsideHint: (n: number) => `${n} 个 · 来自设置文件和插件。hoochi 会读取 Claude Code 留下的运行记录`,
+    outsideNone: '这个位置没有。',
+    ruleOf: '用 hoochi 放进去的',
+  },
+} satisfies Record<Lang, unknown>
+
+/** One check as a sentence. */
+export function whyWords(lang: Lang, c: Check, h: WhyHelp): string {
+  switch (lang) {
+    case 'ko':
+      return ko(c, h)
+    case 'ja':
+      return ja(c, h)
+    case 'zh':
+      return zh(c, h)
+    default:
+      return en(c, h)
+  }
+}
+
+function en(c: Check, h: WhyHelp): string {
+  const secs = secsIn('s')
+  switch (c.key) {
+    case 'on': return "It's on."
+    case 'off': return "It's switched off."
+    case 'plugin': return 'The Claude Code plugin is reporting.'
+    case 'no-plugin': return 'No word from the Claude Code plugin yet. Check that it is installed and that a chat has run since.'
+    case 'codex-on': return "Codex's hooks are connected."
+    case 'codex-off': return c.installed ? "Codex's hooks are not connected (Connect Codex, on the Lifecycle page)." : 'Codex is not on this computer.'
+    case 'blocked': return "This account never passes this moment to hoochi (an organization's policy plugin passes it by)."
+    case 'came': return `This moment last came ${c.at ? h.ago(c.at) : 'before'}${c.tools.length ? `, with ${list(c.tools)}` : ''}.`
+    case 'not-yet': return "This moment hasn't come yet."
+    case 'in': return 'It goes in to the chat in view.'
+    case 'hidden': return `${c.by ? h.place(c.by) : 'A narrower place'} has its own rule at this moment, so this one is hidden there. The narrowest place wins.`
+    case 'other': return 'It is not for the chat in view (another AI or place).'
+    case 'tools-ok': return `Its tools match: ${c.match}.`
+    case 'tools-format': return `"${c.name}" never matches: write tool names apart with commas.`
+    case 'tools-ai': return `"${c.name}" is the other AI's name for it. Here it is "${c.right}".`
+    case 'tools-case': return `Tool names match case too: "${c.name}" should be "${c.right}".`
+    case 'tools-miss': return `Lately ${list(c.came)} came, but this takes ${list(c.want)} only.`
+    case 'tools-unknown': return `No tool has come at this moment yet (it takes ${list(c.want)}).`
+    case 'matcher-ok': return `A tool its matcher "${c.matcher}" matches has come.`
+    case 'matcher-miss': return `Its matcher "${c.matcher}" matches none of the tools that came lately (${list(c.came)}).`
+    case 'mute': return "Words don't reach the model at this moment: only commands run here."
+    case 'put-in': return `Put in ${h.ago(c.at)} · ${c.runs} ${c.runs === 1 ? 'time' : 'times'}.`
+    case 'ran': return `Ran ${h.ago(c.run.at)}${c.run.ms !== undefined ? ` in ${secs(c.run.ms)}` : ''}, ended with 0.`
+    case 'reported': return `${cap(h.ago(c.run.at))} it found a failure (exit ${c.run.exit}) and told Claude.`
+    case 'not-found': return `${cap(h.ago(c.run.at))} the command was not found (exit ${c.run.exit}). Check its path, or that it is installed.`
+    case 'exit': return `${cap(h.ago(c.run.at))} it ended with exit ${c.run.exit}.`
+    case 'broken': return `${cap(h.ago(c.run.at))} it could not run: ${c.run.error ?? ''}`
+    case 'timeout': return `${cap(h.ago(c.run.at))} it did not finish in time${c.limitMs ? ` (${secs(c.limitMs)} limit)` : ''}.`
+    case 'cancelled': return `${cap(h.ago(c.run.at))} it was cancelled before it finished.`
+    case 'blocked-on-purpose': return `${cap(h.ago(c.run.at))} it ended with 2: it stopped Claude on purpose.`
+    case 'not-run': return "It hasn't run yet."
+    case 'no-record': return "Claude Code's records of the last 3 days show no run of it (it does not record every kind of hook, async ones among them)."
+    case 'codex-no-record': return 'Codex keeps no record of the hooks it runs.'
+    case 'failed-before': return `It failed ${h.ago(c.run.at)} · ${c.fails} of ${c.runs} runs.`
+  }
+}
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+function ko(c: Check, h: WhyHelp): string {
+  const secs = secsIn('초')
+  switch (c.key) {
+    case 'on': return '켜져 있어요.'
+    case 'off': return '꺼져 있어요.'
+    case 'plugin': return 'Claude Code 플러그인이 소식을 보내고 있어요.'
+    case 'no-plugin': return 'Claude Code 플러그인에서 아직 소식이 없어요. 설치됐는지, 그 뒤로 채팅이 돌았는지 확인하세요.'
+    case 'codex-on': return 'Codex 훅이 연결돼 있어요.'
+    case 'codex-off': return c.installed ? 'Codex 훅이 연결돼 있지 않아요 (라이프 사이클의 Codex 연결하기).' : '이 컴퓨터에 Codex가 없어요.'
+    case 'blocked': return '이 계정에선 이 순간이 후치에 오지 않아요. 조직 정책 플러그인이 넘겨 버려요.'
+    case 'came': return `이 순간은 ${c.at ? h.ago(c.at) : '전에'} 마지막으로 왔어요${c.tools.length ? ` (도구: ${list(c.tools)})` : ''}.`
+    case 'not-yet': return '이 순간이 아직 한 번도 오지 않았어요.'
+    case 'in': return '지금 보는 채팅에 들어가요.'
+    case 'hidden': return `${c.by ? h.place(c.by) : '더 좁은 곳'}에 이 순간 규칙이 따로 있어서 거기선 가려져요. 가장 좁은 곳이 이겨요.`
+    case 'other': return '지금 보는 채팅의 규칙이 아니에요 (다른 AI나 다른 곳).'
+    case 'tools-ok': return `도구 조건이 맞아요: ${c.match}.`
+    case 'tools-format': return `"${c.name}"는 어떤 도구와도 안 맞아요. 도구 이름은 쉼표로 나눠 써야 해요.`
+    case 'tools-ai': return `"${c.name}"는 다른 AI가 쓰는 이름이에요. 여기선 "${c.right}"예요.`
+    case 'tools-case': return `도구 이름은 대소문자까지 같아야 해요: "${c.name}" → "${c.right}".`
+    case 'tools-miss': return `최근 온 도구는 ${list(c.came)}인데, 이 규칙은 ${list(c.want)}만 받아요.`
+    case 'tools-unknown': return `이 순간에 아직 어떤 도구도 오지 않았어요 (이 규칙: ${list(c.want)}).`
+    case 'matcher-ok': return `매처 "${c.matcher}"에 맞는 도구가 왔어요.`
+    case 'matcher-miss': return `매처 "${c.matcher}"가 최근 온 도구(${list(c.came)})와 하나도 맞지 않아요.`
+    case 'mute': return '이 순간엔 말이 모델에 닿지 않아요. 여기선 명령만 돌아요.'
+    case 'put-in': return `${h.ago(c.at)} 넣었어요 · ${c.runs}번.`
+    case 'ran': return `${h.ago(c.run.at)} 돌았어요${c.run.ms !== undefined ? ` (${secs(c.run.ms)})` : ''}. 0으로 끝났어요.`
+    case 'reported': return `${h.ago(c.run.at)} 실패를 찾아 Claude에게 알려 줬어요 (exit ${c.run.exit}).`
+    case 'not-found': return `${h.ago(c.run.at)} 명령을 찾지 못했어요 (exit ${c.run.exit}). 경로나 설치를 확인하세요.`
+    case 'exit': return `${h.ago(c.run.at)} exit ${c.run.exit}로 끝났어요.`
+    case 'broken': return `${h.ago(c.run.at)} 실행하지 못했어요: ${c.run.error ?? ''}`
+    case 'timeout': return `${h.ago(c.run.at)} 시간 안에 끝나지 않았어요${c.limitMs ? ` (한도 ${secs(c.limitMs)})` : ''}.`
+    case 'cancelled': return `${h.ago(c.run.at)} 끝나기 전에 취소됐어요.`
+    case 'blocked-on-purpose': return `${h.ago(c.run.at)} exit 2로 끝났어요. Claude를 일부러 멈춘 거예요.`
+    case 'not-run': return '아직 안 돌았어요.'
+    case 'no-record': return '최근 3일 Claude Code 기록에 실행한 흔적이 없어요 (비동기 훅처럼 기록을 남기지 않는 훅도 있어요).'
+    case 'codex-no-record': return 'Codex는 훅을 실행한 결과를 남기지 않아요.'
+    case 'failed-before': return `${h.ago(c.run.at)} 실패한 적이 있어요 · ${c.runs}번 중 ${c.fails}번.`
+  }
+}
+
+function ja(c: Check, h: WhyHelp): string {
+  const secs = secsIn('秒')
+  switch (c.key) {
+    case 'on': return 'オンです。'
+    case 'off': return 'オフになっています。'
+    case 'plugin': return 'Claude Code のプラグインから知らせが届いています。'
+    case 'no-plugin': return 'Claude Code のプラグインからまだ知らせがありません。インストールされているか、その後チャットが動いたか確かめてください。'
+    case 'codex-on': return 'Codex のフックはつながっています。'
+    case 'codex-off': return c.installed ? 'Codex のフックがつながっていません（ライフサイクルの「Codex を接続」）。' : 'このコンピューターに Codex がありません。'
+    case 'blocked': return 'このアカウントではこの瞬間が hoochi に届きません（組織のポリシープラグインが素通りさせます）。'
+    case 'came': return `この瞬間が最後に来たのは${c.at ? h.ago(c.at) : '以前'}です${c.tools.length ? `（ツール: ${list(c.tools)}）` : ''}。`
+    case 'not-yet': return 'この瞬間はまだ一度も来ていません。'
+    case 'in': return '見ているチャットに入ります。'
+    case 'hidden': return `${c.by ? h.place(c.by) : 'より狭い場所'}にこの瞬間のルールが別にあるので、そこでは隠れます。いちばん狭い場所が勝ちます。`
+    case 'other': return '見ているチャットのルールではありません（別の AI か別の場所）。'
+    case 'tools-ok': return `ツールの条件が合っています: ${c.match}。`
+    case 'tools-format': return `「${c.name}」はどのツールにも合いません。ツール名はカンマで区切ってください。`
+    case 'tools-ai': return `「${c.name}」はもう一方の AI の名前です。ここでは「${c.right}」です。`
+    case 'tools-case': return `ツール名は大文字・小文字まで同じでないと合いません: 「${c.name}」→「${c.right}」。`
+    case 'tools-miss': return `最近来たツールは ${list(c.came)} ですが、このルールは ${list(c.want)} だけを受けます。`
+    case 'tools-unknown': return `この瞬間にまだツールが来ていません（このルール: ${list(c.want)}）。`
+    case 'matcher-ok': return `マッチャー「${c.matcher}」に合うツールが来ています。`
+    case 'matcher-miss': return `マッチャー「${c.matcher}」が最近来たツール（${list(c.came)}）のどれにも合いません。`
+    case 'mute': return 'この瞬間には言葉がモデルに届きません。ここではコマンドだけが動きます。'
+    case 'put-in': return `${h.ago(c.at)}に入れました · ${c.runs} 回。`
+    case 'ran': return `${h.ago(c.run.at)}に動きました${c.run.ms !== undefined ? `（${secs(c.run.ms)}）` : ''}。0 で終わりました。`
+    case 'reported': return `${h.ago(c.run.at)}に失敗を見つけて Claude に伝えました（exit ${c.run.exit}）。`
+    case 'not-found': return `${h.ago(c.run.at)}にコマンドが見つかりませんでした（exit ${c.run.exit}）。パスやインストールを確かめてください。`
+    case 'exit': return `${h.ago(c.run.at)}に exit ${c.run.exit} で終わりました。`
+    case 'broken': return `${h.ago(c.run.at)}に実行できませんでした: ${c.run.error ?? ''}`
+    case 'timeout': return `${h.ago(c.run.at)}に時間内に終わりませんでした${c.limitMs ? `（上限 ${secs(c.limitMs)}）` : ''}。`
+    case 'cancelled': return `${h.ago(c.run.at)}に終わる前に取り消されました。`
+    case 'blocked-on-purpose': return `${h.ago(c.run.at)}に 2 で終わりました。わざと Claude を止めたものです。`
+    case 'not-run': return 'まだ動いていません。'
+    case 'no-record': return 'ここ 3 日の Claude Code の記録に実行の跡がありません（非同期のフックなど、記録が残らないものもあります）。'
+    case 'codex-no-record': return 'Codex はフックを実行した結果を残しません。'
+    case 'failed-before': return `${h.ago(c.run.at)}に失敗したことがあります · ${c.runs} 回中 ${c.fails} 回。`
+  }
+}
+
+function zh(c: Check, h: WhyHelp): string {
+  const secs = secsIn('秒')
+  switch (c.key) {
+    case 'on': return '已开启。'
+    case 'off': return '已关闭。'
+    case 'plugin': return 'Claude Code 插件正在报告。'
+    case 'no-plugin': return '还没收到 Claude Code 插件的消息。请确认已安装，并且之后有对话运行过。'
+    case 'codex-on': return 'Codex 的钩子已连接。'
+    case 'codex-off': return c.installed ? 'Codex 的钩子没有连接（在生命周期里点“连接 Codex”）。' : '这台电脑上没有 Codex。'
+    case 'blocked': return '这个账号不会把这个时刻交给 hoochi（组织的策略插件会直接放过它）。'
+    case 'came': return `这个时刻最近一次是${c.at ? h.ago(c.at) : '以前'}来的${c.tools.length ? `（工具：${list(c.tools)}）` : ''}。`
+    case 'not-yet': return '这个时刻还一次都没来过。'
+    case 'in': return '会放进正在看的对话。'
+    case 'hidden': return `${c.by ? h.place(c.by) : '更窄的位置'}在这个时刻有自己的规则，所以这一项在那里被遮住。最窄的位置优先。`
+    case 'other': return '不是正在看的对话的规则（别的 AI 或别的位置）。'
+    case 'tools-ok': return `工具条件符合：${c.match}。`
+    case 'tools-format': return `“${c.name}”不会匹配任何工具。工具名要用逗号分开。`
+    case 'tools-ai': return `“${c.name}”是另一个 AI 的叫法，这里是“${c.right}”。`
+    case 'tools-case': return `工具名连大小写也要一致：“${c.name}”→“${c.right}”。`
+    case 'tools-miss': return `最近来的工具是 ${list(c.came)}，但这条规则只接受 ${list(c.want)}。`
+    case 'tools-unknown': return `这个时刻还没有工具来过（这条规则：${list(c.want)}）。`
+    case 'matcher-ok': return `有符合匹配器“${c.matcher}”的工具来过。`
+    case 'matcher-miss': return `匹配器“${c.matcher}”和最近来的工具（${list(c.came)}）一个都不符合。`
+    case 'mute': return '这个时刻的话传不到模型，这里只能运行命令。'
+    case 'put-in': return `${h.ago(c.at)}放进去了 · ${c.runs} 次。`
+    case 'ran': return `${h.ago(c.run.at)}运行了${c.run.ms !== undefined ? `（${secs(c.run.ms)}）` : ''}，以 0 结束。`
+    case 'reported': return `${h.ago(c.run.at)}发现失败并告诉了 Claude（exit ${c.run.exit}）。`
+    case 'not-found': return `${h.ago(c.run.at)}找不到命令（exit ${c.run.exit}）。请检查路径或是否已安装。`
+    case 'exit': return `${h.ago(c.run.at)}以 exit ${c.run.exit} 结束。`
+    case 'broken': return `${h.ago(c.run.at)}没能运行：${c.run.error ?? ''}`
+    case 'timeout': return `${h.ago(c.run.at)}没能在时限内结束${c.limitMs ? `（上限 ${secs(c.limitMs)}）` : ''}。`
+    case 'cancelled': return `${h.ago(c.run.at)}在结束前被取消了。`
+    case 'blocked-on-purpose': return `${h.ago(c.run.at)}以 2 结束，是故意让 Claude 停下的。`
+    case 'not-run': return '还没运行过。'
+    case 'no-record': return '最近 3 天的 Claude Code 记录里没有它运行的痕迹（异步钩子等有些钩子不会留下记录）。'
+    case 'codex-no-record': return 'Codex 不会留下运行钩子的结果。'
+    case 'failed-before': return `${h.ago(c.run.at)}失败过 · ${c.runs} 次中 ${c.fails} 次。`
+  }
+}

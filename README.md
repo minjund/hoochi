@@ -5,8 +5,8 @@
 <h1 align="center">hoochi</h1>
 
 <p align="center">
-  <b>A remote control for every moment of your coding agent.</b><br />
-  It draws each moment of Claude Code and Codex at work. Tap one and your words, commands or skills go in there. No JSON to write.
+  <b>Why doesn't my hook run?</b><br />
+  hoochi checks every hook of Claude Code and Codex the way the agent does, and tells you the first thing that stops it. Then fix it in place, or just say what you want.
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="#what-people-use-it-for">Use cases</a> · <a href="#install">Install</a> · <a href="#your-first-hook-in-a-minute">First hook</a> · <a href="#how-it-works">How it works</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/minjund/hoochi/releases">Releases</a>
+  <a href="#what-it-catches">What it catches</a> · <a href="#install">Install</a> · <a href="#find-out-in-a-minute">In a minute</a> · <a href="#how-it-works">How it works</a> · <a href="#faq">FAQ</a> · <a href="https://github.com/minjund/hoochi/releases">Releases</a>
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.png" width="920" alt="The hoochi window in light and dark: the lifecycle picture with a moment's hooks on hover, and the list of everything you put in" />
+  <img src="assets/why.png" width="920" alt="The hoochi window in light and dark: the hooks not working, each with its reason, and one of them opened with every check it went through and what it printed" />
 </p>
 
 ```sh
@@ -35,41 +35,43 @@ claude plugin install hoochi --marketplace minjund/hoochi
 
 ---
 
-"Did you run the tests?" "Answer in English." "Tell me why before you delete anything." If you keep
-telling your agent the same things, a **hook** can say them for you. The catch: hooks live in JSON
-files nobody wants to open.
+You put in a hook and nothing happens. Did the moment never come? Did a project rule hide it? Is the tool
+name `edit` instead of `Edit`? Did the command end with 127 because it is not installed? Claude Code does not
+say. **hoochi does.**
 
-**hoochi turns that JSON into a small window in the corner of your screen.** The moments of your
-agent's work are drawn as a picture, and the one that just happened lights up. Tap a box, write what
-goes in, press Save. It applies from the next moment on.
+It goes through each hook the way the agent does, in the same order: is it on, is its AI connected, does the
+moment come, does it reach the chat you are in, do its tools match what came, can words reach the model
+there, and how did its last run end. The first check that fails is the answer, in one sentence.
 
-## What people use it for
+## What it catches
 
-| If this annoys you | In hoochi | Then |
-|---|---|---|
-| "All done!" while the tests are red | **Answer ends** → Command `npm test` → **Only if it fails** | On a failure, Claude reads it and fixes once more |
-| Adding "answer in English" to every message | **You send a message** → Words `Answer in English` | It goes with every message |
-| A risky command slipping by without a word | **Before Claude uses a tool** → only `Bash` → Words `Explain why before deleting or overwriting anything` | Said only when Claude is about to run a shell command |
-| Explaining the branch every time a chat opens | **Chat starts** → Command `git status -sb` | Claude starts knowing where things stand |
-| Rules that apply to one repo only | Add them on the **This project** tab | Only that project's chats get them |
-| One terminal kept for reviews | **This terminal** tab → **Answer ends** → Skill `code-review` | In that terminal only, a review runs once more after each answer |
-| A reminder you need once per chat | Turn on **Once per chat** | It runs once in a chat; a new chat or /clear runs it again |
-| Not knowing what hooks a plugin installed | Tap a moment with a gray number | See the command it runs and when, and switch it off |
-| Wondering when the chat will be compacted | Look at **Chat starts** and **Before the chat is shortened** in the picture | How full the chat is, and how far to auto-compact, live |
-| Skills you never use taking up room | **Turn skills on and off** | A skill you switch off leaves the list Claude is shown |
+| Why it doesn't run | What hoochi says |
+|---|---|
+| A project or terminal has its own rule at that moment, so the one for everywhere is hidden there | Which place wins, and **Put it in … too** |
+| The tool name is in the wrong case, written as `Edit\|Write`, or the other AI's name (Codex calls any file edit `apply_patch`) | *Tool names match case too: "edit" should be "Edit"* |
+| A matcher that none of the tools that came matches | The matcher and the tools that did come |
+| Words at a moment the model never hears (the chat ending, before compacting) | *Only commands run here* |
+| The command was not found, timed out, or failed | How it ended, and what it printed |
+| A plugin's hook failing quietly, or timing out | Read from what Claude Code itself recorded of each run |
+| Codex's hooks not connected | One button to connect them |
+| A Team or Enterprise account that never passes a moment to plugins | Which moments, dimmed |
+
+The Lifecycle page opens with the hooks not working, worst first. Press one to see every check it went through.
+Or ask in words on the other tab, "why doesn't the lint hook run?" or "what's broken?": the answer lists each
+rule with how it is doing, and you can switch it off, fix it or delete it right there.
 
 ## What it does
 
-- **Every moment at a glance.** Your agent's whole flow as one workflow picture. The moment that just happened lights up.
-- **Words, commands, skills, anywhere.** Tap, write, save. Only on failure, just once, or only for certain tools.
-- **Everywhere · per project · per terminal.** Scope each rule; the narrowest one wins.
+- **Why it doesn't run, check by check.** For the rules you put in with hoochi and the hooks already set up in your settings and plugins.
+- **Every run recorded.** How each command ended, how long it took, and what it printed when it failed.
+- **Fix it where you see it.** Switch, edit in a popup, or say it: "use pnpm for the tests", "put this in Codex too".
+- **Every moment at a glance.** Your agent's whole flow as one picture; the moment that just happened lights up.
+- **Everywhere · per project · per terminal.** The narrowest place wins, and the page tells you when it does.
 - **Follows where you chat.** The window switches to the terminal you are typing in, and its project.
-- **Even the hidden hooks.** See what the hooks your plugins and apps installed actually do, which app put each one there, and switch them off and on.
-- **/context, live.** How full the chat is and how far to auto-compact, right inside the picture.
+- **/context, live.** How full the chat is and how far to auto-compact, inside the picture.
 - **Skills on and off.** Switch off the skills you never use and save room.
 - **One-button updates.** Even chats already open move to the new version by themselves.
-- **Light and quiet.** A 3.8 MB native app (not Electron) that uses next to no CPU while idle.
-- **Four languages · light and dark.**
+- **Light and quiet.** A native app (not Electron) that uses next to no CPU while idle. Four languages, light and dark.
 
 ## Install
 
@@ -106,13 +108,15 @@ already open reload into the new version within seconds (from 0.1.16 on; coming 
 `/reload-plugins` once in each open chat). A chat opened before hoochi was installed has no hoochi in it: start
 it again (`claude --continue` picks the conversation back up).
 
-## Your first hook in a minute
+## Find out in a minute
 
-1. Start a new Claude Code chat. When the 🥪 bubble appears at the bottom right, click it.
-2. Tap **Answer ends** in the picture, then **Add something here** → **Command**, type `npm test` and pick
-   **Only if it fails**.
-3. Press **Save**.
-4. Ask Claude to fix something. If it tries to finish with the tests failing, it reads the failure and fixes once more.
+1. Start a Claude Code chat. When the 🥪 bubble appears at the bottom right, click it.
+2. The **Lifecycle** page opens on what is not working. Nothing there? Every hook passed every check.
+3. Press a row: every check it went through, the one that stops it in red, and what it printed.
+4. Fix it there (switch, edit, **Put it in … too**), or on **Say it in words**.
+
+To add a hook, say it: "run `npm test` when the answer ends, only if it fails". Or press a moment in the picture,
+pick **Command**, type `npm test`, choose **Only if it fails** and **Save**.
 
 Type `/hoochi` to show or hide the window. `×` folds it into the bubble; right-click the bubble to hide it in the menu bar.
 
@@ -125,6 +129,9 @@ Type `/hoochi` to show or hide the window. `×` folds it into the bubble; right-
 - The files, all in `~/.hoochi`: `config.json` (what you put in), `activity-*.json` (what just happened), `places.json` (projects and
   terminals seen), `parked.json` (hooks switched off), `once-*.json` (once-per-chat items each chat already ran), `context/` (/context per terminal). Any settings file hoochi changes is backed up
   first in `~/.hoochi/backups/`.
+- How a hook did: the plugin and the Codex hook record each run of what you put in (`runs` in `activity-*.json`). For hooks
+  set up elsewhere, the window reads the run records Claude Code writes in each chat's transcript
+  (`~/.claude/projects/*/*.jsonl`, the newest 40 of the last 3 days), and never writes there.
 
 ## FAQ
 
@@ -142,6 +149,10 @@ are switched in place, the same way Codex's `/hooks` does.
 **I have lots of skills; why is the list shorter?** The skills popup lists only what can be switched from there.
 Skills synced from claude.ai are switched on claude.ai, and a plugin's skills switch only with the whole plugin, so
 each plugin is one row.
+
+**Does it see hooks hoochi did not make?** Yes. For Claude Code it reads how their runs ended from Claude Code's
+own records of each chat. Codex keeps no record of the hooks it runs, so for Codex hooks set up elsewhere hoochi
+can check how they are set up, not how they ran.
 
 **Windows or Linux?** Not yet; the window is macOS only for now.
 

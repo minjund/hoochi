@@ -227,3 +227,17 @@ test('without Claude Code, switching off, on or deleting by a rule\'s words', ()
   const those = matchEdit('이거 다 꺼 줘', known, [known[0], known[1]])
   assert.ok(those?.ok && those.action === 'off' && those.targets.map(k => k.ref).join() === 'r1,r2')
 })
+
+test('without Claude Code, "why doesn\'t it run?" finds the rule meant, else the ones not working', () => {
+  const lint = matchEdit('린트 왜 안 돌아?', known)
+  assert.ok(lint?.ok && lint.action === 'find' && lint.targets.map(k => k.ref).join() === 'r3')
+  const marked = known.map(k => (k.ref === 'r2' ? { ...k, trouble: true, health: 'not working: hidden' } : k))
+  const broken = matchEdit('뭐가 안 돌아?', marked)
+  assert.ok(broken?.ok && broken.action === 'find' && broken.targets.map(k => k.ref).join() === 'r2')
+  const none = matchEdit('why is nothing running?', known)
+  assert.ok(none?.ok && none.action === 'find' && none.targets.length === 3, 'nothing marked: all of them, each with its state')
+  // "when it fails" is a wish for a new rule, not a question.
+  assert.equal(matchEdit('테스트가 실패하면 고치게 해 줘', known), null)
+  // The instructions carry each rule's state.
+  assert.match(knownLine(marked[1]), /\| not working: hidden$/)
+})

@@ -5,7 +5,7 @@
     {
       "name": "hoochi",
       "source": "./plugin",
-      "description": "Sandwich anything around Claude Code's lifecycle: put text, commands or skills before or after any hook, from a little floating window."
+      "description": "Why doesn't my hook run? Checks every Claude Code and Codex hook the way the agent does and shows the first thing that stops it, then lets you fix it or put in new ones, from a little floating window."
     }
   ]
 }

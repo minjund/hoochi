@@ -32,7 +32,8 @@ export type Rule = {
 export type RuleAnswer = { ok: true; rule: Rule } | { ok: false; say: string }
 
 /** A rule already put in, as the instructions list it: `ref` is its short name there ("r3"). */
-export type Known = Target & { ref: string; place: string }
+/** A rule put in, as the instructions list it; `health` says how it is doing ("not working: …"), `trouble` when it is stuck or failing. */
+export type Known = Target & { ref: string; place: string; health?: string; trouble?: boolean }
 /** A place a rule can go: `ref` "g" is everywhere, "p1" a project, "t1" a terminal (which belongs to one AI). */
 export type PlaceOpt = { ref: string; scope: Scope; key: string; words: string; agent?: Agent }
 
@@ -165,7 +166,7 @@ export function knownLine(k: Known): string {
           ? `skill "${i.skill}"`
           : `skill rules ${clip(itemLabel(i))} (can be moved, copied, switched or deleted, not reworded)`
   const extra = [i.tools ? `tools "${i.tools}"` : '', i.once ? 'once per chat' : ''].filter(Boolean).join(', ')
-  return `${k.ref} | ${AI_NAME[k.agent]} | ${k.place} | ${i.event} | ${what}${extra ? ` | ${extra}` : ''} | ${i.enabled ? 'on' : 'off'}`
+  return `${k.ref} | ${AI_NAME[k.agent]} | ${k.place} | ${i.event} | ${what}${extra ? ` | ${extra}` : ''} | ${i.enabled ? 'on' : 'off'}${k.health ? ` | ${k.health}` : ''}`
 }
 
 function editPart(
@@ -194,7 +195,7 @@ ${
 }
 "action" says what to do:
 - "add": a new rule, as above. "targets" []. "place": "" to go by "scope", or a place ref when the person names a place.
-- "find": the person wants to see which rules there are, or which ones match ("show me the lint rules", "what's in project shop?"). "targets": every matching ref (all of them when they ask for everything). If none match, ok false and say so in "say".
+- "find": the person wants to see which rules there are, or which ones match ("show me the lint rules", "what's in project shop?"). "targets": every matching ref (all of them when they ask for everything). If none match, ok false and say so in "say". A question why a rule does not run, whether it works, or what is not working ("why doesn't the lint rule run?", "is the test rule working?", "what's broken?") is a find too: "targets" the rules meant (for "what's broken", every ref whose state says "not working"; when none does, all of them). The card shows each one's state and why, so "say" can stay short.
 - "change": the person wants rules above different: their words, command, moment, tools, "only when it fails", "once", their place or their AI. "changes": one entry per rule, with its "ref" and the whole rule as it should be after the change ("event", "kind", "text", "command", "skill", "mode", "tools", "once"): copy over everything they did not ask to change. "event" must be a moment of the AI it ends up with. For a rule that only moves, its content stays as it is. "targets": the same refs. "place": "" to keep each where it is, or the ref of the place to move them to. "agent": "" to keep each one's AI, or "claude"/"codex" to move them to that AI.
 - "copy": put copies of rules above in another place or for the other AI too ("put this in Codex too", "use the same in project shop"). "targets": their refs. "place": "" for each one's own place, or a place ref. "agent": "" for each one's own AI, or "claude"/"codex".
 - "off" / "on": switch rules off (they stay, but nothing goes in) or back on. "delete": remove rules for good. "targets": every ref meant, one or many ("all the lint ones", "everything in project shop", "all of them").
@@ -203,6 +204,7 @@ For any action but "add", fill the top-level content fields with any valid value
 Examples:
 - "turn off the test rule" -> off, targets [the ref of the "npm test" rule].
 - "show me the lint rules" -> find, targets [every ref whose command or words are about lint].
+- "why doesn't my lint hook run?" -> find, targets [the lint rule].
 - "use pnpm instead of npm for the tests" -> change, changes [{ref of that rule, command "pnpm test", the rest as it was}].
 - after a card showing three rules, "make all of these only report failures" -> change, one entry per rule with mode "onFail".
 - "put the Korean rule in Codex too" -> copy, targets [that ref], agent "codex".
@@ -303,7 +305,7 @@ function toolList(tools: string): string {
 }
 
 /** Claude Code's tool names as Codex calls the same tools (its hooks get `apply_patch` for any edit). */
-const CODEX_TOOL: Record<string, string> = {
+export const CODEX_TOOL: Record<string, string> = {
   Edit: 'apply_patch',
   Write: 'apply_patch',
   MultiEdit: 'apply_patch',
@@ -313,7 +315,7 @@ const CODEX_TOOL: Record<string, string> = {
 }
 
 /** And back: what Codex calls a tool, as Claude Code's names. */
-const CLAUDE_TOOL: Record<string, string> = { apply_patch: 'Edit, Write', spawn_agent: 'Agent' }
+export const CLAUDE_TOOL: Record<string, string> = { apply_patch: 'Edit, Write', spawn_agent: 'Agent' }
 
 /** A tool filter in one agent's own tool names. */
 function toolsFor(tools: string, agent: Agent): string {
@@ -480,6 +482,8 @@ const FIND = /찾아|보여\s*줘|보여\s*주|뭐\s*있|목록|show|list|find|�
 const RULES = /규칙|넣은|넣어\s*둔|rules?|ルール|规则/i
 const THOSE = /그거|그것|그걸|이거|이것|이걸|저거|이\s*규칙들|그\s*규칙들|them|those|these|that one|それ|これ|那些|这些/i
 const ALL = /전부|모두|다\s*(꺼|켜|지워)|everything|all of (them|it)|all the rules|全部|すべて/i
+/** "why doesn't it run?", "what's broken?": a look at how the rules are doing */
+const WHY = /왜|안\s*돌|안\s*되|안\s*먹|문제\s*(있|인|가)|실패한|실패했|고장|broken|why|not (working|running)|failing|failed|なぜ|動かない|失敗した|为什么|不运行|失败了/i
 
 /**
  * Without Claude Code: switching off, on or deleting the rules put in, by their words ("테스트
@@ -489,6 +493,18 @@ const ALL = /전부|모두|다\s*(꺼|켜|지워)|everything|all of (them|it)|al
 export function matchEdit(text: string, known: readonly Known[], recent: readonly Known[] = []): Understood | null {
   if (/전에|before|前に|之前/i.test(text)) return null
   const verb = VERBS.find(([, w]) => w.test(text))
+  if (!verb && WHY.test(text)) {
+    // "why doesn't lint run?": the rules meant, else the ones not working, else all, each with its state
+    const words = RECIPES.filter(r => r.words.test(text)).map(r => r.words)
+    const named = words.length ? known.filter(k => words.some(w => w.test(`${itemLabel(k.item)} ${k.item.text}`))) : []
+    const plain = text
+      .toLowerCase()
+      .split(/[\s,.!?]+/)
+      .filter(w => w.length >= 2 && !STOP.has(w) && !WHY.test(w))
+    const said = known.filter(k => plain.some(w => `${itemLabel(k.item)} ${k.item.text}`.toLowerCase().includes(w)))
+    const found = named.length ? named : said.length ? said : known.filter(k => k.trouble).length ? known.filter(k => k.trouble) : [...known]
+    return found.length ? { ok: true, action: 'find', targets: found } : null
+  }
   if (!verb) {
     // "show me the test rules": a list to act on
     if (!FIND.test(text) || !RULES.test(text)) return null

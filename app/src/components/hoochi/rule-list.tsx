@@ -4,16 +4,23 @@ import type { ExistingHook } from '../../lib/backend'
 import { targetKey } from '../../lib/edit'
 import { UI, type Lang } from '../../lib/i18n'
 import { slotOf, type Agent, type Item, type Scope } from '../../lib/lifecycle'
-import { byMoment, placeId, placesOf, type Row, type View } from '../../lib/rules-view'
+import { byMoment, momentOrder, placeId, placesOf, type Row, type View } from '../../lib/rules-view'
+import { isTrouble, type Why } from '../../lib/why'
+import { VERDICT, WHY_UI, whyWords, type WhyHelp } from '../../lib/why-words'
 import { DropdownMenu } from '../ui/dropdown-menu'
 import { Switch } from '../ui/switch'
 import { ConfirmDelete } from './confirm-delete'
 
 type Place = { scope: Scope; key: string }
 
+/** A hook set up outside hoochi, with why it runs or does not. */
+export type OutsideRow = { agent: Agent; hook: ExistingHook; why: Why }
+
 /**
- * "What you put in": every rule for both AIs at every place, by moment, one row each. Seen from
- * the chat you are in, each row says whether it goes in there, what hides it, or what is wrong.
+ * The Lifecycle page: "why doesn't my hook run?" first. On top, the hooks that are stuck or
+ * failing, each with its reason; then the picture; then every rule for both AIs at every place,
+ * by moment, one row each, with how it is doing; then the hooks set up outside hoochi, with how
+ * their last runs ended. Pressing a row opens it with every check it went through.
  * A row switches on and off in place; its menu says it in words, opens the editor, puts it in
  * elsewhere too, or deletes it. Adding is done in words; "Make one yourself" is the one way in.
  */
@@ -28,7 +35,8 @@ export function RuleList({
   query,
   chat,
   codexWarn,
-  existing,
+  outside,
+  help,
   momentName,
   placeWords,
   itemWords,
@@ -46,6 +54,7 @@ export function RuleList({
   onAddHere,
   onMake,
   onToggleExisting,
+  onOpenHook,
   onSkills,
 }: {
   /** the lifecycle picture of one AI, and which AI it is */
@@ -62,8 +71,10 @@ export function RuleList({
   chat: { words: string; in: number; hidden: number; color: string } | null
   /** Codex rules that do not run: Codex not installed, or its hooks not connected */
   codexWarn: { count: number; installed: boolean } | null
-  /** hooks set up outside hoochi */
-  existing: { agent: Agent; hook: ExistingHook }[]
+  /** hooks set up outside hoochi, with why each runs or does not */
+  outside: OutsideRow[]
+  /** what the "why" sentences need */
+  help: WhyHelp
   momentName(event: string, agent: Agent): string
   placeWords(p: Place): string
   itemWords(item: Item): ReactNode
@@ -82,9 +93,13 @@ export function RuleList({
   onAddHere(r: Row): void
   onMake(): void
   onToggleExisting(agent: Agent, hook: ExistingHook, on: boolean): void
+  /** an outside hook in a popup, with every check */
+  onOpenHook(o: OutsideRow): void
   onSkills(): void
 }) {
   const t = UI[lang]
+  const w = WHY_UI[lang]
+  const verdicts = VERDICT[lang]
   // The row whose delete waits for a second yes.
   const [asking, setAsking] = useState<string | null>(null)
   const set = (p: Partial<View>) => onView({ ...view, ...p })
@@ -98,14 +113,21 @@ export function RuleList({
   )
 
   const state = (r: Row) => {
-    if (r.problem === 'codex-off') return <span className="hw-rl-state" data-s="idle">{t.rlCodexOff}</span>
-    if (r.problem === 'blocked') return <span className="hw-rl-state" data-s="hid">{t.rlBlocked}</span>
     if (!r.item.enabled) return <span className="hw-rl-tag">{t.tagOff}</span>
     if (r.reach === 'hidden') return <span className="hw-rl-state" data-s="hid">{t.rlHidden}</span>
+    if (r.problem) return <span className="hw-rl-state" data-s="bad">✕ {verdicts[r.why.verdict]}</span>
+    if (r.why.verdict === 'warn') return <span className="hw-rl-state" data-s="hid">! {verdicts.warn}</span>
     const ran = r.lastRun ? t.rlRan(ago(Date.now() - r.lastRun)) : t.rlNotYet
     if (inChat && r.reach === 'in') return <span className="hw-rl-state" data-s="in">✓ {t.rlIn} · {ran}</span>
     return <span className="hw-rl-state" data-s={r.lastRun ? 'ran' : 'idle'}>{ran}</span>
   }
+  /** The reason a row is stuck, failing or worth a look, in a line under it. */
+  const reasonLine = (why: Why) =>
+    why.reason && why.verdict !== 'off' && why.verdict !== 'waiting' ? (
+      <p className="hw-rl-why" data-v={why.verdict}>
+        {whyWords(lang, why.reason.check, help)}
+      </p>
+    ) : null
 
   const row = (r: Row) => (
     <li key={targetKey(r)} className="hw-rl-row" data-off={!r.item.enabled || undefined} data-hidden={r.reach === 'hidden' || undefined}>
@@ -123,13 +145,15 @@ export function RuleList({
           {r.item.once && <span className="hw-rl-tag">{t.tagOnce}</span>}
           {state(r)}
         </div>
-        {r.reach === 'hidden' && r.hiddenBy && (
+        {r.reach === 'hidden' && r.hiddenBy ? (
           <p className="hw-rl-why">
             {t.rlHiddenWhy(placeWords(r.hiddenBy))}{' '}
             <button type="button" className="hw-link" onClick={() => onAddHere(r)}>
               {t.rlAddThere(placeWords(r.hiddenBy))}
             </button>
           </p>
+        ) : (
+          reasonLine(r.why)
         )}
         {asking === targetKey(r) && (
           <ConfirmDelete
@@ -166,17 +190,122 @@ export function RuleList({
     </li>
   )
 
+  // Outside hooks, filtered as the list is (by AI, off, not working and the search box).
+  const order = momentOrder()
+  const q = query.trim().toLowerCase()
+  const outsideShown = outside
+    .filter(
+      o =>
+        (view.ai === 'all' || o.agent === view.ai) &&
+        (!view.off || o.hook.off) &&
+        (!view.problems || isTrouble(o.why)) &&
+        (!q || `${o.hook.origin?.name ?? ''} ${o.hook.name} ${momentName(o.hook.event, o.agent)} ${o.hook.body ?? ''}`.toLowerCase().includes(q)),
+    )
+    .sort((a, b) => order.indexOf(a.hook.event) - order.indexOf(b.hook.event))
+
+  // What is stuck or failing, rules first: the answer to "why doesn't my hook run?".
+  const trouble = [
+    ...rows.filter(r => r.problem).map(r => ({ key: `r-${targetKey(r)}`, agent: r.agent, what: itemWords(r.item), event: r.item.event, why: r.why, open: () => onOpen(r) })),
+    ...outside
+      .filter(o => !o.hook.off && isTrouble(o.why))
+      .map(o => ({ key: `h-${o.agent}-${o.hook.id}`, agent: o.agent, what: o.hook.origin?.name ?? o.hook.name, event: o.hook.event, why: o.why, open: () => onOpenHook(o) })),
+  ]
+  // Failing first, then what stops a rule, then a narrower place hiding it (often meant that way).
+  const rank = (why: Why) => (why.verdict === 'failing' ? 0 : why.reason?.check.key === 'hidden' ? 2 : 1)
+  trouble.sort((a, b) => rank(a.why) - rank(b.why))
+  const TROUBLE_SHOWN = 4
+
+  const outsideRow = (o: OutsideRow) => {
+    const { agent, hook, why } = o
+    const ran = why.steps.find(s => s.check.key === 'ran' || s.check.key === 'blocked-on-purpose')
+    return (
+      <li key={`${agent}-${hook.id}`} className="hw-rl-row" data-off={hook.off || undefined}>
+        <div className="hw-rl-main">
+          <button type="button" className="hw-rl-open" title={w.checks} onClick={() => onOpenHook(o)}>
+            <span className="hw-rl-what">{hook.origin?.name ?? hook.name}</span>
+          </button>
+          <div className="hw-rl-meta">
+            <span className="hw-rl-ai" data-agent={agent}>
+              {t.agents[agent]}
+            </span>
+            <span>{momentName(hook.event, agent)}</span>
+            {hook.matcher && <span className="hw-rl-tag">{hook.matcher}</span>}
+            <span className="hw-rl-tag">{t.existingFrom(hook.from)}</span>
+            {hook.off ? (
+              <span className="hw-rl-tag">{t.tagOff}</span>
+            ) : isTrouble(why) ? (
+              <span className="hw-rl-state" data-s="bad">
+                ✕ {verdicts[why.verdict]}
+              </span>
+            ) : why.verdict === 'warn' ? (
+              <span className="hw-rl-state" data-s="hid">
+                ! {verdicts.warn}
+              </span>
+            ) : ran && 'run' in ran.check ? (
+              <span className="hw-rl-state" data-s="ran">
+                {t.rlRan(ago(Date.now() - ran.check.run.at))}
+              </span>
+            ) : null}
+          </div>
+          {!hook.off && reasonLine(why)}
+        </div>
+        <div className="hw-rl-side">
+          <Switch size="sm" aria-label={t.existingSwitch(hook.name)} checked={!hook.off} onChange={e => onToggleExisting(agent, hook, e.currentTarget.checked)} />
+        </div>
+      </li>
+    )
+  }
+
   return (
     <section className="hw-rl" aria-label={t.tabMine}>
-      {chat && (
-        <div className="hw-rl-now">
-          <span className="hw-now-dot" style={{ background: chat.color }} aria-hidden="true" />
-          <p>
-            <b>{chat.words}</b>
-            <small>{t.rlNowCount(chat.in, chat.hidden)}</small>
+      <div className="hw-rl-now" data-trouble={trouble.length > 0 || undefined}>
+        {chat && (
+          <p className="hw-rl-now-chat">
+            <span className="hw-now-dot" style={{ background: chat.color }} aria-hidden="true" />
+            <span>
+              <b>{chat.words}</b>
+              <small>{t.rlNowCount(chat.in, chat.hidden)}</small>
+            </span>
           </p>
+        )}
+        <div className="hw-rl-trouble">
+          <h3>
+            {trouble.length > 0 ? (
+              <>
+                <i aria-hidden="true">✕</i> {w.trouble(trouble.length)}
+              </>
+            ) : (
+              <>
+                <i aria-hidden="true">✓</i> {w.troubleNone}
+              </>
+            )}
+          </h3>
+          {trouble.length > 0 && (
+            <>
+              <p>{w.troubleHint}</p>
+              <ul>
+                {trouble.slice(0, TROUBLE_SHOWN).map(x => (
+                  <li key={x.key}>
+                    <button type="button" onClick={x.open}>
+                      <span className="hw-rl-trouble-what">
+                        <span className="hw-rl-ai" data-agent={x.agent} aria-label={t.agents[x.agent]} />
+                        <b>{x.what}</b>
+                        <small>{momentName(x.event, x.agent)}</small>
+                      </span>
+                      {x.why.reason && <span className="hw-rl-trouble-why">{whyWords(lang, x.why.reason.check, help)}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {trouble.length > TROUBLE_SHOWN && (
+                <button type="button" className="hw-link" onClick={() => set({ problems: true })}>
+                  {w.troubleMore(trouble.length - TROUBLE_SHOWN)}
+                </button>
+              )}
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       <div className="hw-rl-picture">
         <div className="hw-rl-picture-head">
@@ -223,7 +352,7 @@ export function RuleList({
         {placesOf(rows).map(p => chip(placeWords(p), view.place === placeId(p), () => set({ place: view.place === placeId(p) ? '' : placeId(p) })))}
         <span className="hw-rl-chips-gap" aria-hidden="true" />
         {chip(t.rlOffOnly, view.off, () => set({ off: !view.off }), count(r => !r.item.enabled))}
-        {chip(t.rlProblems, view.problems, () => set({ problems: !view.problems }), count(r => r.problem !== undefined))}
+        {chip(t.rlProblems, view.problems, () => set({ problems: !view.problems }), trouble.length)}
       </div>
 
       {codexWarn && (
@@ -258,36 +387,20 @@ export function RuleList({
         + {t.rlMake}
       </button>
 
+      <div className="hw-rl-list-head">
+        <h3 className="hw-rl-heading">
+          {w.outside} <small>{outside.length}</small>
+        </h3>
+      </div>
+      <p className="hw-rl-sub">{w.outsideHint(outside.length)}</p>
+      {outsideShown.length === 0 ? (
+        <p className="hw-rl-empty">{outside.length === 0 ? w.outsideNone : t.rlNoMatch}</p>
+      ) : (
+        <ul className="hw-rl-rows hw-rl-outside">{outsideShown.map(outsideRow)}</ul>
+      )}
+
       <h4 className="hw-rl-label">{t.rlMore}</h4>
       <div className="hw-rl-fold">
-        <details>
-          <summary>
-            {t.rlExisting} <small>{t.rlExistingHint(existing.length)}</small>
-          </summary>
-          {existing.length === 0 ? (
-            <p className="hw-rl-empty">{t.rlExistingNone}</p>
-          ) : (
-            <ul className="hw-rl-rows hw-rl-existing">
-              {existing.map(({ agent, hook }) => (
-                <li key={`${agent}-${hook.id}`} className="hw-rl-row" data-off={hook.off || undefined}>
-                  <div className="hw-rl-main">
-                    <div className="hw-rl-what">{hook.origin?.name ?? hook.name}</div>
-                    <div className="hw-rl-meta">
-                      <span className="hw-rl-ai" data-agent={agent}>
-                        {t.agents[agent]}
-                      </span>
-                      <span>{momentName(hook.event, agent)}</span>
-                      <span className="hw-rl-tag">{t.existingFrom(hook.from)}</span>
-                    </div>
-                  </div>
-                  <div className="hw-rl-side">
-                    <Switch size="sm" aria-label={t.existingSwitch(hook.name)} checked={!hook.off} onChange={e => onToggleExisting(agent, hook, e.currentTarget.checked)} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </details>
         <button type="button" onClick={onSkills}>
           {t.rlSkills} <small>{t.rlSkillsHint}</small>
         </button>

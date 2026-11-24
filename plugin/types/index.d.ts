@@ -66,12 +66,35 @@ export type Fired = {
   id?: string
 }
 
+/** One time an item ran: for a command, how it ended. */
+export type Run = {
+  at: number
+  /** commands only: its exit code (none when it did not finish) */
+  exit?: number
+  /** commands only: how long it took */
+  ms?: number
+  /** commands only: why it did not finish (it timed out, or did not start) */
+  error?: string
+  /** commands only, when it did not end with 0: the first of what it printed */
+  out?: string
+}
+
+/** An item's runs so far: how many, how many did not end with 0, the last one and the last of those. */
+export type ItemRun = { runs: number; fails: number; last: Run; fail?: Run }
+
+/** A moment that came: when last, and the tools it came with lately (newest first). */
+export type Seen = { at: number; tools: string[] }
+
 /** What the window reads to light up the lifecycle: ~/.hoochi/activity-<agent>.json */
 export type Activity = {
   lastEvent: string
   lastAt: number
   counts: Record<string, number>
   recent: Fired[]
+  /** each item's runs, by its id */
+  runs?: Record<string, ItemRun>
+  /** each moment, by its event: when it last came and with which tools */
+  seen?: Record<string, Seen>
   /** where the last event happened, so the window can open on it */
   place?: Place
   /** when and where you last opened or typed a chat, so the window can follow you */
