@@ -666,6 +666,12 @@ export async function setExistingHook(project: string, id: string, on: boolean):
   return existingHooks(project)
 }
 
+/** Gives a hook in a Claude settings file a longer time limit (seconds); returns the fresh list. */
+export async function setExistingTimeout(project: string, id: string, seconds: number): Promise<ExistingHooks> {
+  if (inApp) return invoke('set_existing_timeout', { project, id, seconds })
+  return existingHooks(project)
+}
+
 export async function codexStatus(): Promise<CodexStatus> {
   if (inApp) return invoke('codex_status')
   return {

@@ -1,25 +1,11 @@
 import { useState } from 'react'
 
+import { copyText } from '../../lib/clipboard'
 import type { Lang } from '../../lib/i18n'
 import { outputOf, type Week, type Why } from '../../lib/why'
 import { WHY_UI, whyWords, type WhyHelp } from '../../lib/why-words'
 
 const ICON = { ok: '✓', bad: '✕', warn: '!', idle: '·' } as const
-
-/** Text to the clipboard, with the old way when the browser has no clipboard. */
-function copyText(text: string, done: () => void) {
-  const fallback = () => {
-    const area = document.createElement('textarea')
-    area.value = text
-    document.body.appendChild(area)
-    area.select()
-    document.execCommand('copy')
-    area.remove()
-    done()
-  }
-  if (navigator.clipboard) void navigator.clipboard.writeText(text).then(done, fallback)
-  else fallback()
-}
 
 /** A hook's last 7 days: how often it failed, in how many chats, and a bar for each day. */
 function WeekStrip({ lang, w, now }: { lang: Lang; w: Week; now: number }) {
@@ -70,12 +56,15 @@ export function WhyPanel({
   help,
   week,
   report,
+  fix,
 }: {
   lang: Lang
   why: Why
   help: WhyHelp
   week?: Week
   report?: () => string
+  /** the button that makes it run again, when there is one */
+  fix?: { label: string; run(): void }
 }) {
   const t = WHY_UI[lang]
   const out = outputOf(why)
@@ -108,6 +97,11 @@ export function WhyPanel({
           </li>
         ))}
       </ol>
+      {fix && (
+        <button type="button" className="hw-rl-fix hw-why-fix" onClick={fix.run}>
+          {fix.label}
+        </button>
+      )}
       {week && (week.fails > 0 || week.timed > 0) && <WeekStrip lang={lang} w={week} now={Date.now()} />}
       {out && (
         <>

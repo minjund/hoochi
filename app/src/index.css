@@ -2064,7 +2064,7 @@ button.hw-existing-text:hover b {
   padding: 0;
   list-style: none;
 }
-.hw-rl-trouble li > button {
+.hw-rl-trouble li > button:not(.hw-rl-fix) {
   all: unset;
   box-sizing: border-box;
   cursor: pointer;
@@ -2075,10 +2075,10 @@ button.hw-existing-text:hover b {
   border-radius: 9px;
   background: var(--hw-bad-tint);
 }
-.hw-rl-trouble li > button:hover {
+.hw-rl-trouble li > button:not(.hw-rl-fix):hover {
   background: color-mix(in srgb, var(--hw-bad) 14%, transparent);
 }
-.hw-rl-trouble li > button:focus-visible {
+.hw-rl-trouble li > button:not(.hw-rl-fix):focus-visible {
   outline: 2px solid var(--hw-green);
 }
 .hw-rl-trouble-what {
@@ -2595,6 +2595,38 @@ button.hw-existing-text:hover b {
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* The one button that makes a hook run again. */
+.hw-rl-fix {
+  justify-self: start;
+  align-self: center;
+  margin-top: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--hw-bad-line);
+  border-radius: 8px;
+  background: var(--hw-card);
+  color: var(--hw-bad);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hw-rl-fix:hover {
+  background: var(--hw-bad-tint);
+}
+.hw-rl-fix:focus-visible {
+  outline: 2px solid var(--hw-bad);
+  outline-offset: 2px;
+}
+.hw-rl-trouble li {
+  display: grid;
+  gap: 2px;
+}
+.hw-rl-trouble li > .hw-rl-fix {
+  margin: 0 0 4px 12px;
+}
+.hw-rl-main > .hw-rl-fix {
+  display: block;
 }
 .hw-why-head {
   display: flex;

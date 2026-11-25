@@ -118,6 +118,13 @@ async fn set_existing_hook(project: String, id: String, on: bool) -> Result<Valu
     Ok(existing::existing(&project))
 }
 
+/// Gives one hook in a Claude settings file a longer time limit; returns the fresh list.
+#[tauri::command]
+async fn set_existing_timeout(project: String, id: String, seconds: u64) -> Result<Value, String> {
+    existing::set_timeout(&project, &id, seconds)?;
+    Ok(existing::existing(&project))
+}
+
 /// The file the plugin keeps a terminal's /context figures in (the plugin names it the same way).
 pub(crate) fn context_file(terminal: &str) -> String {
     let safe: String = terminal
@@ -504,6 +511,7 @@ pub fn run() {
             running_chats,
             existing_hooks,
             hook_runs,
+            set_existing_timeout,
             set_existing_hook,
             context_usage,
             check_update,

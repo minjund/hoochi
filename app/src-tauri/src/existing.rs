@@ -462,6 +462,28 @@ pub(crate) fn edit_json(file: &Path, change: impl FnOnce(&mut Value) -> Result<(
 }
 
 /// Switches one existing hook off (`on = false`) or back on.
+/// Gives a hook in a Claude settings file a longer time limit (seconds). Only there: a plugin's
+/// hooks are put back as they were each time it updates, and Codex's are its own.
+pub fn set_timeout(project: &str, id: &str, seconds: u64) -> Result<(), String> {
+    if seconds == 0 || seconds > 3600 {
+        return Err("A time limit is 1 to 3600 seconds.".into());
+    }
+    let (claude, _) = scan(project);
+    let found = claude.into_iter().find(|f| f.info["id"] == id).ok_or("That hook is no longer there.")?;
+    let Place::Settings { file, event, group, hook } = found.place else {
+        return Err("Only a hook in a settings file can be given a longer time limit here.".into());
+    };
+    edit_json(&file, |v| {
+        let h = v["hooks"][&event]
+            .get_mut(group)
+            .and_then(|g| g["hooks"].get_mut(hook))
+            .filter(|h| h.is_object())
+            .ok_or("hook moved")?;
+        h["timeout"] = json!(seconds);
+        Ok(())
+    })
+}
+
 pub fn set_on(project: &str, id: &str, on: bool) -> Result<(), String> {
     // Switching back on a hook hoochi moved out of a Claude settings file.
     if on {

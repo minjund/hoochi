@@ -192,8 +192,10 @@ export function pluginNote(updated: { from: string; plugin: boolean; renamed?: b
 export type Notice<T> =
   | { kind: 'undo'; message: string; before: T; near: 'controls' | 'list' }
   | { kind: 'error'; message: string }
+  /** something done that has no undo of its own, or nothing to do: said, then gone */
+  | { kind: 'info'; message: string; near?: 'controls' | 'list' }
 
-export const NOTICE_MS = { undo: 12_000, error: 10_000 } as const
+export const NOTICE_MS = { undo: 12_000, error: 10_000, info: 8_000 } as const
 
 /** After any other change to the config: an undo would no longer be right. */
 export function afterChange<T>(notice: Notice<T> | null): Notice<T> | null {
@@ -207,7 +209,7 @@ export function noticePlace<T>(
 ): 'modal' | 'controls' | 'list' | null {
   if (!notice) return null
   if (modal) return 'modal'
-  return notice.kind === 'undo' ? notice.near : 'controls'
+  return notice.kind === 'undo' ? notice.near : notice.kind === 'info' ? (notice.near ?? 'controls') : 'controls'
 }
 
 // ---------- Asking before a change to many items ----------

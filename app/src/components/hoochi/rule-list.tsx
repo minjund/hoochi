@@ -13,6 +13,9 @@ import { ConfirmDelete } from './confirm-delete'
 
 type Place = { scope: Scope; key: string }
 
+/** A button that fixes what stops a hook: its words, and what it does. */
+export type FixButton = { label: string; run(): void }
+
 /** A hook set up outside hoochi, with why it runs or does not. */
 export type OutsideRow = { agent: Agent; hook: ExistingHook; why: Why }
 
@@ -54,6 +57,9 @@ export function RuleList({
   onSendAi,
   onDelete,
   onAddHere,
+  onKeepOne,
+  ruleFix,
+  hookFix,
   onMake,
   onToggleExisting,
   onOpenHook,
@@ -97,6 +103,11 @@ export function RuleList({
   onSendAi(r: Row): void
   onDelete(r: Row): void
   onAddHere(r: Row): void
+  /** a row standing for several of the same rule at one place: delete all but this one */
+  onKeepOne(r: Row): void
+  /** the button that makes a rule or a hook run again, when there is one */
+  ruleFix(r: Row): FixButton | undefined
+  hookFix(o: OutsideRow): FixButton | undefined
   onMake(): void
   onToggleExisting(agent: Agent, hook: ExistingHook, on: boolean): void
   /** an outside hook in a popup, with every check */
@@ -124,7 +135,12 @@ export function RuleList({
     if (r.problem) return <span className="hw-rl-state" data-s="bad">✕ {verdicts[r.why.verdict]}</span>
     if (r.why.verdict === 'warn') return <span className="hw-rl-state" data-s="hid">! {verdicts.warn}</span>
     const ran = r.lastRun ? t.rlRan(ago(Date.now() - r.lastRun)) : t.rlNotYet
-    if (inChat && r.reach === 'in') return <span className="hw-rl-state" data-s="in">✓ {t.rlIn} · {ran}</span>
+    if (inChat && r.reach === 'in')
+      return (
+        <span className="hw-rl-state" data-s="in">
+          ✓ {r.via ? t.rlVia(placeWords(r.via)) : t.rlIn} · {ran}
+        </span>
+      )
     return <span className="hw-rl-state" data-s={r.lastRun ? 'ran' : 'idle'}>{ran}</span>
   }
   /** The reason a row is stuck, failing or worth a look, in a line under it. */
@@ -149,6 +165,14 @@ export function RuleList({
           {r.item.kind === 'command' && <span className="hw-rl-tag">{r.item.mode === 'onFail' ? t.tagOnFail : t.rlAlways}</span>}
           {r.item.tools && <span className="hw-rl-tag">{r.item.tools}</span>}
           {r.item.once && <span className="hw-rl-tag">{t.tagOnce}</span>}
+          {r.twins && (
+            <span className="hw-rl-tag" data-hot>
+              {t.rlTwins(r.twins.length + 1)}{' '}
+              <button type="button" className="hw-link" onClick={() => onKeepOne(r)}>
+                {t.rlKeepOne}
+              </button>
+            </span>
+          )}
           {state(r)}
         </div>
         {r.reach === 'hidden' && r.hiddenBy ? (
@@ -159,7 +183,14 @@ export function RuleList({
             </button>
           </p>
         ) : (
-          reasonLine(r.why)
+          <>
+            {reasonLine(r.why)}
+            {r.problem && ruleFix(r) && ruleFix(r)?.label && (
+              <button type="button" className="hw-rl-fix" onClick={ruleFix(r)!.run}>
+                {ruleFix(r)!.label}
+              </button>
+            )}
+          </>
         )}
         {asking === targetKey(r) && (
           <ConfirmDelete
@@ -207,10 +238,16 @@ export function RuleList({
 
   // What is stuck or failing, rules first: the answer to "why doesn't my hook run?".
   const trouble = [
-    ...rows.filter(r => r.problem).map(r => ({ key: `r-${targetKey(r)}`, agent: r.agent, what: itemWords(r.item), event: r.item.event, why: r.why, open: () => onOpen(r) })),
+    ...rows.filter(r => r.problem).map(r => ({
+      key: `r-${targetKey(r)}`, agent: r.agent, what: itemWords(r.item), event: r.item.event, why: r.why,
+      open: () => onOpen(r), fix: ruleFix(r),
+    })),
     ...outside
       .filter(o => !o.hook.off && isTrouble(o.why))
-      .map(o => ({ key: `h-${o.agent}-${o.hook.id}`, agent: o.agent, what: o.hook.origin?.name ?? o.hook.name, event: o.hook.event, why: o.why, open: () => onOpenHook(o) })),
+      .map(o => ({
+        key: `h-${o.agent}-${o.hook.id}`, agent: o.agent, what: o.hook.origin?.name ?? o.hook.name, event: o.hook.event, why: o.why,
+        open: () => onOpenHook(o), fix: hookFix(o),
+      })),
   ]
   // Failing first, then what stops a rule, then a narrower place hiding it (often meant that way).
   const rank = (why: Why) => (why.verdict === 'failing' ? 0 : why.reason?.check.key === 'hidden' ? 2 : 1)
@@ -260,6 +297,11 @@ export function RuleList({
             ) : null}
           </div>
           {!hook.off && reasonLine(why)}
+          {!hook.off && hookFix(o) && (
+            <button type="button" className="hw-rl-fix" onClick={hookFix(o)!.run}>
+              {hookFix(o)!.label}
+            </button>
+          )}
         </div>
         <div className="hw-rl-side">
           <Switch size="sm" aria-label={t.existingSwitch(hook.name)} checked={!hook.off} onChange={e => onToggleExisting(agent, hook, e.currentTarget.checked)} />
@@ -392,6 +434,11 @@ export function RuleList({
                       </span>
                       {x.why.reason && <span className="hw-rl-trouble-why">{whyWords(lang, x.why.reason.check, help)}</span>}
                     </button>
+                    {x.fix && (
+                      <button type="button" className="hw-rl-fix" onClick={x.fix.run}>
+                        {x.fix.label}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

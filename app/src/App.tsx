@@ -15,6 +15,8 @@ import { RuleList, type OutsideRow } from './components/hoochi/rule-list'
 import { WhyPanel } from './components/hoochi/why-panel'
 import { isTrouble, limitOf, peersOf, runsOf, weekOf, whyOutside, COMMAND_LIMIT_MS } from './lib/why'
 import { reportOf } from './lib/report'
+import { hookFix, ruleFix } from './lib/fix'
+import { copyText } from './lib/clipboard'
 import { VERDICT, WHY_UI, whyWords, type WhyHelp } from './lib/why-words'
 import { filterRows, rowsOf, type Row, type View } from './lib/rules-view'
 import { applyEdit, allTargets, revertEdit, targetKey as rowKey, touched, type Edit, type Target as Held } from './lib/edit'
@@ -62,6 +64,7 @@ import {
   hookRuns,
   readState,
   setExistingHook,
+  setExistingTimeout,
   setPlugin,
   setSkill,
   skillState,
@@ -104,6 +107,7 @@ import {
   itemFilled,
   itemLabel,
   listOf,
+  sameItem,
   CLAUDE_SLOTS,
   slotOf,
   SLOTS,
@@ -1168,7 +1172,7 @@ export default function App() {
   const appVersion = 'info' in update ? update.info.current : undefined
   const openWeek = openHook && openHook.agent === 'claude' ? weekOf(openHook.hook, recorded.stats) : undefined
   /** The diagnosis of the hook in the popup, as text to paste for whoever looks after it. */
-  const hookReport = (o: OutsideRow) => () =>
+  const hookReport = (o: OutsideRow, week = o.agent === 'claude' ? weekOf(o.hook, recorded.stats) : undefined) => () =>
     reportOf({
       lang,
       agent: o.agent,
@@ -1176,11 +1180,11 @@ export default function App() {
       where: [t.existingFrom(o.hook.from), o.hook.plugin, o.hook.file].filter(Boolean).join(' · '),
       event: o.hook.event,
       matcher: o.hook.matcher,
-      limitMs: limitOf(o.hook, openWeek),
+      limitMs: limitOf(o.hook, week),
       async: o.hook.async,
       body: o.hook.body,
       why: o.why,
-      week: openWeek,
+      week,
       runs: o.agent === 'claude' ? runsOf(o.hook, recorded.runs) : [],
       help: whyHelp,
       app: appVersion,
@@ -1240,10 +1244,91 @@ export default function App() {
   const openRow = ruleOpen
     ? ruleRows.find(r => r.agent === ruleOpen.agent && r.scope === ruleOpen.scope && r.key === ruleOpen.key && r.item.id === ruleOpen.id)
     : undefined
-  const putRule = (r: Row, item: Item) =>
-    save(withList(config, r.agent, r.scope, r.key, listOf(config[r.agent], r.scope, r.key).map(i => (i.id === item.id ? item : i))))
+  /** Saved from the popup: the repeats of a row go, so it stays one rule. */
+  const putRule = (r: Row, item: Item) => {
+    const gone = new Set((r.twins ?? []).map(x => x.item.id))
+    save(
+      withList(
+        config,
+        r.agent,
+        r.scope,
+        r.key,
+        listOf(config[r.agent], r.scope, r.key)
+          .filter(i => !gone.has(i.id))
+          .map(i => (i.id === item.id ? item : i)),
+      ),
+    )
+  }
+  /** A row and its repeats at the same place, acted on as the one rule they are. */
+  const allOf = (r: Row) => [r, ...(r.twins ?? [])]
   const deleteRow = (r: Row) =>
-    act(applyEdit(config, { action: 'delete', targets: [r] }), t.mineDeleted(eventName(r.item.event, lang, r.agent)), 'list')
+    act(applyEdit(config, { action: 'delete', targets: allOf(r) }), t.mineDeleted(eventName(r.item.event, lang, r.agent)), 'list')
+  const keepOne = (r: Row) =>
+    r.twins && act(applyEdit(config, { action: 'delete', targets: r.twins }), t.rlTwinsGone(r.twins.length), 'list')
+  /** A hidden rule into the place that hides it, once: when the same rule is there already, nothing is added. */
+  const addThere = (r: Row, to: { scope: Scope; key: string }) => {
+    if (listOf(config[r.agent], to.scope, to.key).some(i => sameItem(i, r.item))) {
+      setNotice({ kind: 'info', message: t.rlAlreadyThere(placeWords(to)), near: 'list' })
+      return
+    }
+    act(
+      applyEdit(config, { action: 'copy', copies: [{ item: { ...r.item, id: newId(), added: Date.now() }, to: { agent: r.agent, ...to } }] }),
+      t.rlCopiedTo(placeWords(to)),
+      'list',
+    )
+  }
+  const W = WHY_UI[lang]
+  const openRule = (r: Row) => {
+    setRuleOpen({ agent: r.agent, scope: r.scope, key: r.key, id: r.item.id })
+    openFromHere('rule')
+  }
+  /** The button that makes a rule run again, from the reason it does not. */
+  const ruleFixButton = (r: Row) => {
+    const fix = ruleFix({ why: r.why, hiddenBy: r.hiddenBy, tools: r.item.tools })
+    switch (fix?.do) {
+      case 'add-there':
+        return { label: t.rlAddThere(placeWords(fix.to)), run: () => addThere(r, fix.to) }
+      case 'open':
+        return { label: W.fixOpen, run: () => openRule(r) }
+      case 'connect-codex':
+        return { label: W.fixConnect, run: () => codexDo(codexConnect, { step: 'connected-now' }) }
+      case 'set-tools':
+        return {
+          label: W.fixTools(fix.tools),
+          run: () =>
+            act(
+              applyEdit(config, { action: 'change', changes: [{ target: r, item: { ...r.item, tools: fix.tools }, to: { agent: r.agent, scope: r.scope, key: r.key } }] }),
+              W.fixedTools,
+              'list',
+            ),
+        }
+      default:
+        return undefined
+    }
+  }
+  /** The button for a hook set up elsewhere: a longer limit in a settings file, else the diagnosis for its owner. */
+  const hookFixButton = (o: OutsideRow) => {
+    const week = o.agent === 'claude' ? weekOf(o.hook, recorded.stats) : undefined
+    const fix = hookFix({
+      why: o.why,
+      editable: o.agent === 'claude' && o.hook.toggle === 'park' && o.hook.kind === 'command',
+      limitMs: limitOf(o.hook, week),
+    })
+    if (fix?.do === 'raise-timeout')
+      return {
+        label: W.fixTimeout(fix.seconds),
+        run: () =>
+          void setExistingTimeout(existingProject, o.hook.id, fix.seconds)
+            .then(found => {
+              setExisting(found)
+              setNotice({ kind: 'info', message: W.fixedTimeout(fix.seconds), near: 'list' })
+            })
+            .catch(failed),
+      }
+    if (fix?.do === 'copy-report')
+      return { label: W.fixReport, run: () => copyText(hookReport(o, week)(), () => setNotice({ kind: 'info', message: W.fixedReport, near: 'list' })) }
+    return undefined
+  }
   /** The send sheet, at the rule's own AI and place. */
   const sendElsewhere = (r: Row) => {
     if (r.agent !== agent) setAgent(r.agent)
@@ -1301,7 +1386,7 @@ export default function App() {
       onView={setListView}
       onQuery={setMineQuery}
       onConnectCodex={() => codexDo(codexConnect, { step: 'connected-now' })}
-      onToggle={(r, on) => save(applyEdit(config, { action: on ? 'on' : 'off', targets: [r] }))}
+      onToggle={(r, on) => save(applyEdit(config, { action: on ? 'on' : 'off', targets: allOf(r) }))}
       onOpen={r => {
         setRuleOpen({ agent: r.agent, scope: r.scope, key: r.key, id: r.item.id })
         openFromHere('rule')
@@ -1311,14 +1396,10 @@ export default function App() {
       onSend={sendElsewhere}
       onSendAi={copyToOtherAi}
       onDelete={deleteRow}
-      onAddHere={r =>
-        r.hiddenBy &&
-        act(
-          applyEdit(config, { action: 'copy', copies: [{ item: { ...r.item, id: newId(), added: Date.now() }, to: { agent: r.agent, ...r.hiddenBy } }] }),
-          t.rlCopiedTo(placeWords(r.hiddenBy)),
-          'list',
-        )
-      }
+      onAddHere={r => r.hiddenBy && addThere(r, r.hiddenBy)}
+      onKeepOne={keepOne}
+      ruleFix={ruleFixButton}
+      hookFix={hookFixButton}
       onMake={() => setModal('pick')}
       onToggleExisting={(_, hook, on) => switchHook(hook, on)}
       onOpenHook={o => {
@@ -2057,7 +2138,13 @@ export default function App() {
             </div>
             {inModal}
             <div className="hw-modal-list">
-              <WhyPanel lang={lang} why={openRow.why} help={whyHelp} report={ruleReport(openRow)} />
+              <WhyPanel
+                lang={lang}
+                why={openRow.why}
+                help={whyHelp}
+                report={ruleReport(openRow)}
+                fix={ruleFix({ why: openRow.why, hiddenBy: openRow.hiddenBy, tools: openRow.item.tools })?.do === 'open' ? undefined : ruleFixButton(openRow)}
+              />
               <ItemCard
                 key={rowKey(openRow)}
                 item={openRow.item}
@@ -2143,7 +2230,14 @@ export default function App() {
                   onChange={e => switchHook(openHook.hook, e.currentTarget.checked)}
                 />
               </div>
-              <WhyPanel lang={lang} why={openHook.why} help={whyHelp} week={openWeek} report={hookReport(openHook)} />
+              <WhyPanel
+                lang={lang}
+                why={openHook.why}
+                help={whyHelp}
+                week={openWeek}
+                report={hookReport(openHook)}
+                fix={hookFixButton(openHook)}
+              />
               {openHook.hook.body && (
                 <section className="hw-why">
                   <h4>{WHY_UI[lang].runs}</h4>

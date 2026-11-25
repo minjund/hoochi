@@ -1,6 +1,6 @@
 [package]
 name = "hoochi"
-version = "0.1.46"
+version = "0.1.47"
 description = "Sandwich anything around Claude Code's lifecycle"
 authors = ["minjund"]
 license = "MIT"

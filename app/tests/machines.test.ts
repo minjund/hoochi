@@ -195,6 +195,11 @@ test('a notice shows inside an open popup, else where it belongs', () => {
   assert.equal(noticePlace(undo, null), 'list')
   assert.equal(noticePlace(error, null), 'controls')
   assert.equal(noticePlace(null, 'mine'), null)
+  // Said and gone: no undo, so a change does not end it; shown where it was done.
+  const info: Notice<number> = { kind: 'info', message: 'Already there', near: 'list' }
+  assert.equal(afterChange(info), info)
+  assert.equal(noticePlace(info, null), 'list')
+  assert.equal(noticePlace({ kind: 'info', message: 'x' }, null), 'controls')
 })
 
 test('following pauses while a moment is open, and holds where you moved it', () => {

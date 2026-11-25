@@ -77,3 +77,23 @@ test('a narrower place with only an empty rule at a moment follows the wider pla
   const off: Config = { ...c, claude: { ...c.claude, projects: { '/shop': [item('quiet', { enabled: false })] }, terminals: {} } }
   assert.equal(rowsOf(off, { chat, activity, codexOn: true, blocked: new Set() }).find(x => x.item.id === 'g')!.reach, 'hidden')
 })
+
+test('the same rule twice at one place is one row; put in the narrower place, the wider one is no longer hidden', () => {
+  const twice: Config = {
+    version: 2,
+    claude: {
+      ...emptyAgent(),
+      global: [item('english')],
+      projects: { '/shop': [item('korean'), item('english', { id: 'e1' }), item('english', { id: 'e2' }), item('english', { id: 'e3', enabled: false })] },
+    },
+    codex: emptyAgent(),
+  }
+  const rs = rowsOf(twice, { chat, activity, codexOn: true, blocked: new Set() })
+  const shop = rs.filter(r => r.scope === 'project')
+  // e1 and e2 are one rule; e3 is switched off, so it is its own row.
+  assert.deepEqual(shop.map(r => [r.item.id, (r.twins ?? []).map(t => t.item.id)]), [['korean', []], ['e1', ['e2']], ['e3', []]])
+  const wide = rs.find(r => r.scope === 'global')!
+  assert.equal(wide.reach, 'in', 'the same rule is in /shop, so it goes in there')
+  assert.deepEqual(wide.via, { scope: 'project', key: '/shop' })
+  assert.equal(wide.problem, undefined)
+})

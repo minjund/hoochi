@@ -5,7 +5,7 @@
  * in the order a chat goes through them, Codex's own moments in their place.
  */
 import { allTargets, type Target } from './edit.ts'
-import { CLAUDE_SLOTS, CODEX_SLOTS, decidingScope, type Activity, type Agent, type Config, type Scope } from './lifecycle.ts'
+import { CLAUDE_SLOTS, CODEX_SLOTS, decidingScope, listOf, sameItem, type Activity, type Agent, type Config, type Item, type Scope } from './lifecycle.ts'
 import { isTrouble, whyRule, type Check, type Why } from './why.ts'
 
 /** The chat the window follows: its AI, project and terminal. */
@@ -27,6 +27,24 @@ export type Row = Target & {
   why: Why
   /** set when something stops it or it fails */
   problem?: Problem
+  /** the same rule again at the same place (same moment, words or command, tools, on or off): shown as this one row */
+  twins?: Target[]
+  /** a narrower place would hide it, but has the same rule: it goes in through that one */
+  via?: { scope: Scope; key: string }
+}
+
+/** The same rule, switched the same way: two of them at one place do nothing more than one. */
+const twin = (a: Item, b: Item) => sameItem(a, b) && a.enabled === b.enabled && a.once === b.once
+
+/** The targets with each place's repeats folded into the first of them. */
+function folded(targets: Target[]): (Target & { twins?: Target[] })[] {
+  const out: (Target & { twins?: Target[] })[] = []
+  for (const t of targets) {
+    const first = out.find(o => o.agent === t.agent && o.scope === t.scope && o.key === t.key && twin(o.item, t.item))
+    if (first) first.twins = [...(first.twins ?? []), t]
+    else out.push(t)
+  }
+  return out
 }
 
 export type View = {
@@ -64,7 +82,7 @@ export function rowsOf(
     blocked: ReadonlySet<string>
   },
 ): Row[] {
-  return allTargets(config).map(t => {
+  return folded(allTargets(config)).map(t => {
     const a = o.activity[t.agent]
     const ran = [a.runs?.[t.item.id]?.last.at ?? 0, ...a.recent.filter(f => f.id === t.item.id).map(f => f.at)].filter(n => n > 0)
     const row: Omit<Row, 'why'> & { why?: Why } = { ...t, ...(ran.length ? { lastRun: Math.max(...ran) } : {}) }
@@ -76,8 +94,12 @@ export function rowsOf(
       if (!reaches) row.reach = 'other'
       else {
         const wins = decidingScope(config[t.agent], t.item.event, { project: c.project, terminal: c.terminal, terminalLabel: '' })
+        const winner = wins && wins !== t.scope ? { scope: wins, key: wins === 'project' ? c.project : wins === 'terminal' ? c.terminal : '' } : undefined
         if (wins === t.scope) row.reach = 'in'
-        else {
+        else if (winner && listOf(config[t.agent], winner.scope, winner.key).some(i => i.enabled && sameItem(i, t.item))) {
+          row.reach = 'in'
+          row.via = winner
+        } else {
           row.reach = 'hidden'
           if (wins) row.hiddenBy = { scope: wins, key: wins === 'project' ? c.project : wins === 'terminal' ? c.terminal : '' }
         }
