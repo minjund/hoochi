@@ -224,6 +224,48 @@ export function itemFilled(item: Item): boolean {
   return item.skill !== ''
 }
 
+const KINDS: readonly ItemKind[] = ['text', 'command', 'skill', 'rules']
+
+/** The item as the kind it is: what the other kinds would put in, blank. One item puts in one thing. */
+export function onlyKind(item: Item): Item {
+  const k = item.kind
+  return {
+    ...item,
+    text: k === 'text' ? item.text : '',
+    command: k === 'command' ? item.command : '',
+    skill: k === 'skill' ? item.skill : '',
+    ...(item.rules !== undefined || k === 'rules' ? { rules: k === 'rules' ? (item.rules ?? []) : [] } : {}),
+  }
+}
+
+/**
+ * An item that holds more than one kind's content (words typed, then the kind switched to a
+ * command, and saved) as one item per kind. Only the kind it is ever ran, so it stays as it was,
+ * and each other content becomes an item of its own beside it, switched off, under an id made from
+ * its own so it is the same on every read. Content that cannot go in at this moment is left out.
+ */
+export function splitKinds(item: Item, agent: Agent): Item[] {
+  const slot = slotOf(item.event, agent)
+  const others = KINDS.filter(k => k !== item.kind && (k === 'command' || slot?.canInject !== false)).filter(kind =>
+    itemFilled({ ...item, kind }),
+  )
+  if (others.length === 0 && same(onlyKind(item), item)) return [item]
+  return [
+    onlyKind(item),
+    ...others.map(kind => onlyKind({ ...item, kind, id: `${item.id}-${kind}`, enabled: false })),
+  ]
+}
+
+const same = (a: Item, b: Item) => JSON.stringify(a) === JSON.stringify(b)
+
+/** Every list of one AI's config, each item one kind (`splitKinds`). */
+export function splitAgent(config: AgentConfig, agent: Agent): AgentConfig {
+  const whole = (i: Item) => [i.text, i.command, i.skill].every(v => typeof v === 'string')
+  const split = (list: Item[]) => list.flatMap(i => (whole(i) ? splitKinds(i, agent) : [i]))
+  const each = (lists: Record<string, Item[]>) => Object.fromEntries(Object.entries(lists).map(([k, l]) => [k, split(l)]))
+  return { global: split(config.global), projects: each(config.projects), terminals: each(config.terminals) }
+}
+
 /** A short label for an item, for chips and the feed. */
 export function itemLabel(item: Item): string {
   const raw =

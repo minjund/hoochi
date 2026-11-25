@@ -2,7 +2,7 @@
  * The one button that makes a hook run again, picked from the reason it does not: put a hidden
  * rule in the place that hides it, connect Codex, write its tools the way they match, give a hook
  * in a settings file a longer time limit, open the rule to fill it in or fix its command. What the
- * window cannot fix (a plugin's own hook failing) gets the diagnosis to copy for its owner.
+ * window cannot fix (a plugin's own hook failing) gets the diagnosis to copy, for the plugin's own repository.
  */
 import type { Scope } from './lifecycle.ts'
 import { toolNames, type Week, type Why } from './why.ts'
@@ -17,7 +17,7 @@ export type Fix =
   | { do: 'set-tools'; tools: string }
   /** a hook in a settings file: a longer time limit, in seconds */
   | { do: 'raise-timeout'; seconds: number }
-  /** a hook the window cannot change (a plugin's): its diagnosis, for whoever looks after it */
+  /** a hook the window cannot change (a plugin's): its diagnosis, to fix it in the plugin's own repository */
   | { do: 'copy-report' }
 
 /** Tools written apart with commas, the way hoochi reads them. */

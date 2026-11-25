@@ -68,7 +68,7 @@ rule with how it is doing, and you can switch it off, fix it or delete it right 
 - **Why it doesn't run, check by check.** For the rules you put in with hoochi and the hooks already set up in your settings and plugins.
 - **Every run recorded.** How each command ended, how long it took, and what it printed when it failed.
 - **The icon's number is the hooks not working** — in red, even folded; no number when everything works.
-- **Copy diagnosis** — every check, the last 7 days and the latest failures as text, to paste for whoever looks after the hook.
+- **Copy diagnosis** — every check, the last 7 days and the latest failures as text, to paste where it gets fixed: Claude Code in the plugin's own repository, or its author.
 - **Fix it where you see it.** Switch, edit in a popup, or say it: "use pnpm for the tests", "put this in Codex too".
 - **Every moment at a glance.** Your agent's whole flow as one picture; the moment that just happened lights up.
 - **Everywhere · per project · per terminal.** The narrowest place wins, and the page tells you when it does.

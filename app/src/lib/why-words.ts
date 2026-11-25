@@ -46,11 +46,12 @@ export const WHY_UI = {
     fixConnect: 'Connect Codex',
     fixTools: (tools: string) => `Make its tools "${tools}"`,
     fixTimeout: (s: number) => `Give it ${s}s`,
-    fixReport: 'Copy diagnosis for its owner',
+    fixReport: 'Copy diagnosis',
     fixedTools: 'Fixed its tools.',
     fixedTimeout: (s: number) => `Its time limit is now ${s}s.`,
-    fixedReport: "Copied. It is a plugin's own hook, so hoochi can't change it: send this to whoever looks after it.",
-    copyHint: 'Every check, the last 7 days and the latest failures as text, to paste for whoever looks after this hook.',
+    fixedReport:
+      "Copied. A plugin's own hook comes back as it was on every update, so it is fixed in the plugin's own repository: paste this into Claude Code there and ask for a fix, or send it to the plugin's author if it isn't yours.",
+    copyHint: 'Every check, the last 7 days and the latest failures as text, to paste where it gets fixed.',
   },
   ko: {
     checks: '왜 돌고, 왜 안 도나',
@@ -77,11 +78,12 @@ export const WHY_UI = {
     fixConnect: 'Codex 연결',
     fixTools: (tools: string) => `도구를 "${tools}"로 고치기`,
     fixTimeout: (s: number) => `한도 ${s}초로 늘리기`,
-    fixReport: '진단 복사해 담당자에게',
+    fixReport: '진단 복사',
     fixedTools: '도구 이름을 고쳤어요.',
     fixedTimeout: (s: number) => `한도를 ${s}초로 늘렸어요.`,
-    fixedReport: '복사했어요. 플러그인 자체 훅이라 후치가 고칠 수 없어요. 이 훅을 맡은 사람에게 붙여 보내 주세요.',
-    copyHint: '확인한 것, 최근 7일, 최근 실패를 글로 복사해요. 이 훅을 맡은 사람에게 그대로 붙여 보내면 돼요.',
+    fixedReport:
+      '복사했어요. 플러그인 훅은 설치본을 고쳐도 업데이트 때 다시 덮여요. 이 플러그인의 원래 저장소에서 고쳐야 해요. 그 저장소에서 Claude Code에 붙여 넣고 고쳐 달라고 하거나, 직접 관리하는 플러그인이 아니면 만든 사람에게 보내 주세요.',
+    copyHint: '확인한 것, 최근 7일, 최근 실패를 글로 복사해요. 고칠 곳(플러그인 원래 저장소의 Claude Code, 또는 만든 사람)에 그대로 붙여 넣으면 돼요.',
   },
   ja: {
     checks: '動く理由・動かない理由',
@@ -108,11 +110,12 @@ export const WHY_UI = {
     fixConnect: 'Codex を接続',
     fixTools: (tools: string) => `ツールを "${tools}" に直す`,
     fixTimeout: (s: number) => `制限を ${s} 秒に延ばす`,
-    fixReport: '診断をコピーして担当者へ',
+    fixReport: '診断をコピー',
     fixedTools: 'ツール名を直しました。',
     fixedTimeout: (s: number) => `制限を ${s} 秒に延ばしました。`,
-    fixedReport: 'コピーしました。プラグイン自身のフックなので hoochi では直せません。担当者に送ってください。',
-    copyHint: '確認したこと、直近 7 日、最近の失敗をテキストでコピーします。このフックの担当者にそのまま送れます。',
+    fixedReport:
+      'コピーしました。プラグインのフックはインストール先を直しても更新で元に戻ります。プラグインの元のリポジトリで直してください。そこで Claude Code に貼り付けて直すよう頼むか、自分で管理していないプラグインなら作者に送ってください。',
+    copyHint: '確認したこと、直近 7 日、最近の失敗をテキストでコピーします。直す場所(プラグインの元のリポジトリの Claude Code、または作者)にそのまま貼れます。',
   },
   zh: {
     checks: '为什么运行，为什么不运行',
@@ -139,11 +142,12 @@ export const WHY_UI = {
     fixConnect: '连接 Codex',
     fixTools: (tools: string) => `把工具改成 "${tools}"`,
     fixTimeout: (s: number) => `把限制延长到 ${s} 秒`,
-    fixReport: '复制诊断发给负责人',
+    fixReport: '复制诊断',
     fixedTools: '已修正工具名称。',
     fixedTimeout: (s: number) => `限制已延长到 ${s} 秒。`,
-    fixedReport: '已复制。这是插件自带的钩子,hoochi 无法修改:请发给负责它的人。',
-    copyHint: '把检查项、最近 7 天和最近的失败复制成文字,直接发给负责这个钩子的人。',
+    fixedReport:
+      '已复制。插件的钩子即使改了安装副本,更新时也会被覆盖,要在插件原来的仓库里修改:在那里粘贴给 Claude Code 让它修,或者如果插件不是你维护的,发给作者。',
+    copyHint: '把检查项、最近 7 天和最近的失败复制成文字,直接粘贴到要修改的地方(插件原仓库里的 Claude Code,或作者)。',
   },
 } satisfies Record<Lang, unknown>
 

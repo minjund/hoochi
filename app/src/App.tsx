@@ -1171,7 +1171,7 @@ export default function App() {
   const openHook = hookOpen ? outsideRows.find(o => o.agent === hookOpen.agent && o.hook.id === hookOpen.id) : undefined
   const appVersion = 'info' in update ? update.info.current : undefined
   const openWeek = openHook && openHook.agent === 'claude' ? weekOf(openHook.hook, recorded.stats) : undefined
-  /** The diagnosis of the hook in the popup, as text to paste for whoever looks after it. */
+  /** The diagnosis of the hook in the popup, as text to paste where it gets fixed. */
   const hookReport = (o: OutsideRow, week = o.agent === 'claude' ? weekOf(o.hook, recorded.stats) : undefined) => () =>
     reportOf({
       lang,
@@ -1306,7 +1306,7 @@ export default function App() {
         return undefined
     }
   }
-  /** The button for a hook set up elsewhere: a longer limit in a settings file, else the diagnosis for its owner. */
+  /** The button for a hook set up elsewhere: a longer limit in a settings file, else its diagnosis to copy. */
   const hookFixButton = (o: OutsideRow) => {
     const week = o.agent === 'claude' ? weekOf(o.hook, recorded.stats) : undefined
     const fix = hookFix({

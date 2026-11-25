@@ -8,7 +8,7 @@
  * rule's words, are matched instead.
  */
 import type { Target } from './edit.ts'
-import { CODEX_SLOTS, itemLabel, slotOf, type Agent, type Item, type ItemKind, type Scope, type Slot } from './lifecycle.ts'
+import { CODEX_SLOTS, itemLabel, onlyKind, slotOf, type Agent, type Item, type ItemKind, type Scope, type Slot } from './lifecycle.ts'
 
 /** `codex`: Codex has this moment too, so a rule made for it can go in for both. */
 export type Moment = { event: string; name: string; hint: string; canInject: boolean; hasTools: boolean; codex?: boolean }
@@ -288,7 +288,7 @@ export function interpret(
       const slot = slotOf(c.event ?? '', to)
       const content = slot ? contentOf(c, slot, o.skills) : null
       if (!content) return []
-      item = { ...target.item, ...content }
+      item = onlyKind({ ...target.item, ...content })
     }
     const fit = itemFor(item, to)
     // nothing to change: no new words, place or AI

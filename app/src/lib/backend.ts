@@ -7,6 +7,7 @@ import type { HookStat } from './why.ts'
 
 import {
   emptyAgent,
+  splitAgent,
   type Activity,
   type AgentConfig,
   type ClassicReach,
@@ -204,15 +205,19 @@ function parseAgent(raw: unknown): AgentConfig {
   }
 }
 
-/** Version 2; a version 1 file becomes Claude's "everywhere" list. */
+/** Version 2; a version 1 file becomes Claude's "everywhere" list. Each item comes out as one kind (`splitKinds`). */
 export function parseConfig(text: string): Config {
   try {
     const data = JSON.parse(text) as { version?: number; items?: Item[]; claude?: unknown; codex?: unknown }
     if (data.version === 2)
-      return { version: 2, claude: parseAgent(data.claude), codex: parseAgent(data.codex) }
+      return {
+        version: 2,
+        claude: splitAgent(parseAgent(data.claude), 'claude'),
+        codex: splitAgent(parseAgent(data.codex), 'codex'),
+      }
     return {
       version: 2,
-      claude: { ...emptyAgent(), global: Array.isArray(data.items) ? data.items : [] },
+      claude: splitAgent({ ...emptyAgent(), global: Array.isArray(data.items) ? data.items : [] }, 'claude'),
       codex: emptyAgent(),
     }
   } catch {

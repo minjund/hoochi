@@ -195,7 +195,7 @@ export type Notice<T> =
   /** something done that has no undo of its own, or nothing to do: said, then gone */
   | { kind: 'info'; message: string; near?: 'controls' | 'list' }
 
-export const NOTICE_MS = { undo: 12_000, error: 10_000, info: 8_000 } as const
+export const NOTICE_MS = { undo: 12_000, error: 10_000, info: 12_000 } as const
 
 /** After any other change to the config: an undo would no longer be right. */
 export function afterChange<T>(notice: Notice<T> | null): Notice<T> | null {

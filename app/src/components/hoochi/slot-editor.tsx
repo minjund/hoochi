@@ -1,6 +1,6 @@
 import type { ExistingHook, Skill } from '../../lib/backend'
 import { eventHint, eventName, forAgent, UI, type Lang } from '../../lib/i18n'
-import { itemFilled, type Agent, type Item, type ItemKind, type Slot, type SkillRule } from '../../lib/lifecycle'
+import { itemFilled, onlyKind, type Agent, type Item, type ItemKind, type Slot, type SkillRule } from '../../lib/lifecycle'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '../ui/button'
@@ -343,7 +343,8 @@ export function ItemCard({
   const save = () => {
     if (!dirty || empty) return
     // Rows left wholly blank go; a half-filled one stays to finish later (the plugin skips it).
-    onSave({ ...item, ...draft, rules: draft.rules.filter(r => r.when.trim() !== '' || r.skill !== '') })
+    // Only the kind picked goes in: what was typed under another kind before switching is dropped.
+    onSave(onlyKind({ ...item, ...draft, rules: draft.rules.filter(r => r.when.trim() !== '' || r.skill !== '') }))
   }
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
