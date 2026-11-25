@@ -285,6 +285,8 @@ fn collect(
                         // Exactly as written, to find its runs in what Claude Code recorded.
                         "command": hook.get("command").and_then(Value::as_str).unwrap_or_default(),
                         "status": hook.get("statusMessage").and_then(Value::as_str).unwrap_or_default(),
+                        // Claude Code does not wait for it, and records none of its runs.
+                        "async": hook.get("async").and_then(Value::as_bool).unwrap_or(false),
                     }),
                     place: at,
                 });

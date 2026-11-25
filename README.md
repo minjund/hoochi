@@ -53,6 +53,9 @@ there, and how did its last run end. The first check that fails is the answer, i
 | Words at a moment the model never hears (the chat ending, before compacting) | *Only commands run here* |
 | The command was not found, timed out, or failed | How it ended, and what it printed |
 | A plugin's hook failing quietly, or timing out | Read from what Claude Code itself recorded of each run |
+| A hook that only fails now and then (fine when you run it yourself) | how often in the last 7 days, in how many chats, a bar for each day, the last 24 hours |
+| Not sure if it's the hook, or Claude Code and this computer | *the 3 other hooks at UserPromptSubmit failed 0 times in those days: it is this hook* |
+| A hook that still runs, but close to its limit | *slow runs take up to 17.7s of its 20s limit: it will be cut some day* |
 | Codex's hooks not connected | One button to connect them |
 | A Team or Enterprise account that never passes a moment to plugins | Which moments, dimmed |
 
@@ -64,6 +67,8 @@ rule with how it is doing, and you can switch it off, fix it or delete it right 
 
 - **Why it doesn't run, check by check.** For the rules you put in with hoochi and the hooks already set up in your settings and plugins.
 - **Every run recorded.** How each command ended, how long it took, and what it printed when it failed.
+- **The icon's number is the hooks not working** — in red, even folded; no number when everything works.
+- **Copy diagnosis** — every check, the last 7 days and the latest failures as text, to paste for whoever looks after the hook.
 - **Fix it where you see it.** Switch, edit in a popup, or say it: "use pnpm for the tests", "put this in Codex too".
 - **Every moment at a glance.** Your agent's whole flow as one picture; the moment that just happened lights up.
 - **Everywhere · per project · per terminal.** The narrowest place wins, and the page tells you when it does.

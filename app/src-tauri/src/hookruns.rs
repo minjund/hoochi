@@ -3,11 +3,18 @@
 //! settings or plugin hook that ran, with its command, exit code, time and output. The window
 //! reads them to say whether a hook set up outside hoochi ran and how it ended.
 //!
-//! Only the newest transcripts are read, from their end, and each one only as far as it grew
-//! since the last read.
+//! The transcripts written to in the last week are read once in full (only the lines about
+//! hooks are parsed), then each one only as far as it grew since. Besides the runs of the last
+//! days, each hook gets its week in numbers (`stats_of`): how often it failed or timed out, in how
+//! many chats, on which days, and how long its recorded runs took.
+//!
+//! Claude Code does not record every run: a failure always, a run that went well only at some
+//! moments (before and after a tool, at the start of a chat, the Stop hooks of a turn) and never at
+//! UserPromptSubmit; an async hook leaves no record at all. So failures are counted exactly, and
+//! "how many runs" and "how long" only where runs that went well are recorded.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -19,14 +26,17 @@ use serde_json::{json, Value};
 
 use crate::codex::home;
 
-/// Transcripts written to in this long are read.
-const RECENT: Duration = Duration::from_secs(3 * 24 * 60 * 60);
-/// At most this many of them, the newest first.
-const FILES: usize = 40;
-/// The first read of a transcript starts this far from its end.
-const TAIL: u64 = 3 * 1024 * 1024;
-/// Runs kept per transcript.
-const PER_FILE: usize = 400;
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// The numbers cover this many days; transcripts written to in that time are read.
+const DAYS: u64 = 7;
+const WEEK: Duration = Duration::from_secs(DAYS * 24 * 60 * 60);
+/// At most this many transcripts, the newest first.
+const FILES: usize = 1000;
+/// The runs themselves are sent for this many days, at most `SENT` of them, the newest first.
+const RUN_DAYS: u64 = 3;
+const SENT: usize = 3000;
+/// Read this much at a time.
+const CHUNK: usize = 8 * 1024 * 1024;
 /// How much of a failed hook's output is kept.
 const OUTPUT: usize = 400;
 
@@ -35,6 +45,10 @@ struct Seen {
     offset: u64,
     runs: Vec<Value>,
 }
+
+/// The events where Claude Code records a run that went well (seen in its transcripts): elsewhere
+/// only failures are on record, so the last recorded run is not the last run.
+pub const RECORDS_OK: [&str; 6] = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PostToolBatch", "SessionStart", "Stop"];
 
 static CACHE: Mutex<Option<HashMap<PathBuf, Seen>>> = Mutex::new(None);
 
@@ -95,26 +109,36 @@ fn stop_summary(o: &Value) -> Vec<Value> {
 /// The hook runs in some lines of a transcript. A hook listed in a turn's Stop summary and also
 /// recorded on its own (a failure) counts once, as recorded.
 pub fn runs_of_lines<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<Value> {
-    let mut out: Vec<Value> = Vec::new();
+    let key = |r: &Value| format!("{}\u{0}{}\u{0}{}", r["event"], r["use"], r["command"]);
+    let mut out: Vec<Option<Value>> = Vec::new();
+    // Where each (event, turn, command) is, and which of them came from a summary.
+    let mut at: HashMap<String, usize> = HashMap::new();
+    let mut from_summary: HashSet<String> = HashSet::new();
     for line in lines {
         if line.contains("\"stop_hook_summary\"") {
             if let Ok(o) = serde_json::from_str::<Value>(line) {
                 for run in stop_summary(&o) {
-                    let twin = out.iter().any(|r| r["event"] == run["event"] && r["use"] == run["use"] && r["command"] == run["command"]);
-                    if !twin {
-                        out.push(run);
+                    let k = key(&run);
+                    if !at.contains_key(&k) {
+                        at.insert(k.clone(), out.len());
+                        from_summary.insert(k);
+                        out.push(Some(run));
                     }
                 }
             }
         } else if let Some(run) = run_of(line) {
             // A failure recorded on its own after the summary listed it: the failure stands.
-            out.retain(|r| {
-                !(r["result"] == "ok" && r["event"] == run["event"] && r["use"] == run["use"] && r["command"] == run["command"] && r["use"] != "")
-            });
-            out.push(run);
+            let k = key(&run);
+            if run["use"] != "" && from_summary.remove(&k) {
+                if let Some(i) = at.get(&k) {
+                    out[*i] = None;
+                }
+            }
+            at.insert(k, out.len());
+            out.push(Some(run));
         }
     }
-    out
+    out.into_iter().flatten().collect()
 }
 
 /// One line of a transcript as a hook run, when it is one.
@@ -143,6 +167,7 @@ pub fn run_of(line: &str) -> Option<Value> {
     let mut run = json!({
         "at": parse_time(&s(&o, "timestamp")).unwrap_or(0),
         "session": s(&o, "sessionId"),
+        "version": s(&o, "version"),
         "cwd": s(&o, "cwd"),
         "event": s(a, "hookEvent"),
         "on": on,
@@ -170,6 +195,7 @@ pub fn run_of(line: &str) -> Option<Value> {
 
 /// The newest transcripts: `<projects>/<folder>/<session>.jsonl`, written to lately.
 fn transcripts(projects: &Path) -> Vec<PathBuf> {
+    const RECENT: Duration = WEEK;
     let now = SystemTime::now();
     let mut found: Vec<(SystemTime, PathBuf)> = Vec::new();
     for dir in std::fs::read_dir(projects).into_iter().flatten().flatten() {
@@ -188,7 +214,8 @@ fn transcripts(projects: &Path) -> Vec<PathBuf> {
     found.into_iter().take(FILES).map(|(_, p)| p).collect()
 }
 
-/// Reads what a transcript gained since `seen`: whole lines only.
+/// Reads what a transcript gained since `seen`: whole lines only, a chunk at a time, parsing only
+/// the lines about hooks.
 fn read_more(path: &Path, seen: &mut Seen) {
     let Ok(mut f) = File::open(path) else { return };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
@@ -196,29 +223,101 @@ fn read_more(path: &Path, seen: &mut Seen) {
         // It was written over: read it again.
         *seen = Seen { offset: 0, runs: Vec::new() };
     }
-    let first = seen.offset == 0 && seen.runs.is_empty();
-    let from = if first { len.saturating_sub(TAIL) } else { seen.offset };
-    if from >= len || f.seek(SeekFrom::Start(from)).is_err() {
+    if seen.offset >= len || f.seek(SeekFrom::Start(seen.offset)).is_err() {
         return;
     }
-    let mut buf = Vec::new();
-    if f.take(len - from).read_to_end(&mut buf).is_err() {
-        return;
+    let mut carry: Vec<u8> = Vec::new();
+    let mut buf = vec![0u8; CHUNK];
+    let mut read_to = seen.offset;
+    loop {
+        let n = match f.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        read_to += n as u64;
+        carry.extend_from_slice(&buf[..n]);
+        let Some(end) = carry.iter().rposition(|&c| c == b'\n').map(|i| i + 1) else { continue };
+        let text = String::from_utf8_lossy(&carry[..end]);
+        seen.runs.extend(runs_of_lines(text.lines().filter(|l| l.contains("\"hook_") || l.contains("stop_hook_summary"))));
+        carry.drain(..end);
+        if read_to >= len {
+            break;
+        }
     }
-    // Starting mid-file, the first line is cut: skip it.
-    let start = if first && from > 0 { buf.iter().position(|&c| c == b'\n').map_or(buf.len(), |i| i + 1) } else { 0 };
-    let Some(end) = buf.iter().rposition(|&c| c == b'\n').map(|i| i + 1) else { return };
-    if end <= start {
-        seen.offset = from + end as u64;
-        return;
-    }
-    seen.runs.extend(runs_of_lines(String::from_utf8_lossy(&buf[start..end]).lines()));
-    let skip = seen.runs.len().saturating_sub(PER_FILE);
-    seen.runs.drain(..skip);
-    seen.offset = from + end as u64;
+    // A line still being written stays for the next read.
+    seen.offset = read_to - carry.len() as u64;
+    let since = now_ms().saturating_sub(DAYS * DAY_MS);
+    seen.runs.retain(|r| r["at"].as_u64().unwrap_or(0) >= since);
 }
 
-/// Every hook run recorded in the newest transcripts, newest first.
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+fn percentile(sorted: &[u64], p: f64) -> u64 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let i = ((sorted.len() - 1) as f64 * p).round() as usize;
+    sorted[i.min(sorted.len() - 1)]
+}
+
+/// Each hook's week in numbers, by (event, command): failures (an exit other than 0 or 2, or a
+/// timeout), timeouts, in how many chats, the failures of each of the last 7 days (oldest first),
+/// and how long its recorded runs took (timeouts and cancels left out: they took the limit).
+pub fn stats_of(runs: &[Value], now: u64) -> Vec<Value> {
+    let mut by: HashMap<(String, String), Vec<&Value>> = HashMap::new();
+    for r in runs {
+        let k = (r["event"].as_str().unwrap_or_default().to_string(), r["command"].as_str().unwrap_or_default().to_string());
+        by.entry(k).or_default().push(r);
+    }
+    let mut out: Vec<Value> = by
+        .into_iter()
+        .map(|((event, command), rs)| {
+            let result = |r: &Value| r["result"].as_str().unwrap_or_default().to_string();
+            let failed = |r: &Value| matches!(result(r).as_str(), "error" | "timeout");
+            let count = |k: &str| rs.iter().filter(|r| result(r) == k).count();
+            let fails: Vec<&&Value> = rs.iter().filter(|r| failed(r)).collect();
+            let at = |r: &Value| r["at"].as_u64().unwrap_or(0);
+            let mut days = [0u64; DAYS as usize];
+            for r in &fails {
+                let ago = now.saturating_sub(at(r)) / DAY_MS;
+                if ago < DAYS {
+                    days[(DAYS - 1 - ago) as usize] += 1;
+                }
+            }
+            let chats: HashSet<&str> = fails.iter().filter_map(|r| r["session"].as_str()).collect();
+            let all_chats: HashSet<&str> = rs.iter().filter_map(|r| r["session"].as_str()).collect();
+            let mut ms: Vec<u64> = rs
+                .iter()
+                .filter(|r| !matches!(result(r).as_str(), "timeout" | "cancelled"))
+                .filter_map(|r| r["ms"].as_u64())
+                .collect();
+            ms.sort_unstable();
+            let limit = rs.iter().filter_map(|r| r["limitMs"].as_u64()).max();
+            let last_fail = fails.iter().max_by_key(|r| at(r));
+            json!({
+                "event": event, "command": command,
+                "runs": rs.len(), "ok": count("ok") + count("blocked"),
+                "fails": fails.len(), "timeouts": count("timeout"), "cancelled": count("cancelled"),
+                "fails24": fails.iter().filter(|r| now.saturating_sub(at(r)) < DAY_MS).count(),
+                "chats": chats.len(), "allChats": all_chats.len(),
+                "days": days,
+                "timed": ms.len(), "p50": percentile(&ms, 0.5), "p90": percentile(&ms, 0.9), "max": ms.last().copied().unwrap_or(0),
+                "limitMs": limit,
+                "lastAt": rs.iter().map(|r| at(r)).max().unwrap_or(0),
+                "lastFailAt": last_fail.map(|r| at(r)),
+                "version": last_fail.and_then(|r| r["version"].as_str()).unwrap_or_default(),
+                "recordsOk": RECORDS_OK.contains(&event.as_str()),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| b["fails"].as_u64().cmp(&a["fails"].as_u64()));
+    out
+}
+
+/// What the transcripts of the last week hold: `runs`, those of the last days, newest first, and
+/// `stats`, each hook's week in numbers.
 pub fn hook_runs_in(projects: &Path) -> Value {
     let files = transcripts(projects);
     let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -230,14 +329,14 @@ pub fn hook_runs_in(projects: &Path) -> Value {
         read_more(p, seen);
         all.extend(seen.runs.iter().cloned());
     }
-    let since = SystemTime::now()
-        .checked_sub(RECENT)
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    all.retain(|r| r.get("at").and_then(Value::as_u64).unwrap_or(0) >= since);
+    drop(guard);
+    let now = now_ms();
+    all.retain(|r| r.get("at").and_then(Value::as_u64).unwrap_or(0) >= now.saturating_sub(DAYS * DAY_MS));
+    let stats = stats_of(&all, now);
+    all.retain(|r| r.get("at").and_then(Value::as_u64).unwrap_or(0) >= now.saturating_sub(RUN_DAYS * DAY_MS));
     all.sort_by(|a, b| b["at"].as_u64().cmp(&a["at"].as_u64()));
-    Value::Array(all)
+    all.truncate(SENT);
+    json!({ "runs": all, "stats": stats })
 }
 
 pub fn hook_runs() -> Value {
@@ -260,7 +359,7 @@ mod tests {
     fn each_kind_of_hook_record_becomes_a_run() {
         let line = |a: Value| json!({ "type": "attachment", "timestamp": "1970-01-01T00:00:01.000Z", "sessionId": "s1", "cwd": "/p", "attachment": a }).to_string();
         let ok = run_of(&line(json!({ "type": "hook_success", "hookName": "PreToolUse:Bash", "hookEvent": "PreToolUse", "command": "lint", "exitCode": 0, "durationMs": 12, "stdout": "fine", "stderr": "" }))).unwrap();
-        assert_eq!(ok, json!({ "at": 1000, "session": "s1", "cwd": "/p", "event": "PreToolUse", "on": "Bash", "command": "lint", "result": "ok", "use": "", "exit": 0, "ms": 12 }));
+        assert_eq!(ok, json!({ "at": 1000, "session": "s1", "version": "", "cwd": "/p", "event": "PreToolUse", "on": "Bash", "command": "lint", "result": "ok", "use": "", "exit": 0, "ms": 12 }));
 
         let bad = run_of(&line(json!({ "type": "hook_non_blocking_error", "hookName": "Stop", "hookEvent": "Stop", "command": "sync", "exitCode": 1, "durationMs": 9, "stderr": "no server", "stdout": "" }))).unwrap();
         assert_eq!((bad["result"].as_str(), bad["out"].as_str(), bad["on"].as_str()), (Some("error"), Some("no server"), Some("")));
@@ -291,6 +390,34 @@ mod tests {
     }
 
     #[test]
+    fn a_week_in_numbers_counts_failures_by_day_and_times_only_runs_that_ended() {
+        let now = 10 * DAY_MS;
+        let run = |ago_h: u64, result: &str, session: &str, ms: Option<u64>| {
+            let mut r = json!({ "at": now - ago_h * 3_600_000, "session": session, "event": "UserPromptSubmit", "command": "sync", "result": result, "version": "2.1.326" });
+            if let Some(ms) = ms {
+                r["ms"] = json!(ms);
+            }
+            if result == "timeout" {
+                r["limitMs"] = json!(20000);
+            }
+            r
+        };
+        let runs = vec![
+            run(1, "timeout", "a", Some(20031)),
+            run(2, "timeout", "b", Some(20044)),
+            run(30, "error", "a", Some(300)),
+            run(50, "ok", "c", Some(100)),
+            run(60, "ok", "c", Some(500)),
+        ];
+        let s = &stats_of(&runs, now)[0];
+        assert_eq!((s["fails"].as_u64(), s["timeouts"].as_u64(), s["fails24"].as_u64(), s["chats"].as_u64()), (Some(3), Some(2), Some(2), Some(2)));
+        assert_eq!(s["days"], json!([0, 0, 0, 0, 0, 1, 2]));
+        // Timeouts took the limit, not their own time: left out of how long it takes.
+        assert_eq!((s["timed"].as_u64(), s["max"].as_u64(), s["limitMs"].as_u64()), (Some(3), Some(500), Some(20000)));
+        assert_eq!((s["recordsOk"].as_bool(), s["version"].as_str()), (Some(false), Some("2.1.326")));
+    }
+
+    #[test]
     fn reads_new_lines_only_and_skips_a_line_still_being_written() {
         let dir = std::env::temp_dir().join(format!("hoochi-runs-{}", std::process::id()));
         let folder = dir.join("-p");
@@ -301,9 +428,9 @@ mod tests {
         };
         std::fs::write(&file, format!("{}\n{}", rec("a"), &rec("b")[..20])).unwrap();
         let first = hook_runs_in(&dir);
-        assert_eq!(first.as_array().unwrap().len(), 1);
+        assert_eq!(first["runs"].as_array().unwrap().len(), 1);
         std::fs::write(&file, format!("{}\n{}\n{}\n", rec("a"), rec("b"), rec("c"))).unwrap();
-        let commands: Vec<String> = hook_runs_in(&dir).as_array().unwrap().iter().map(|r| r["command"].as_str().unwrap().to_string()).collect();
+        let commands: Vec<String> = hook_runs_in(&dir)["runs"].as_array().unwrap().iter().map(|r| r["command"].as_str().unwrap().to_string()).collect();
         let mut sorted = commands.clone();
         sorted.sort();
         assert_eq!(sorted, ["a", "b", "c"]);
@@ -319,7 +446,7 @@ mod live {
     fn live_runs() {
         let t = std::time::Instant::now();
         let runs = super::hook_runs();
-        let list = runs.as_array().unwrap();
+        let list = runs["runs"].as_array().unwrap();
         let mut by: std::collections::BTreeMap<String, usize> = Default::default();
         for r in list {
             *by.entry(format!("{} {}", r["result"], r["event"])).or_default() += 1;
@@ -327,7 +454,10 @@ mod live {
         println!("{} runs in {:?}: {by:?}", list.len(), t.elapsed());
         let t = std::time::Instant::now();
         let again = super::hook_runs();
-        println!("again {} in {:?}", again.as_array().unwrap().len(), t.elapsed());
+        println!("again {} in {:?}", again["runs"].as_array().unwrap().len(), t.elapsed());
+        for st in runs["stats"].as_array().unwrap().iter().take(5) {
+            println!("{st}");
+        }
         for r in list.iter().filter(|r| r["result"] != "ok").take(5) {
             println!("{}", r);
         }
@@ -341,7 +471,7 @@ mod live_match {
     #[ignore]
     fn live_match() {
         let runs = super::hook_runs();
-        let runs = runs.as_array().unwrap();
+        let runs = runs["runs"].as_array().unwrap();
         let hooks = crate::existing::existing("");
         for h in hooks["claude"].as_array().unwrap() {
             let keys: Vec<&str> = [h["command"].as_str().unwrap_or(""), h["status"].as_str().unwrap_or("")].into_iter().filter(|k| !k.is_empty()).collect();

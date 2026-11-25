@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import type { Activity, Item } from '../src/lib/lifecycle.ts'
-import { matcherMatches, runsOf, toolCheck, whyOutside, whyRule, type RecordedRun, type RuleContext } from '../src/lib/why.ts'
+import { limitOf, matcherMatches, peersOf, runsOf, toolCheck, weekOf, whyOutside, whyRule, type HookStat, type RecordedRun, type RuleContext } from '../src/lib/why.ts'
 
 const item = (over: Partial<Item> = {}): Item => ({
   id: 'i', event: 'PreToolUse', kind: 'text', text: 'careful', command: '', mode: 'always', skill: '', tools: '',
@@ -110,4 +110,66 @@ test('a matcher is matched as Claude Code does: all, a name, or a whole regex', 
 test('an empty rule puts nothing in, and says so first', () => {
   assert.equal(reasonOf('claude', item({ text: '  ' }), ctx()), 'empty')
   assert.equal(reasonOf('claude', item({ kind: 'rules', text: '', rules: [{ when: '', skill: 'tdd' }] }), ctx()), 'empty')
+})
+
+const week = (over: Partial<HookStat> = {}): HookStat => ({
+  event: 'UserPromptSubmit', command: 'sync', runs: 0, ok: 0, fails: 0, timeouts: 0, fails24: 0, chats: 0, allChats: 0,
+  days: [0, 0, 0, 0, 0, 0, 0], timed: 0, p50: 0, p90: 0, max: 0, limitMs: null, lastFailAt: null, recordsOk: false, ...over,
+})
+
+test('where only failures are recorded, a hook failing in the last 24 hours keeps failing; one that stopped is quiet', () => {
+  const hook = { event: 'UserPromptSubmit', matcher: '', off: false, command: 'sync', timeout: 20 }
+  const timeout = run({ at: 9, event: 'UserPromptSubmit', result: 'timeout', exit: undefined, ms: 20031, limitMs: 20000 })
+  const o = (stats: HookStat[], runs: RecordedRun[] = [timeout]) => ({ activity: alive, runs, stats })
+  const often = whyOutside('claude', hook, o([week({ runs: 46, fails: 46, timeouts: 46, fails24: 5, chats: 16, days: [9, 0, 7, 2, 18, 5, 5] })]))
+  assert.equal(often.verdict, 'failing')
+  assert.equal(often.reason?.check.key, 'often')
+  // Failed days ago, nothing since: not "failing", only told.
+  const before = whyOutside('claude', hook, o([week({ fails: 3, timeouts: 3, chats: 2, days: [3, 0, 0, 0, 0, 0, 0] })]))
+  assert.notEqual(before.verdict, 'failing')
+  assert.ok(before.steps.some(s => s.check.key === 'week'))
+  // No failure on record at all: Claude Code records no runs that went well here, so none to count.
+  assert.equal(whyOutside('claude', hook, o([], [])).steps.at(-1)?.check.key, 'quiet')
+})
+
+test('the other hooks at the same moment say whether it is this hook or Claude Code', () => {
+  const hook = { event: 'UserPromptSubmit', matcher: '', off: false, command: 'sync' }
+  const other = { event: 'UserPromptSubmit', matcher: '', off: false, command: 'watch' }
+  const stats = [week({ fails: 4, fails24: 2, chats: 2 })]
+  const alone = peersOf(hook, [hook, other], stats)
+  assert.deepEqual(alone, { others: 1, failing: 0 })
+  const why = whyOutside('claude', hook, { activity: alive, runs: [], stats, peers: alone })
+  assert.deepEqual(why.steps.find(s => s.check.key === 'peers'), { status: 'idle', check: { key: 'peers', event: 'UserPromptSubmit', others: 1, failing: 0 } })
+  // Every other hook failed too: worth a look at Claude Code or this computer.
+  const together = peersOf(hook, [hook, other], [...stats, week({ command: 'watch', fails: 2 })])
+  assert.equal(whyOutside('claude', hook, { activity: alive, runs: [], stats, peers: together }).steps.find(s => s.check.key === 'peers')?.status, 'warn')
+  // An async hook or a switched-off one does not count as another hook that runs there.
+  assert.equal(peersOf(hook, [hook, { ...other, async: true }, { ...other, off: true }], stats).others, 0)
+})
+
+test('a hook whose slow runs take most of its limit is worth a look before it is cut', () => {
+  const hook = { event: 'SessionStart', matcher: '', off: false, command: 'sync', timeout: 20 }
+  const ok = run({ at: 9, event: 'SessionStart', ms: 375 })
+  const stats = [week({ event: 'SessionStart', recordsOk: true, runs: 62, ok: 62, timed: 62, p50: 375, p90: 13111, max: 17732 })]
+  const why = whyOutside('claude', hook, { activity: alive, runs: [ok], stats })
+  assert.equal(why.verdict, 'warn')
+  assert.deepEqual(why.reason?.check, { key: 'took', max: 17732, limitMs: 20000, timed: 62, near: true, p50: 375, p90: 13111 })
+  // Far from the limit: only told how long it takes.
+  const quick = whyOutside('claude', hook, { activity: alive, runs: [ok], stats: [week({ ...stats[0], p90: 900, max: 1200 })] })
+  assert.equal(quick.verdict, 'working')
+  // A command put in with hoochi that took most of its 30 s.
+  const cmd = item({ event: 'Stop', kind: 'command', command: 'npm test' })
+  const slow = whyRule('claude', cmd, ctx({}, { runs: { i: { runs: 1, fails: 0, last: { at: 9, exit: 0, ms: 25_000 } } } }))
+  assert.equal(slow.reason?.check.key, 'took')
+})
+
+test("an async hook leaves no record, and a hook's week adds up its command and its status line", () => {
+  const hook = { event: 'UserPromptSubmit', matcher: '', off: false, command: 'sync --background', async: true }
+  assert.equal(whyOutside('claude', hook, { activity: alive, runs: [], stats: [] }).steps.at(-1)?.check.key, 'async')
+  const both = { event: 'Stop', matcher: '', off: false, command: 'sync', status: 'Syncing…' }
+  const w = weekOf(both, [week({ event: 'Stop', fails: 2, days: [0, 0, 0, 0, 0, 1, 1] }), week({ event: 'Stop', command: 'Syncing…', fails: 1, days: [0, 0, 0, 0, 0, 0, 1] })])
+  assert.equal(w?.fails, 3)
+  assert.deepEqual(w?.days, [0, 0, 0, 0, 0, 1, 2])
+  assert.equal(limitOf(both, w), 600_000)
+  assert.equal(limitOf({ ...both, event: 'UserPromptSubmit' }), 30_000)
 })

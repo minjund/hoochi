@@ -2596,6 +2596,75 @@ button.hw-existing-text:hover b {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.hw-why-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hw-why-copy {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.hw-rl-tag[data-hot] {
+  color: var(--hw-bad);
+  background: var(--hw-bad-tint);
+}
+/* A hook's last 7 days: the numbers, then a bar for each day's failures. */
+.hw-week {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hw-line);
+}
+.hw-week h5 {
+  padding-top: 6px;
+}
+.hw-week-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13px;
+  color: var(--hw-soft);
+}
+.hw-week-nums b {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--hw-ink, inherit);
+  font-variant-numeric: tabular-nums;
+}
+.hw-week-nums [data-hot] b {
+  color: var(--hw-bad);
+}
+.hw-week-bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  align-items: end;
+  height: 64px;
+}
+.hw-week-bars span {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: end;
+  height: 100%;
+  text-align: center;
+}
+.hw-week-bars i {
+  display: block;
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--hw-line);
+}
+.hw-week-bars i[data-n] {
+  background: var(--hw-bad);
+}
+.hw-week-bars small {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--hw-soft);
+  font-variant-numeric: tabular-nums;
+}
 .hw-hook-switch {
   display: flex;
   flex-wrap: wrap;

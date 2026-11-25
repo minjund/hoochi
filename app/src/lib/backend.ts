@@ -3,6 +3,7 @@
 // localStorage so the UI can be worked on without the app.
 
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import type { HookStat } from './why.ts'
 
 import {
   emptyAgent,
@@ -337,6 +338,8 @@ export type ExistingHook = {
   timeout?: number | null
   /** a line about it: the skill's description, or the first comment of its script */
   about?: string
+  /** Claude Code does not wait for it, and records none of its runs */
+  async?: boolean
   /** the file it is written in (a settings file, a plugin's folder, Codex's hooks.json) */
   file?: string
   /** exactly as written (its command, or empty), and the line Claude Code shows while it runs */
@@ -363,11 +366,20 @@ export type HookRun = {
   ms?: number
   limitMs?: number
   out?: string
+  /** the chat's Claude Code version */
+  version?: string
 }
 
-export async function hookRuns(): Promise<HookRun[]> {
-  if (inApp) return invoke('hook_runs')
-  if (!browserFlags.demo) return []
+export type { HookStat } from './why.ts'
+/** What Claude Code recorded lately: the runs of the last 3 days, and each hook's last 7 days in numbers. */
+export type HookRecords = { runs: HookRun[]; stats: HookStat[] }
+
+export async function hookRuns(): Promise<HookRecords> {
+  if (inApp) {
+    const got = await invoke<HookRecords | HookRun[]>('hook_runs')
+    return Array.isArray(got) ? { runs: got, stats: [] } : got
+  }
+  if (!browserFlags.demo) return { runs: [], stats: [] }
   const now = Date.now()
   const run = (ago: number, event: string, command: string, extra: Partial<HookRun> = {}): HookRun => ({
     at: now - ago,
@@ -381,15 +393,28 @@ export async function hookRuns(): Promise<HookRun[]> {
     ms: 40,
     ...extra,
   })
-  return [
-    run(30_000, 'Stop', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/memory.mjs" Stop', {
+  const memory = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/memory.mjs" Stop'
+  const notes = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/notes.mjs" SessionStart'
+  const pet = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/Desk Pet.mjs" PreToolUse'
+  const stat = (event: string, command: string, w: Partial<HookStat>): HookStat => ({
+    event, command, runs: 0, ok: 0, fails: 0, timeouts: 0, fails24: 0, chats: 0, allChats: 1,
+    days: [0, 0, 0, 0, 0, 0, 0], timed: 0, p50: 0, p90: 0, max: 0, limitMs: null, lastFailAt: null,
+    version: '2.1.326', recordsOk: true, ...w,
+  })
+  const stats = [
+    stat('Stop', memory, { runs: 41, ok: 29, fails: 12, fails24: 4, chats: 5, allChats: 9, days: [1, 0, 2, 3, 0, 2, 4], timed: 41, p50: 220, p90: 900, max: 1800, lastFailAt: now - 30_000 }),
+    stat('SessionStart', notes, { runs: 18, ok: 15, fails: 3, timeouts: 3, fails24: 1, chats: 3, allChats: 12, days: [0, 1, 0, 0, 1, 0, 1], timed: 15, p50: 2400, p90: 21_000, max: 27_500, limitMs: 30_000, lastFailAt: now - 600_000 }),
+    stat('PreToolUse', pet, { runs: 300, ok: 300, allChats: 14, timed: 300, p50: 40, p90: 90, max: 210 }),
+  ]
+  const runs = [
+    run(30_000, 'Stop', memory, {
       result: 'error',
       exit: 1,
       out: 'Error: connect ECONNREFUSED 127.0.0.1:8484',
     }),
-    run(40_000, 'PreToolUse', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/Desk Pet.mjs" PreToolUse', { on: 'Bash' }),
-    run(3_600_000, 'Stop', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/memory.mjs" Stop'),
-    run(600_000, 'SessionStart', 'node "${CLAUDE_PLUGIN_ROOT}/hooks/notes.mjs" SessionStart', {
+    run(40_000, 'PreToolUse', pet, { on: 'Bash' }),
+    run(3_600_000, 'Stop', memory),
+    run(600_000, 'SessionStart', notes, {
       on: 'startup',
       result: 'timeout',
       exit: undefined,
@@ -397,6 +422,7 @@ export async function hookRuns(): Promise<HookRun[]> {
       limitMs: 30_000,
     }),
   ]
+  return { runs, stats }
 }
 
 export async function existingHooks(project: string): Promise<ExistingHooks> {

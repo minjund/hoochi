@@ -105,7 +105,10 @@ async fn existing_hooks(project: String) -> Value {
 /// What Claude Code recorded of the hooks it ran lately, newest first.
 #[tauri::command]
 async fn hook_runs() -> Value {
-    hookruns::hook_runs()
+    // The first read goes through a week of transcripts: off the window's thread.
+    tauri::async_runtime::spawn_blocking(hookruns::hook_runs)
+        .await
+        .unwrap_or_else(|_| serde_json::json!({ "runs": [], "stats": [] }))
 }
 
 /// Switches one existing hook off or back on; returns the fresh list.

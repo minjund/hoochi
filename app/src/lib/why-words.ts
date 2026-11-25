@@ -33,6 +33,15 @@ export const WHY_UI = {
     outsideHint: 'From your settings files and plugins. How their runs ended comes from what Claude Code recorded.',
     outsideNone: 'None at this place.',
     ruleOf: 'Put in with hoochi',
+    week: 'Last 7 days',
+    wFails: 'failed',
+    wTimeouts: 'timed out',
+    wChats: 'chats',
+    w24: 'last 24 h',
+    weekTag: (n: number) => `${n} ${n === 1 ? 'failure' : 'failures'} in 7 days`,
+    copy: 'Copy diagnosis',
+    copied: 'Copied',
+    copyHint: 'Every check, the last 7 days and the latest failures as text, to paste for whoever looks after this hook.',
   },
   ko: {
     checks: '왜 돌고, 왜 안 도나',
@@ -46,6 +55,15 @@ export const WHY_UI = {
     outsideHint: '설정 파일과 플러그인에 있는 훅이에요. 어떻게 끝났는지는 Claude Code가 남긴 실행 기록에서 읽어요.',
     outsideNone: '이 자리에는 없어요.',
     ruleOf: '후치로 넣은 것',
+    week: '최근 7일',
+    wFails: '실패',
+    wTimeouts: '시간 초과',
+    wChats: '대화',
+    w24: '지난 24시간',
+    weekTag: (n: number) => `7일 ${n}번 실패`,
+    copy: '진단 복사',
+    copied: '복사했어요',
+    copyHint: '확인한 것, 최근 7일, 최근 실패를 글로 복사해요. 이 훅을 맡은 사람에게 그대로 붙여 보내면 돼요.',
   },
   ja: {
     checks: '動く理由・動かない理由',
@@ -59,6 +77,15 @@ export const WHY_UI = {
     outsideHint: '設定ファイルとプラグインにあるフックです。どう終わったかは Claude Code が残した実行記録から読みます。',
     outsideNone: 'この場所にはありません。',
     ruleOf: 'hoochi で入れたもの',
+    week: '直近 7 日',
+    wFails: '失敗',
+    wTimeouts: 'タイムアウト',
+    wChats: '会話',
+    w24: '直近 24 時間',
+    weekTag: (n: number) => `7 日で ${n} 回失敗`,
+    copy: '診断をコピー',
+    copied: 'コピーしました',
+    copyHint: '確認したこと、直近 7 日、最近の失敗をテキストでコピーします。このフックの担当者にそのまま送れます。',
   },
   zh: {
     checks: '为什么运行，为什么不运行',
@@ -72,6 +99,15 @@ export const WHY_UI = {
     outsideHint: '来自设置文件和插件的钩子。运行结果读取自 Claude Code 留下的记录。',
     outsideNone: '这个位置没有。',
     ruleOf: '用 hoochi 放进去的',
+    week: '最近 7 天',
+    wFails: '失败',
+    wTimeouts: '超时',
+    wChats: '对话',
+    w24: '最近 24 小时',
+    weekTag: (n: number) => `7 天失败 ${n} 次`,
+    copy: '复制诊断',
+    copied: '已复制',
+    copyHint: '把检查项、最近 7 天和最近的失败复制成文字,直接发给负责这个钩子的人。',
   },
 } satisfies Record<Lang, unknown>
 
@@ -127,6 +163,20 @@ function en(c: Check, h: WhyHelp): string {
     case 'no-record': return "Claude Code's records of the last 3 days show no run of it (it does not record every kind of hook, async ones among them)."
     case 'codex-no-record': return 'Codex keeps no record of the hooks it runs.'
     case 'failed-before': return `It failed ${h.ago(c.run.at)} · ${c.fails} of ${c.runs} runs.`
+    case 'week': return `In 7 days it failed ${c.w.fails} ${c.w.fails === 1 ? 'time' : 'times'}${c.w.timeouts ? ` (${c.w.timeouts} timed out)` : ''}, in ${c.w.chats} ${c.w.chats === 1 ? 'chat' : 'chats'}${c.w.fails24 ? `, ${c.w.fails24} in the last 24 hours` : ', none in the last 24 hours'}.`
+    case 'often': return `It keeps failing: ${c.w.fails24} ${c.w.fails24 === 1 ? 'time' : 'times'} in the last 24 hours, ${c.w.fails} in 7 days, in ${c.w.chats} ${c.w.chats === 1 ? 'chat' : 'chats'}${c.w.timeouts ? `; ${c.w.timeouts} of them timed out${c.limitMs ? ` (${secs(c.limitMs)} limit)` : ''}` : ''}. Last ${h.ago(c.run.at)}.`
+    case 'peers': return c.failing === 0
+      ? `The ${c.others} other ${c.others === 1 ? 'hook' : 'hooks'} at ${c.event} failed 0 times in those days: it is this hook, not Claude Code or this computer.`
+      : c.failing >= c.others
+        ? `All ${c.others} other ${c.others === 1 ? 'hook' : 'hooks'} at ${c.event} failed in those days too: look at Claude Code or this computer first.`
+        : `${c.failing} of the ${c.others} other hooks at ${c.event} failed in those days too.`
+    case 'took': return c.near
+      ? c.p50 !== undefined
+        ? `Slow runs take up to ${secs(c.max)} of its ${secs(c.limitMs)} limit (usually ${secs(c.p50)}): it will be cut some day.`
+        : `Its last run took ${secs(c.max)} of its ${secs(c.limitMs)} limit: it will be cut some day.`
+      : `Usually ${secs(c.p50)}, slow ones ${secs(c.p90)}, at most ${secs(c.max)} (limit ${secs(c.limitMs)}, over ${c.timed} runs).`
+    case 'async': return "Claude Code doesn't wait for it (async), and keeps no record of its runs."
+    case 'quiet': return `No failure on record in 7 days. (At ${c.event} Claude Code records no runs that went well, so there is no count of them.)`
   }
 }
 
@@ -170,6 +220,20 @@ function ko(c: Check, h: WhyHelp): string {
     case 'no-record': return '최근 3일 Claude Code 기록에 실행한 흔적이 없어요 (비동기 훅처럼 기록을 남기지 않는 훅도 있어요).'
     case 'codex-no-record': return 'Codex는 훅을 실행한 결과를 남기지 않아요.'
     case 'failed-before': return `${h.ago(c.run.at)} 실패한 적이 있어요 · ${c.runs}번 중 ${c.fails}번.`
+    case 'week': return `최근 7일 ${c.w.fails}번 실패${c.w.timeouts ? `(시간 초과 ${c.w.timeouts}번)` : ''}, 대화 ${c.w.chats}곳${c.w.fails24 ? ` · 지난 24시간 ${c.w.fails24}번` : ' · 지난 24시간에는 없음'}.`
+    case 'often': return `계속 실패해요: 지난 24시간 ${c.w.fails24}번, 7일 ${c.w.fails}번, 대화 ${c.w.chats}곳${c.w.timeouts ? `. 그중 ${c.w.timeouts}번은 시간 초과${c.limitMs ? `(한도 ${secs(c.limitMs)})` : ''}` : ''}. 마지막은 ${h.ago(c.run.at)}.`
+    case 'peers': return c.failing === 0
+      ? `같은 순간(${c.event})에 도는 다른 훅 ${c.others}개는 같은 기간 실패 0번이에요. Claude Code나 이 컴퓨터가 아니라 이 훅의 문제예요.`
+      : c.failing >= c.others
+        ? `같은 순간(${c.event})의 다른 훅 ${c.others}개도 모두 같은 기간 실패했어요. 이 훅보다 Claude Code나 이 컴퓨터 쪽을 먼저 보세요.`
+        : `같은 순간(${c.event})의 다른 훅 ${c.others}개 중 ${c.failing}개도 같은 기간 실패했어요.`
+    case 'took': return c.near
+      ? c.p50 !== undefined
+        ? `느릴 때 한도 ${secs(c.limitMs)} 중 ${secs(c.max)}까지 걸려요(보통 ${secs(c.p50)}). 언젠가 시간 초과로 끊겨요.`
+        : `마지막 실행이 한도 ${secs(c.limitMs)} 중 ${secs(c.max)} 걸렸어요. 언젠가 시간 초과로 끊겨요.`
+      : `보통 ${secs(c.p50)}, 느릴 때 ${secs(c.p90)}, 가장 길게 ${secs(c.max)} 걸려요(한도 ${secs(c.limitMs)}, ${c.timed}번 기준).`
+    case 'async': return 'Claude Code가 기다리지 않는 훅(async)이라 실행 기록이 남지 않아요.'
+    case 'quiet': return `7일 동안 실패 기록이 없어요. (${c.event}에서는 Claude Code가 성공한 실행을 기록하지 않아 몇 번 돌았는지는 알 수 없어요.)`
   }
 }
 
@@ -211,6 +275,20 @@ function ja(c: Check, h: WhyHelp): string {
     case 'no-record': return 'ここ 3 日の Claude Code の記録に実行の跡がありません（非同期のフックなど、記録が残らないものもあります）。'
     case 'codex-no-record': return 'Codex はフックを実行した結果を残しません。'
     case 'failed-before': return `${h.ago(c.run.at)}に失敗したことがあります · ${c.runs} 回中 ${c.fails} 回。`
+    case 'week': return `直近 7 日で ${c.w.fails} 回失敗${c.w.timeouts ? `(うちタイムアウト ${c.w.timeouts} 回)` : ''}、会話 ${c.w.chats} 件${c.w.fails24 ? ` · 直近 24 時間で ${c.w.fails24} 回` : ' · 直近 24 時間はなし'}。`
+    case 'often': return `失敗が続いています: 直近 24 時間で ${c.w.fails24} 回、7 日で ${c.w.fails} 回、会話 ${c.w.chats} 件${c.w.timeouts ? `。うち ${c.w.timeouts} 回はタイムアウト${c.limitMs ? `(制限 ${secs(c.limitMs)})` : ''}` : ''}。最後は${h.ago(c.run.at)}。`
+    case 'peers': return c.failing === 0
+      ? `同じタイミング(${c.event})で動くほかのフック ${c.others} 件は同じ期間に失敗 0 回です。Claude Code やこのコンピューターではなく、このフックの問題です。`
+      : c.failing >= c.others
+        ? `同じタイミング(${c.event})のほかのフック ${c.others} 件もすべて同じ期間に失敗しています。このフックより先に Claude Code やこのコンピューターを見てください。`
+        : `同じタイミング(${c.event})のほかのフック ${c.others} 件のうち ${c.failing} 件も同じ期間に失敗しています。`
+    case 'took': return c.near
+      ? c.p50 !== undefined
+        ? `遅いときは制限 ${secs(c.limitMs)} のうち ${secs(c.max)} かかります(ふだんは ${secs(c.p50)})。いつかタイムアウトで切られます。`
+        : `前回の実行は制限 ${secs(c.limitMs)} のうち ${secs(c.max)} かかりました。いつかタイムアウトで切られます。`
+      : `ふだん ${secs(c.p50)}、遅いとき ${secs(c.p90)}、最長 ${secs(c.max)}(制限 ${secs(c.limitMs)}、${c.timed} 回分)。`
+    case 'async': return 'Claude Code が待たないフック(async)なので、実行記録は残りません。'
+    case 'quiet': return `7 日間、失敗の記録はありません。(${c.event} では Claude Code がうまくいった実行を記録しないので、何回動いたかはわかりません。)`
   }
 }
 
@@ -252,5 +330,19 @@ function zh(c: Check, h: WhyHelp): string {
     case 'no-record': return '最近 3 天的 Claude Code 记录里没有它运行的痕迹（异步钩子等有些钩子不会留下记录）。'
     case 'codex-no-record': return 'Codex 不会留下运行钩子的结果。'
     case 'failed-before': return `${h.ago(c.run.at)}失败过 · ${c.runs} 次中 ${c.fails} 次。`
+    case 'week': return `最近 7 天失败 ${c.w.fails} 次${c.w.timeouts ? `(其中超时 ${c.w.timeouts} 次)` : ''},涉及 ${c.w.chats} 个对话${c.w.fails24 ? ` · 最近 24 小时 ${c.w.fails24} 次` : ' · 最近 24 小时没有'}。`
+    case 'often': return `一直在失败:最近 24 小时 ${c.w.fails24} 次,7 天 ${c.w.fails} 次,涉及 ${c.w.chats} 个对话${c.w.timeouts ? `。其中 ${c.w.timeouts} 次超时${c.limitMs ? `(限制 ${secs(c.limitMs)})` : ''}` : ''}。最近一次在${h.ago(c.run.at)}。`
+    case 'peers': return c.failing === 0
+      ? `同一时刻(${c.event})运行的其他 ${c.others} 个钩子在这段时间失败 0 次。问题在这个钩子,不在 Claude Code 或这台电脑。`
+      : c.failing >= c.others
+        ? `同一时刻(${c.event})的其他 ${c.others} 个钩子在这段时间也都失败了。先查看 Claude Code 或这台电脑。`
+        : `同一时刻(${c.event})的其他 ${c.others} 个钩子中有 ${c.failing} 个在这段时间也失败了。`
+    case 'took': return c.near
+      ? c.p50 !== undefined
+        ? `慢的时候要用掉限制 ${secs(c.limitMs)} 中的 ${secs(c.max)}(平常 ${secs(c.p50)})。迟早会因超时被中断。`
+        : `上次运行用掉了限制 ${secs(c.limitMs)} 中的 ${secs(c.max)}。迟早会因超时被中断。`
+      : `平常 ${secs(c.p50)},慢的时候 ${secs(c.p90)},最长 ${secs(c.max)}(限制 ${secs(c.limitMs)},按 ${c.timed} 次计)。`
+    case 'async': return 'Claude Code 不等待这个钩子(async),所以不会留下运行记录。'
+    case 'quiet': return `7 天内没有失败记录。(在 ${c.event},Claude Code 不记录成功的运行,所以不知道运行了几次。)`
   }
 }

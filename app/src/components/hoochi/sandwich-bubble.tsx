@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 export type SandwichBubbleProps = {
-  activeCount: number
+  /** how many hooks are not working now (stuck or failing): the red number, none when all work */
+  trouble: number
+  /** what the bubble is, in the window's language: for screen readers, and on hover */
+  label: string
+  title: string
   pulseKey: number
   /** the color of the terminal you are chatting in; changes when you move to another one */
   chatColor?: string
@@ -17,7 +21,9 @@ export type SandwichBubbleProps = {
 
 /** The floating, collapsed hoochi window. The host supplies the native window drag. */
 export function SandwichBubble({
-  activeCount,
+  trouble,
+  label,
+  title,
   pulseKey,
   chatColor,
   chatName,
@@ -40,7 +46,7 @@ export function SandwichBubble({
     return () => window.clearTimeout(timeout)
   }, [pulseKey])
 
-  const count = Number.isFinite(activeCount) ? Math.max(0, Math.floor(activeCount)) : 0
+  const count = Number.isFinite(trouble) ? Math.max(0, Math.floor(trouble)) : 0
 
   return (
     <>
@@ -51,8 +57,8 @@ export function SandwichBubble({
       <button
         type="button"
         className="ui-swb"
-        aria-label={count ? `Open hoochi, ${count} enabled items` : 'Open hoochi'}
-        title="Open hoochi · drag to move"
+        aria-label={label}
+        title={title}
         data-glowing={glowing ? '' : undefined}
         onPointerDown={event => {
           if (!event.isPrimary || event.button !== 0 || pointer.current) return
@@ -217,8 +223,8 @@ const css = /* css */ `
   padding: 0 5px;
   border: 2px solid var(--ui-swb-surface);
   border-radius: 999px;
-  background: var(--ui-swb-ink);
-  color: var(--ui-swb-surface);
+  background: #d92d20;
+  color: #ffffff;
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;

@@ -217,6 +217,11 @@ export function RuleList({
   trouble.sort((a, b) => rank(a.why) - rank(b.why))
   const TROUBLE_SHOWN = 4
 
+  /** How often an outside hook failed in the last 7 days, from its checks. */
+  const weekFails = (why: Why) => {
+    const s = why.steps.find(x => x.check.key === 'week' || x.check.key === 'often')
+    return s && (s.check.key === 'week' || s.check.key === 'often') ? s.check.w.fails : 0
+  }
   const outsideRow = (o: OutsideRow) => {
     const { agent, hook, why } = o
     const ran = why.steps.find(s => s.check.key === 'ran' || s.check.key === 'blocked-on-purpose')
@@ -233,6 +238,11 @@ export function RuleList({
             <span>{momentName(hook.event, agent)}</span>
             {hook.matcher && <span className="hw-rl-tag">{hook.matcher}</span>}
             <span className="hw-rl-tag">{t.existingFrom(hook.from)}</span>
+            {!hook.off && weekFails(why) > 0 && (
+              <span className="hw-rl-tag" data-hot>
+                {w.weekTag(weekFails(why))}
+              </span>
+            )}
             {hook.off ? (
               <span className="hw-rl-tag">{t.tagOff}</span>
             ) : isTrouble(why) ? (

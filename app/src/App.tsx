@@ -13,7 +13,8 @@ import { ItemCard, SlotEditor } from './components/hoochi/slot-editor'
 import { ChatView, type Exchange } from './components/hoochi/chat-view'
 import { RuleList, type OutsideRow } from './components/hoochi/rule-list'
 import { WhyPanel } from './components/hoochi/why-panel'
-import { isTrouble, whyOutside } from './lib/why'
+import { isTrouble, limitOf, peersOf, runsOf, weekOf, whyOutside, COMMAND_LIMIT_MS } from './lib/why'
+import { reportOf } from './lib/report'
 import { VERDICT, WHY_UI, whyWords, type WhyHelp } from './lib/why-words'
 import { filterRows, rowsOf, type Row, type View } from './lib/rules-view'
 import { applyEdit, allTargets, revertEdit, targetKey as rowKey, touched, type Edit, type Target as Held } from './lib/edit'
@@ -74,7 +75,7 @@ import {
   type UpdateState,
   type ExistingHook,
   type ExistingHooks,
-  type HookRun,
+  type HookRecords,
   type Running,
   type Skill,
 } from './lib/backend'
@@ -122,6 +123,8 @@ const POLL_MS = 800
 const SAVE_DELAY_MS = 350
 const RUNNING_MS = 4000
 const EXISTING_MS = 15000
+/** How often the folded bubble reads again, for its number. */
+const BUBBLE_MS = 60000
 const UPDATE_MS = 30 * 60_000
 const UPDATE_MIN_GAP_MS = 5 * 60_000
 /** A hover card lists this many hooks of a kind, then how many more (the editor lists them all). */
@@ -324,7 +327,7 @@ export default function App() {
   const [running, setRunning] = useState<Running[]>([])
   const [existing, setExisting] = useState<ExistingHooks>({ claude: [], codex: [] })
   // What Claude Code recorded of the hooks it ran lately, to say how outside hooks are doing.
-  const [recorded, setRecorded] = useState<HookRun[]>([])
+  const [recorded, setRecorded] = useState<HookRecords>({ runs: [], stats: [] })
   const [notice, setNotice] = useState<Notice<Config> | null>(null)
   const [modal, setModal] = useState<Modal>(null)
   // A change to many items at once waits here for a yes (askFlow in machines.ts).
@@ -425,12 +428,13 @@ export default function App() {
     }
   }, [expanded, visible])
 
+  // Read folded too: the bubble's number counts Codex rules while Codex is not connected.
   useEffect(() => {
-    if (expanded)
+    if (expanded || visible)
       void codexStatus()
         .then(setCodex)
         .catch(() => undefined)
-  }, [expanded, agent])
+  }, [expanded, visible, agent])
   /** Connect or disconnect Codex: one press at a time, and what went wrong is said in place. */
   const codexDo = (run: () => Promise<CodexStatus>, after: CodexFlow) => {
     setCodexFlow({ step: 'busy' })
@@ -1147,11 +1151,56 @@ export default function App() {
     }
   }
   const outsideRows: OutsideRow[] = (['claude', 'codex'] as const).flatMap(who =>
-    existing[who].map(hook => ({ agent: who, hook, why: whyOutside(who, hook, { activity: activity[who], runs: recorded }) })),
+    existing[who].map(hook => ({
+      agent: who,
+      hook,
+      why: whyOutside(who, hook, {
+        activity: activity[who],
+        runs: recorded.runs,
+        stats: recorded.stats,
+        peers: who === 'claude' ? peersOf(hook, existing.claude, recorded.stats) : undefined,
+      }),
+    })),
   )
   const troubleCount =
     ruleRows.filter(r => r.problem).length + outsideRows.filter(o => !o.hook.off && isTrouble(o.why)).length
   const openHook = hookOpen ? outsideRows.find(o => o.agent === hookOpen.agent && o.hook.id === hookOpen.id) : undefined
+  const appVersion = 'info' in update ? update.info.current : undefined
+  const openWeek = openHook && openHook.agent === 'claude' ? weekOf(openHook.hook, recorded.stats) : undefined
+  /** The diagnosis of the hook in the popup, as text to paste for whoever looks after it. */
+  const hookReport = (o: OutsideRow) => () =>
+    reportOf({
+      lang,
+      agent: o.agent,
+      name: o.hook.origin?.name ?? o.hook.name,
+      where: [t.existingFrom(o.hook.from), o.hook.plugin, o.hook.file].filter(Boolean).join(' · '),
+      event: o.hook.event,
+      matcher: o.hook.matcher,
+      limitMs: limitOf(o.hook, openWeek),
+      async: o.hook.async,
+      body: o.hook.body,
+      why: o.why,
+      week: openWeek,
+      runs: o.agent === 'claude' ? runsOf(o.hook, recorded.runs) : [],
+      help: whyHelp,
+      app: appVersion,
+      now: Date.now(),
+    })
+  const ruleReport = (r: Row) => () =>
+    reportOf({
+      lang,
+      agent: r.agent,
+      name: itemLabel(r.item),
+      where: `hoochi · ${placeWords(r)}`,
+      event: r.item.event,
+      matcher: r.item.tools || undefined,
+      limitMs: r.item.kind === 'command' ? COMMAND_LIMIT_MS : undefined,
+      body: r.item.kind === 'command' ? r.item.command : r.item.text,
+      why: r.why,
+      help: whyHelp,
+      app: appVersion,
+      now: Date.now(),
+    })
   const switchHook = (hook: ExistingHook, on: boolean) =>
     void setExistingHook(existingProject, hook.id, on)
       .then(setExisting)
@@ -1336,36 +1385,38 @@ export default function App() {
 
   // Hooks already set up outside hoochi at this place, read again now and then.
   const existingProject = scope === 'global' ? '' : scope === 'project' ? projectKey : terminalProject
+  // Folded into the bubble too, less often: its number counts the hooks not working.
   useEffect(() => {
-    if (!expanded || !visible) return
+    if (!visible) return
     let alive = true
     const read = () =>
       void existingHooks(existingProject)
         .then(found => alive && setExisting(found))
         .catch(() => undefined)
     read()
-    const id = window.setInterval(read, EXISTING_MS)
+    const id = window.setInterval(read, expanded ? EXISTING_MS : BUBBLE_MS)
     return () => {
       alive = false
       window.clearInterval(id)
     }
   }, [expanded, visible, existingProject])
-  // Claude Code's records of the hooks it ran, while the Lifecycle page or a hook's popup is open.
-  const readsRuns = expanded && visible && ((page === 'moments' && !selected) || modal === 'hook')
+  // Claude Code's records of the hooks it ran: often while the Lifecycle page or a hook's popup is
+  // open, once a minute otherwise (the bubble's number needs them too).
+  const readsRuns = expanded && visible && ((page === 'moments' && !selected) || modal === 'hook' || modal === 'outside')
   useEffect(() => {
-    if (!readsRuns) return
+    if (!visible) return
     let alive = true
     const read = () =>
       void hookRuns()
-        .then(runs => alive && setRecorded(runs))
+        .then(got => alive && setRecorded(got))
         .catch(() => undefined)
     read()
-    const id = window.setInterval(read, EXISTING_MS)
+    const id = window.setInterval(read, readsRuns ? EXISTING_MS : BUBBLE_MS)
     return () => {
       alive = false
       window.clearInterval(id)
     }
-  }, [readsRuns])
+  }, [readsRuns, visible])
 
   const activeCount = useMemo(() => {
     const all = (a: typeof config.claude) => [
@@ -1558,7 +1609,9 @@ export default function App() {
     return (
       <div className="hw-bubble-host" data-view="bubble" data-follow={following}>
         <SandwichBubble
-          activeCount={activeCount}
+          trouble={troubleCount}
+          label={troubleCount > 0 ? t.bubbleTrouble(troubleCount) : t.bubbleOk}
+          title={`${troubleCount > 0 ? t.bubbleTrouble(troubleCount) : t.bubbleOk} · ${t.bubbleDrag}`}
           pulseKey={Math.max(activity.claude.lastAt, activity.codex.lastAt)}
           chatColor={latest ? colorOf(latest.place.terminal) : undefined}
           chatName={latest ? chatName(latest.place.terminal, latest.place.project, latest.agent) : undefined}
@@ -2004,7 +2057,7 @@ export default function App() {
             </div>
             {inModal}
             <div className="hw-modal-list">
-              <WhyPanel lang={lang} why={openRow.why} help={whyHelp} />
+              <WhyPanel lang={lang} why={openRow.why} help={whyHelp} report={ruleReport(openRow)} />
               <ItemCard
                 key={rowKey(openRow)}
                 item={openRow.item}
@@ -2090,7 +2143,7 @@ export default function App() {
                   onChange={e => switchHook(openHook.hook, e.currentTarget.checked)}
                 />
               </div>
-              <WhyPanel lang={lang} why={openHook.why} help={whyHelp} />
+              <WhyPanel lang={lang} why={openHook.why} help={whyHelp} week={openWeek} report={hookReport(openHook)} />
               {openHook.hook.body && (
                 <section className="hw-why">
                   <h4>{WHY_UI[lang].runs}</h4>

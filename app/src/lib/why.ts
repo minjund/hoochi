@@ -60,6 +60,18 @@ export type Check =
   /** Codex does not record the hooks it runs */
   | { key: 'codex-no-record' }
   | { key: 'failed-before'; run: Run; fails: number; runs: number }
+  /** an outside hook's last 7 days, from what Claude Code recorded */
+  | { key: 'week'; w: Week }
+  /** it keeps failing: at a moment where Claude Code records failures only, it failed in the last 24 hours */
+  | { key: 'often'; w: Week; run: Run; limitMs?: number }
+  /** the other hooks at the same moment, over the same days: none failed (it is this hook), or all did (Claude Code or this computer) */
+  | { key: 'peers'; event: string; others: number; failing: number }
+  /** how long its runs took, against its time limit; near: close enough to be cut some day */
+  | { key: 'took'; p50?: number; p90?: number; max: number; limitMs: number; timed: number; near: boolean }
+  /** Claude Code does not wait for it, and records none of its runs */
+  | { key: 'async' }
+  /** no failure on record, and Claude Code records no runs that went well at this moment */
+  | { key: 'quiet'; event: string }
 
 export type Step = { status: Status; check: Check }
 
@@ -68,7 +80,42 @@ export type Verdict = 'off' | 'stuck' | 'failing' | 'warn' | 'working' | 'waitin
 
 export type Why = { verdict: Verdict; steps: Step[]; /** the step that says why */ reason?: Step }
 
-const RESULT_KEYS = new Set<Check['key']>(['not-found', 'exit', 'broken', 'timeout', 'cancelled'])
+const RESULT_KEYS = new Set<Check['key']>(['not-found', 'exit', 'broken', 'timeout', 'cancelled', 'often'])
+
+/** A hook's last 7 days as Claude Code recorded them (HookStat in backend.ts). */
+export type Week = {
+  /** runs on record, and of them those that went well (only where such runs are recorded) */
+  runs: number
+  ok: number
+  /** ended with another code than 0 or 2, or timed out */
+  fails: number
+  timeouts: number
+  fails24: number
+  /** chats it failed in, and chats it has any record in */
+  chats: number
+  allChats: number
+  /** failures on each of the last 7 days, oldest first (the last one is the last 24 hours) */
+  days: number[]
+  /** runs whose time is known (timeouts and cancels left out), and how long they took in ms */
+  timed: number
+  p50: number
+  p90: number
+  max: number
+  limitMs?: number | null
+  lastFailAt?: number | null
+  /** the Claude Code version of the last failure */
+  version?: string
+  /** whether Claude Code records the runs that went well at this moment */
+  recordsOk: boolean
+}
+export type HookStat = Week & { event: string; command: string }
+
+/** A time limit counts as near once a run took this share of it. */
+export const NEAR = 0.7
+/** The time limit hoochi gives a command it runs (plugin and Codex hook alike). */
+export const COMMAND_LIMIT_MS = 30_000
+/** Claude Code's time limit for a command hook that sets none. */
+export const defaultLimitMs = (event: string) => (event === 'UserPromptSubmit' ? 30_000 : 600_000)
 
 function verdictOf(steps: Step[], on: boolean): Why {
   if (!on) return { verdict: 'off', steps, reason: steps.find(s => s.check.key === 'off') }
@@ -76,7 +123,7 @@ function verdictOf(steps: Step[], on: boolean): Why {
   if (bad) return { verdict: RESULT_KEYS.has(bad.check.key) ? 'failing' : 'stuck', steps, reason: bad }
   const warn = steps.find(s => s.status === 'warn')
   if (warn) return { verdict: 'warn', steps, reason: warn }
-  const done = steps.some(s => s.status === 'ok' && ['ran', 'put-in', 'reported', 'blocked-on-purpose'].includes(s.check.key))
+  const done = steps.some(s => s.status === 'ok' && ['ran', 'put-in', 'reported', 'blocked-on-purpose', 'quiet', 'week'].includes(s.check.key))
   return { verdict: done ? 'working' : 'waiting', steps }
 }
 
@@ -132,6 +179,13 @@ export function runStep(item: Item, r: ItemRun): Step {
   return { status: 'ok', check: { key: 'ran', run, runs: r.runs } }
 }
 
+/** A command that took most of its time limit: it will be cut some day. */
+function tookStep(max: number | undefined, limitMs: number, timed: number, p50?: number, p90?: number): Step | undefined {
+  if (max === undefined || timed === 0 || max <= 0) return undefined
+  const near = max >= limitMs * NEAR
+  return { status: near ? 'warn' : 'idle', check: { key: 'took', max, limitMs, timed, near, ...(p50 !== undefined ? { p50 } : {}), ...(p90 !== undefined ? { p90 } : {}) } }
+}
+
 export type RuleContext = {
   activity: Activity
   codexOn: boolean
@@ -174,6 +228,10 @@ export function whyRule(agent: Agent, item: Item, o: RuleContext): Why {
   if (runs) {
     steps.push(runStep(item, runs))
     const last = steps[steps.length - 1].check.key
+    if (item.kind === 'command' && last === 'ran') {
+      const took = tookStep(runs.last.ms, COMMAND_LIMIT_MS, 1)
+      if (took?.status === 'warn') steps.push(took)
+    }
     if (runs.fail && runs.fail !== runs.last && last !== 'reported' && item.mode !== 'onFail')
       add('idle', { key: 'failed-before', run: runs.fail, fails: runs.fails, runs: runs.runs })
   } else if (o.lastRun) add('ok', { key: 'put-in', at: o.lastRun, runs: 1 })
@@ -183,7 +241,17 @@ export function whyRule(agent: Agent, item: Item, o: RuleContext): Why {
 }
 
 /** A hook set up outside hoochi, as the steps need it (ExistingHook in backend.ts). */
-export type OutsideHook = { event: string; matcher: string; off: boolean; command?: string; status?: string }
+export type OutsideHook = {
+  event: string
+  matcher: string
+  off: boolean
+  command?: string
+  status?: string
+  /** its time limit in seconds, when it sets one */
+  timeout?: number | null
+  /** Claude Code does not wait for it */
+  async?: boolean
+}
 /** A run Claude Code recorded (HookRun in backend.ts). */
 export type RecordedRun = {
   at: number
@@ -196,6 +264,9 @@ export type RecordedRun = {
   ms?: number
   limitMs?: number
   out?: string
+  /** the folder the chat ran in, and its Claude Code version */
+  cwd?: string
+  version?: string
 }
 
 /** The recorded runs of one outside hook, newest first: by its command, or the line it shows while running. */
@@ -214,11 +285,53 @@ const asRun = (r: RecordedRun): Run => ({
 
 const isFail = (r: RecordedRun) => r.result === 'error' || r.result === 'timeout'
 
+const keysOf = (hook: OutsideHook) => [hook.command, hook.status].filter((k): k is string => !!k && k.trim() !== '')
+
+/** One outside hook's week: the numbers of its command and of the line it shows while running, together. */
+export function weekOf(hook: OutsideHook, stats: readonly HookStat[]): Week | undefined {
+  const keys = keysOf(hook)
+  const mine = stats.filter(s => s.event === hook.event && keys.includes(s.command))
+  if (mine.length === 0) return undefined
+  const sum = (k: 'runs' | 'ok' | 'fails' | 'timeouts' | 'fails24' | 'chats' | 'allChats' | 'timed') =>
+    mine.reduce((n, s) => n + s[k], 0)
+  const most = mine.reduce((a, b) => (b.timed > a.timed ? b : a))
+  const lastFail = mine.reduce<HookStat | undefined>((a, b) => ((b.lastFailAt ?? 0) > (a?.lastFailAt ?? 0) ? b : a), undefined)
+  return {
+    runs: sum('runs'),
+    ok: sum('ok'),
+    fails: sum('fails'),
+    timeouts: sum('timeouts'),
+    fails24: sum('fails24'),
+    chats: sum('chats'),
+    allChats: sum('allChats'),
+    days: mine[0].days.map((_, i) => mine.reduce((n, s) => n + (s.days[i] ?? 0), 0)),
+    timed: sum('timed'),
+    p50: most.p50,
+    p90: most.p90,
+    max: Math.max(...mine.map(s => s.max)),
+    limitMs: Math.max(0, ...mine.map(s => s.limitMs ?? 0)) || null,
+    lastFailAt: lastFail?.lastFailAt ?? null,
+    version: lastFail?.version || undefined,
+    recordsOk: mine.some(s => s.recordsOk),
+  }
+}
+
+/** Its time limit in ms: as it sets it, else as Claude Code recorded it, else Claude Code's default. */
+export const limitOf = (hook: OutsideHook, w?: Week) =>
+  hook.timeout ? hook.timeout * 1000 : w?.limitMs || defaultLimitMs(hook.event)
+
 /** Why a hook set up outside hoochi runs, or does not. */
 export function whyOutside(
   agent: Agent,
   hook: OutsideHook,
-  o: { activity: Activity; runs: readonly RecordedRun[] },
+  o: {
+    activity: Activity
+    runs: readonly RecordedRun[]
+    /** each hook's last 7 days; without them only the recorded runs are looked at */
+    stats?: readonly HookStat[]
+    /** the other hooks at the same moment: how many run there, and how many of them failed in the same days */
+    peers?: { others: number; failing: number }
+  },
 ): Why {
   const steps: Step[] = []
   const add = (status: Status, check: Check) => steps.push({ status, check })
@@ -236,8 +349,18 @@ export function whyOutside(
     else if (came.length > 0) add('warn', { key: 'matcher-miss', matcher: m, came: came.slice(0, 6) })
   }
 
+  const w = agent === 'claude' && o.stats ? weekOf(hook, o.stats) : undefined
+  const limitMs = limitOf(hook, w)
   if (agent === 'codex') add('idle', { key: 'codex-no-record' })
-  else if (mine.length === 0) add('idle', { key: 'no-record' })
+  else if (hook.async && !w) add('idle', { key: 'async' })
+  else if (o.stats && !w?.recordsOk && !hook.async) {
+    // Only failures are on record here: the last recorded run is the last failure, not the last run.
+    const lastFail = mine.find(isFail)
+    if (w && w.fails24 > 0 && lastFail) add('bad', { key: 'often', w, run: asRun(lastFail), limitMs: lastFail.limitMs ?? limitMs })
+    else if (w && w.fails > 0) {
+      add('idle', { key: 'week', w })
+    } else add('idle', { key: 'quiet', event: hook.event })
+  } else if (mine.length === 0) add('idle', { key: 'no-record' })
   else {
     const last = mine[0]
     const run = asRun(last)
@@ -250,8 +373,23 @@ export function whyOutside(
     const fails = mine.filter(isFail)
     if (!isFail(last) && fails.length > 0)
       add('idle', { key: 'failed-before', run: asRun(fails[0]), fails: fails.length, runs: mine.length })
+    if (w && w.fails > 0) add('idle', { key: 'week', w })
+  }
+  if (w && w.timed > 0) {
+    const took = tookStep(w.max, limitMs, w.timed, w.p50, w.p90)
+    if (took) steps.push(took)
+  }
+  if (w && w.fails > 0 && o.peers && o.peers.others > 0) {
+    const all = o.peers.failing >= o.peers.others
+    add(all ? 'warn' : 'idle', { key: 'peers', event: hook.event, ...o.peers })
   }
   return verdictOf(steps, !hook.off)
+}
+
+/** The other hooks at an outside hook's moment that run (on, waited for), and how many of them failed in the same 7 days. */
+export function peersOf(hook: OutsideHook & { id?: string }, all: readonly (OutsideHook & { id?: string })[], stats: readonly HookStat[]) {
+  const others = all.filter(h => h !== hook && h.event === hook.event && !h.off && !h.async && keysOf(h).length > 0)
+  return { others: others.length, failing: others.filter(h => (weekOf(h, stats)?.fails ?? 0) > 0).length }
 }
 
 /** What a failed run printed: the one that says why, else the last failure. */

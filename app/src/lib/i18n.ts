@@ -316,6 +316,9 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export const UI = {
   en: {
     on: (n: number) => `${n} of yours on`,
+    bubbleTrouble: (n: number) => (n === 1 ? '1 hook not working: open hoochi to see why' : `${n} hooks not working: open hoochi to see why`),
+    bubbleOk: 'hoochi: every hook works',
+    bubbleDrag: 'drag to move',
     onHint: 'How many things you put in are switched on, everywhere, in every project and terminal, for Claude Code and Codex together.',
     quitApp: 'Quit hoochi',
     rowAgent: 'AI',
@@ -683,6 +686,9 @@ export const UI = {
   },
   ko: {
     on: (n: number) => `넣은 것 ${n}개 켜짐`,
+    bubbleTrouble: (n: number) => `안 도는 훅 ${n}개 — 열면 이유가 보여요`,
+    bubbleOk: '후치: 모든 훅이 잘 돌아요',
+    bubbleDrag: '끌어서 옮기기',
     onHint: '내가 넣은 것 중 켜져 있는 개수예요. 모든 곳·모든 프로젝트·모든 터미널, Claude Code와 Codex를 다 합쳐 셌어요.',
     quitApp: 'hoochi 끝내기',
     rowAgent: 'AI',
@@ -1063,6 +1069,9 @@ export const UI = {
   },
   ja: {
     on: (n: number) => `入れたもの ${n} 件オン`,
+    bubbleTrouble: (n: number) => `動いていないフック ${n} 件 — 開くと理由が見えます`,
+    bubbleOk: 'hoochi: すべてのフックが動いています',
+    bubbleDrag: 'ドラッグで移動',
     onHint: '自分で入れたもののうちオンになっている数です。すべて・全プロジェクト・全ターミナル、Claude Code と Codex を合わせて数えています。',
     quitApp: 'hoochi を終了',
     rowAgent: 'AI',
@@ -1445,6 +1454,9 @@ export const UI = {
   },
   zh: {
     on: (n: number) => `已开启 ${n} 项我加入的内容`,
+    bubbleTrouble: (n: number) => `没在运行的钩子 ${n} 个 — 打开即可看到原因`,
+    bubbleOk: 'hoochi:所有钩子运行正常',
+    bubbleDrag: '拖动以移动',
     onHint: '我加入的内容里开启着的数量，包括所有地方、所有项目、所有终端，Claude Code 和 Codex 合计。',
     quitApp: '退出 hoochi',
     rowAgent: 'AI',
