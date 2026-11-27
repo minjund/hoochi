@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Hoochi",
-  "version": "0.1.49",
+  "version": "0.1.50",
   "identifier": "dev.minjund.hoochi",
   "build": {
     "frontendDist": "../dist",

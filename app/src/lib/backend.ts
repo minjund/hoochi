@@ -10,7 +10,8 @@ import {
   splitAgent,
   type Activity,
   type AgentConfig,
-  type ClassicReach,
+  type ClassicReaches,
+  parseReach,
   type Config,
   type Item,
   type Places,
@@ -25,8 +26,8 @@ export type Snapshot = {
   claude: Activity
   codex: Activity
   places: Places
-  /** whether Claude Code's classic hooks reach hoochi here (sec-default passes them by) */
-  classic: ClassicReach
+  /** whether Claude Code's classic hooks reach hoochi, chat by chat (sec-default passes them by) */
+  classic: ClassicReaches
 }
 
 export const EMPTY_ACTIVITY: Activity = { lastEvent: '', lastAt: 0, counts: {}, recent: [] }
@@ -258,16 +259,6 @@ type RawSnapshot = {
   activityCodex: string
   places: string
   classicClaude: string
-}
-
-/** `~/.hoochi/classic-claude.json` as the plugin writes it; unknown until it has found out. */
-export function parseReach(text: string): ClassicReach {
-  try {
-    const reach = (JSON.parse(text) as { reach?: unknown }).reach
-    return reach === 'open' || reach === 'blocked' ? reach : 'unknown'
-  } catch {
-    return 'unknown'
-  }
 }
 
 export async function readState(): Promise<Snapshot> {

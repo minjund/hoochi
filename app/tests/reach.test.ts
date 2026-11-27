@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { CLASSIC_ONLY, CLAUDE_SLOTS, unreachable } from '../src/lib/lifecycle.ts'
+import { CLASSIC_ONLY, CLAUDE_SLOTS, parseReach, reachFor, unreachable } from '../src/lib/lifecycle.ts'
 
 test('only where the classic hooks are found blocked are moments dimmed, and only for Claude', () => {
   assert.equal(unreachable('claude', 'unknown').size, 0)
@@ -23,4 +23,23 @@ test("the window dims exactly the moments the plugin serves from their classic h
   assert.ok(plugin.length > 0)
   assert.deepEqual(new Set(plugin), CLASSIC_ONLY)
   for (const event of CLASSIC_ONLY) assert.ok(CLAUDE_SLOTS.some(s => s.event === event), event)
+})
+
+test("the chat followed decides: its own entry, else the latest any chat wrote", () => {
+  const r = parseReach(
+    JSON.stringify({
+      reach: 'open',
+      at: 9,
+      chats: { old: { reach: 'blocked', at: 1, version: '2.1.329' }, new: { reach: 'open', at: 9 }, odd: { reach: 'x' } },
+    }),
+  )
+  assert.deepEqual(r, { latest: 'open', chats: { old: 'blocked', new: 'open' } })
+  assert.equal(reachFor(r, 'old'), 'blocked')
+  assert.equal(reachFor(r, 'new'), 'open')
+  assert.equal(reachFor(r, 'unheard'), 'open')
+  assert.equal(reachFor(r, undefined), 'open')
+  // a file an older plugin wrote has no chats
+  assert.deepEqual(parseReach('{"reach":"blocked","at":1}'), { latest: 'blocked', chats: {} })
+  assert.deepEqual(parseReach('nope'), { latest: 'unknown', chats: {} })
+  assert.deepEqual(parseReach('null'), { latest: 'unknown', chats: {} })
 })

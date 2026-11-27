@@ -115,7 +115,8 @@ import {
   withList,
   type Activity,
   type Agent,
-  type ClassicReach,
+  type ClassicReaches,
+  reachFor,
   type Config,
   type Item,
   type Place,
@@ -299,7 +300,7 @@ export default function App() {
   })
   const [places, setPlaces] = useState<Places>({ projects: {}, terminals: {} })
   // Where sec-default passes Claude Code's classic hooks by, the moments only they serve are dimmed.
-  const [classic, setClassic] = useState<ClassicReach>('unknown')
+  const [reaches, setReaches] = useState<ClassicReaches>({ latest: 'unknown', chats: {} })
   const [selected, setSelected] = useState<string | null>(browserFlags.select)
   // The full picture of every moment, behind "See every moment" (the main moments show as cards).
   // The "What you put in" list: from the chat you are in, or everything; which AI, place, off or not working.
@@ -394,7 +395,7 @@ export default function App() {
         const s = await readState()
         if (!alive) return
         setActivity({ claude: s.claude, codex: s.codex })
-        setClassic(s.classic)
+        setReaches(s.classic)
         setPlaces(s.places)
         if (saver.fromDisk(JSON.stringify(s.config))) setConfig(s.config)
       } catch {
@@ -454,6 +455,8 @@ export default function App() {
   // Not while a moment is open for editing; it catches up when you go back to the workflow.
   // The tab follows too (below): this project when that chat is in one, else everywhere.
   const latest = lastChatOf(activity)
+  // The classic hooks reach some chats and not others: the one followed decides what is dimmed.
+  const classic = reachFor(reaches, latest?.agent === 'claude' ? places.terminals[latest.place.terminal]?.session : undefined)
   // Input in several places at once (a tool typing into many terminals looks like you typing):
   // the window stays put until input comes to one place alone.
   const inputs = useRef<Input[]>([])

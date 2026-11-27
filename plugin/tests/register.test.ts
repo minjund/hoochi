@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import {
+  parseReaches,
+  withReach,
   classicHooked,
   classicWanted,
   newerOf,
@@ -51,9 +53,10 @@ function machine(
   let now = 1_000
   if (clock) on('clock.now', () => ({ value: (now += 10) }))
   // The engine beneath: this chat's id, and the native events hoochi serves its moments from.
-  const chat = { id: 's1' }
+  const chat = { id: 's1', version: '2.1.332' }
   const submitted: string[] = []
   on('session.id', () => ({ value: chat.id }))
+  on('session.version', () => ({ value: { version: chat.version, base: chat.version } }))
   on('prompt.submit', (_, e) => {
     submitted.push(e.text)
     return { text: e.text, ...(e.context ? { context: e.context } : {}) }
@@ -409,7 +412,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.49/Hoochi-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.50/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -427,7 +430,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.49'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.50'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hoochi/Hoochi.app'
@@ -1051,40 +1054,58 @@ test("a subagent's words follow the task it was given", async ($, on) => {
   expect(given).toEqual(['Find the bug.\n\nReply in Korean.'])
 })
 
-test('answers with no classic event at all mark the classic hooks blocked; one arriving opens them', async ($, on) => {
+test('answers with no classic event at all mark this chat blocked; one arriving opens it', async ($, on) => {
   const { fs } = machine(on, { [CONFIG]: config() })
   on('classic.MessageDisplay', () => ({}))
   const REACH = '/home/me/.hoochi/classic-claude.json'
-  const reach = () => JSON.parse(fs.get(REACH) ?? '{}').reach
+  const file = () => JSON.parse(fs.get(REACH) ?? '{}')
 
   await turnEnds($, { answer: 'one' })
-  expect(reach()).toBeUndefined()
+  expect(file().reach).toBeUndefined()
   await turnEnds($, { answer: 'two' })
-  expect(reach()).toBe('blocked')
+  expect(file().reach).toBe('blocked')
+  expect(file().chats.s1).toMatchObject({ reach: 'blocked', version: '2.1.332' })
 
   await $.classic.MessageDisplay({ turn_id: 't1', message_id: 'm1', index: 0 } as never)
   await tick()
-  expect(reach()).toBe('open')
+  expect(file().chats.s1.reach).toBe('open')
+  expect(file().reach).toBe('open')
 })
 
-test('a chat that finds the classic hooks blocked says so again after another chat wrote them open', async ($, on) => {
+test("each chat keeps its own entry: another chat's open does not unsay this one's blocked", async ($, on) => {
   let now = 1_000
   const { fs } = machine(on, { [CONFIG]: config() }, {}, undefined, { clock: false })
   on('clock.now', () => ({ value: now }))
   const REACH = '/home/me/.hoochi/classic-claude.json'
-  const reach = () => JSON.parse(fs.get(REACH) ?? '{}').reach
+  const file = () => JSON.parse(fs.get(REACH) ?? '{}')
 
   await turnEnds($, { answer: 'one' })
   await turnEnds($, { answer: 'two' })
-  expect(reach()).toBe('blocked')
+  expect(file().chats.s1.reach).toBe('blocked')
 
-  // a chat where the classic hooks do arrive writes the file over
-  fs.set(REACH, JSON.stringify({ reach: 'open', at: now }))
+  // a chat on a newer build, where the classic hooks arrive, writes its entry beside this one
+  fs.set(REACH, JSON.stringify({ ...file(), reach: 'open', at: now, chats: { ...file().chats, s2: { reach: 'open', at: now, version: '2.1.340' } } }))
   await turnEnds($, { answer: 'three' })
-  expect(reach()).toBe('open')
+  expect(file().chats).toMatchObject({ s1: { reach: 'blocked' }, s2: { reach: 'open' } })
+
+  // two chats writing at once lost this one's entry: it is put back after a minute
+  fs.set(REACH, JSON.stringify({ reach: 'open', at: now, chats: { s2: { reach: 'open', at: now } } }))
   now += 61_000
   await turnEnds($, { answer: 'four' })
-  expect(reach()).toBe('blocked')
+  expect(file().chats).toMatchObject({ s1: { reach: 'blocked' }, s2: { reach: 'open' } })
+})
+
+test('the file keeps a week of chats, the newest first, and reads what it can', () => {
+  const day = 24 * 3_600_000
+  const had = parseReaches(
+    JSON.stringify({ reach: 'open', at: 1, chats: { old: { reach: 'open', at: 0 }, mid: { reach: 'blocked', at: 7 * day }, bad: { reach: 'maybe', at: 1 } } }),
+  )
+  expect(Object.keys(had.chats)).toEqual(['old', 'mid'])
+  const next = withReach(had, 'now', { reach: 'blocked', at: 8 * day, version: '2.1.329' })
+  expect(Object.keys(next.chats)).toEqual(['now', 'mid'])
+  expect(next).toMatchObject({ reach: 'blocked', version: '2.1.329' })
+  expect(parseReaches('not json')).toEqual({ chats: {} })
+  expect(parseReaches(undefined)).toEqual({ chats: {} })
 })
 
 test('the classic moments worth hooking are the ones a switched-on rule uses, with MessageDisplay beside them', () => {
@@ -1127,6 +1148,24 @@ test('with no classic moment hooked, a classic event passes hoochi by and answer
   await turnEnds($, { answer: 'two' })
   await turnEnds($, { answer: 'three' })
   expect(fs.get('/home/me/.hoochi/classic-claude.json')).toBeUndefined()
+})
+
+test('a chat that hooks no classic moment takes what a chat on the same build found', { options: { classicMoments: 'none' } }, async ($, on) => {
+  const REACH = '/home/me/.hoochi/classic-claude.json'
+  const seeded = {
+    reach: 'open',
+    at: 900,
+    chats: {
+      a: { reach: 'blocked', at: 500, version: '2.1.332' },
+      b: { reach: 'open', at: 900, version: '2.1.340' },
+    },
+  }
+  const { fs } = machine(on, { [CONFIG]: config(), [REACH]: JSON.stringify(seeded) })
+  on('command.register', () => ({ value: { command: 'hoochi' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work/app/sub', surface: 'terminal', isInteractive: true })
+  await tick()
+  expect(JSON.parse(fs.get(REACH)!).chats.s1).toMatchObject({ reach: 'blocked', version: '2.1.332' })
 })
 
 test('after an answer the option is pointed at the moments the rules use, once', { options: { classicMoments: 'all' } }, async ($, on) => {

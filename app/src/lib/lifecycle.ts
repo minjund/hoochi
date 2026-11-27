@@ -195,8 +195,39 @@ export const CLASSIC_ONLY: ReadonlySet<string> = new Set([
   'WorktreeRemove',
 ])
 
-/** Whether the classic hooks reach hoochi on this computer, as the plugin last found. */
+/** Whether the classic hooks reach hoochi in a chat, as the plugin last found. */
 export type ClassicReach = 'open' | 'blocked' | 'unknown'
+
+/**
+ * `~/.hoochi/classic-claude.json`: chats on one computer can differ (it goes with the Claude Code
+ * build each runs), so the plugin writes each chat's own (`chats`, by session) and the latest one.
+ */
+export type ClassicReaches = { latest: ClassicReach; chats: Record<string, ClassicReach> }
+
+/** `~/.hoochi/classic-claude.json` as the plugin writes it; unknown until it has found out. */
+export function parseReach(text: string): ClassicReaches {
+  const one = (v: unknown): ClassicReach => {
+    const reach = (v as { reach?: unknown } | null)?.reach
+    return reach === 'open' || reach === 'blocked' ? reach : 'unknown'
+  }
+  try {
+    const raw = JSON.parse(text) as { chats?: unknown } | null
+    const chats: Record<string, ClassicReach> = {}
+    if (raw?.chats !== null && typeof raw?.chats === 'object')
+      for (const [k, v] of Object.entries(raw.chats as Record<string, unknown>)) {
+        const r = one(v)
+        if (r !== 'unknown') chats[k] = r
+      }
+    return { latest: one(raw), chats }
+  } catch {
+    return { latest: 'unknown', chats: {} }
+  }
+}
+
+/** The chat's own when the plugin wrote one for it, else the latest any chat found. */
+export function reachFor(r: ClassicReaches, session: string | undefined): ClassicReach {
+  return (session !== undefined && r.chats[session]) || r.latest
+}
 
 /** The moments that cannot run here: none unless the plugin found the classic hooks blocked. */
 export function unreachable(agent: Agent, reach: ClassicReach): ReadonlySet<string> {

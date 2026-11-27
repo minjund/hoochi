@@ -28,7 +28,7 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.49'
+export const APP_VERSION = '0.1.50'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 /** How much of a failed command's output the window keeps, to say why it failed. */
@@ -1047,41 +1047,108 @@ function fromHoochi(origin: unknown): boolean {
 }
 
 /**
- * Whether the classic hooks reach hoochi on this computer: `~/.hoochi/classic-claude.json`,
- * read by the window to dim the moments in CLASSIC_ONLY where they cannot run.
+ * Whether the classic hooks reach hoochi, chat by chat: `~/.hoochi/classic-claude.json`, read by
+ * the window to dim the moments in CLASSIC_ONLY in the chat it follows when they cannot run there.
+ * Chats on one computer differ: it goes with the Claude Code build a chat runs (sec-default in one
+ * passes them by, a newer one may not), so each chat keeps its own entry under `chats`, by session.
+ * The top level is the latest entry written, for a window that reads no `chats`.
  */
-export type ClassicReach = { reach: 'open' | 'blocked'; at: number }
+export type ClassicReach = { reach: 'open' | 'blocked'; at: number; version?: string }
+export type ClassicReaches = ClassicReach & { chats: Record<string, ClassicReach> }
 
 /** Answered turns with no classic event at all before hoochi calls the classic hooks blocked. */
 export const QUIET_TURNS = 2
+/** Chats not heard from in a week, and all but the newest ones, leave the file. */
+const REACH_KEEP_MS = 7 * 24 * 3_600_000
+const REACH_KEEP = 40
 
 /** A classic event reached hoochi in this process. */
 let classicSeen = false
 /** Answered turns in a row with no classic event; MessageDisplay comes with every answer. */
 let quietTurns = 0
 /**
- * When this process last made sure the file says what it found. The file is one for the whole
- * computer and another chat may write over it, so it is checked again after a while, not trusted
- * to still say what this process once wrote.
+ * When this process last made sure the file says what it found. Other chats write the same file
+ * (two at once can lose one's entry), so it is checked again after a while, not trusted to still
+ * say what this process once wrote.
  */
 let reachChecked: { reach: ClassicReach['reach']; at: number } | undefined
 const REACH_CHECK_MS = 60_000
 
-/** Notes whether classic events reach hoochi, when that differs from what the file says. */
+/** The file as it is, with `chats` always there; anything unreadable is left out. */
+export function parseReaches(text: string | undefined): Partial<ClassicReaches> & { chats: Record<string, ClassicReach> } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text ?? '{}')
+  } catch {
+    raw = {}
+  }
+  const one = (v: unknown): ClassicReach | undefined => {
+    const r = v as Partial<ClassicReach> | null
+    if (r === null || typeof r !== 'object' || (r.reach !== 'open' && r.reach !== 'blocked')) return undefined
+    return { reach: r.reach, at: typeof r.at === 'number' ? r.at : 0, ...(typeof r.version === 'string' ? { version: r.version } : {}) }
+  }
+  const chats: Record<string, ClassicReach> = {}
+  const listed = (raw as { chats?: unknown } | null)?.chats
+  if (listed !== null && typeof listed === 'object')
+    for (const [k, v] of Object.entries(listed)) {
+      const r = one(v)
+      if (r !== undefined) chats[k] = r
+    }
+  return { ...(one(raw) ?? {}), chats }
+}
+
+/** `had` with this chat's entry set, as the latest too, and old chats dropped. */
+export function withReach(
+  had: { chats: Record<string, ClassicReach> },
+  session: string,
+  entry: ClassicReach,
+): ClassicReaches {
+  const kept = Object.entries({ ...had.chats, [session]: entry })
+    .filter(([k, r]) => k === session || entry.at - r.at < REACH_KEEP_MS)
+    .sort(([, a], [, b]) => b.at - a.at)
+    .slice(0, REACH_KEEP)
+  return { ...entry, chats: Object.fromEntries(kept) }
+}
+
+/** The Claude Code build this chat runs, or '' when the engine cannot say. */
+async function buildOf($: EngineInterface): Promise<string> {
+  return $.session
+    .version()
+    .then(v => v.version)
+    .catch(() => '')
+}
+
+/** Notes whether classic events reach this chat, when that differs from what the file says. */
 async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Promise<void> {
   const now = await $.clock.now()
   if (reachChecked?.reach === reach && now - reachChecked.at < REACH_CHECK_MS) return
   reachChecked = { reach, at: now }
+  const session = await sessionId($)
+  if (session === '') return
   const path = `${await home($)}/.hoochi/classic-claude.json`
-  let had: unknown
-  try {
-    had = JSON.parse((await readText($, path)) ?? '{}')
-  } catch {
-    had = {}
-  }
-  if ((had as Partial<ClassicReach>).reach === reach) return
-  const body: ClassicReach = { reach, at: now }
-  await $.fs.write(path, JSON.stringify(body))
+  const had = parseReaches(await readText($, path))
+  if (had.chats[session]?.reach === reach) return
+  const version = await buildOf($)
+  await $.fs.write(path, JSON.stringify(withReach(had, session, { reach, at: now, ...(version ? { version } : {}) })))
+}
+
+/**
+ * A chat that hooks no MessageDisplay cannot find out for itself. It takes what a chat on the same
+ * Claude Code build found, the newest one, so the window still knows for the chat it follows.
+ */
+async function borrowReach($: EngineInterface): Promise<void> {
+  const session = await sessionId($)
+  const version = await buildOf($)
+  if (session === '' || version === '') return
+  const path = `${await home($)}/.hoochi/classic-claude.json`
+  const had = parseReaches(await readText($, path))
+  if (had.chats[session] !== undefined) return
+  const same = Object.entries(had.chats)
+    .filter(([k, r]) => k !== session && r.version === version)
+    .sort(([, a], [, b]) => b.at - a.at)[0]
+  if (same === undefined) return
+  const now = await $.clock.now()
+  await $.fs.write(path, JSON.stringify(withReach(had, session, { reach: same[1].reach, at: now, version })))
 }
 
 /** The main loop's model when the last prompt went in; undefined until hoochi first asks. */
@@ -1151,6 +1218,7 @@ export const register: Register = (on, options) => {
     // A reload stops this timer, and the new version's session.start starts its own.
     if (interactive) $.clock.every(RELOAD_CHECK_MS, () => void reloadIfUpdated($).catch(() => undefined))
     void syncClassic($).catch(() => undefined)
+    if (interactive && !hooked.has('MessageDisplay')) void borrowReach($).catch(() => undefined)
 
     return started
   })
