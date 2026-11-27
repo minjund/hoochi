@@ -28,7 +28,7 @@ import type {
 
 const APP_NAME = 'Hoochi.app'
 /** The window app this plugin goes with: the release of the same version. Bump with plugin.json. */
-export const APP_VERSION = '0.1.48'
+export const APP_VERSION = '0.1.49'
 const RELEASE = `https://github.com/minjund/hoochi/releases/download/v${APP_VERSION}`
 const MAX_OUTPUT = 4000
 /** How much of a failed command's output the window keeps, to say why it failed. */
@@ -849,6 +849,57 @@ export const CLASSIC_ONLY = [
   'WorktreeRemove',
 ] as const
 
+/** The userConfig field naming the CLASSIC_ONLY moments hoochi hooks. hoochi sets it itself. */
+export const CLASSIC_FIELD = 'classicMoments'
+/** Its value until hoochi first sets it: every moment, as before it was there. */
+const CLASSIC_ALL = 'all'
+/** Its value when no moment is wanted (an empty string would read as unset). */
+const CLASSIC_NONE = 'none'
+
+/**
+ * The CLASSIC_ONLY moments worth a classic hook, as the option holds them: those with a filled,
+ * switched-on Claude rule at any place. Under sec-default every hooked moment says it was skipped
+ * each time it comes, so a moment nobody uses is not hooked. With any of them MessageDisplay is
+ * hooked too: it comes with every answer, and its absence is how hoochi tells the hooks are blocked.
+ */
+export function classicWanted(config: Config): string {
+  const c = config.claude
+  const items = [c.global, ...Object.values(c.projects), ...Object.values(c.terminals)].flat()
+  const used = new Set(items.filter(i => i.enabled && filled(i)).map(i => i.event))
+  const moments: string[] = CLASSIC_ONLY.filter(m => used.has(m))
+  if (moments.length > 0 && !used.has('MessageDisplay')) moments.push('MessageDisplay')
+  return moments.length === 0 ? CLASSIC_NONE : moments.join(',')
+}
+
+/** The moments the option names; `all` (its default) is every CLASSIC_ONLY moment. */
+export function classicHooked(value: unknown): ReadonlySet<string> {
+  if (typeof value !== 'string' || value.trim() === CLASSIC_ALL) return new Set(CLASSIC_ONLY)
+  const known: readonly string[] = CLASSIC_ONLY
+  return new Set(value.split(',').map(s => s.trim()).filter(s => known.includes(s)))
+}
+
+/** The option as this load of the module got it, and the moments it hooked. */
+let classicOption = CLASSIC_ALL
+let hooked: ReadonlySet<string> = new Set(CLASSIC_ONLY)
+
+/** The values this chat has asked the option to take: kept across the reload a change brings, so none is asked twice. */
+const classicAsked = atom({ plugin: 'hoochi', key: 'classicAsked' } as const, [] as string[])
+
+/**
+ * Points the option at the moments the rules use, when it says otherwise. Changing it reloads
+ * hoochi in every open chat, and the new load hooks those moments alone.
+ */
+export async function syncClassic($: EngineInterface): Promise<void> {
+  if (!interactive) return
+  const want = classicWanted(await readConfig($, `${await home($)}/.hoochi`))
+  if (want === classicOption) return
+  const asked = await read($, classicAsked)
+  if (asked.includes(want)) return
+  await update($, classicAsked, a => [...a, want].slice(-20))
+  // A /config row: one hidden there cannot be set, so it shows, its description saying it is hoochi's.
+  await $.config.set({ key: `hoochi.${CLASSIC_FIELD}`, value: want })
+}
+
 /** What one moment needs to know besides its name. */
 type Moment = {
   tool: string
@@ -1008,13 +1059,19 @@ export const QUIET_TURNS = 2
 let classicSeen = false
 /** Answered turns in a row with no classic event; MessageDisplay comes with every answer. */
 let quietTurns = 0
-/** What this process last wrote, so it writes only a change. */
-let reachWritten: ClassicReach['reach'] | undefined
+/**
+ * When this process last made sure the file says what it found. The file is one for the whole
+ * computer and another chat may write over it, so it is checked again after a while, not trusted
+ * to still say what this process once wrote.
+ */
+let reachChecked: { reach: ClassicReach['reach']; at: number } | undefined
+const REACH_CHECK_MS = 60_000
 
 /** Notes whether classic events reach hoochi, when that differs from what the file says. */
 async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Promise<void> {
-  if (reachWritten === reach) return
-  reachWritten = reach
+  const now = await $.clock.now()
+  if (reachChecked?.reach === reach && now - reachChecked.at < REACH_CHECK_MS) return
+  reachChecked = { reach, at: now }
   const path = `${await home($)}/.hoochi/classic-claude.json`
   let had: unknown
   try {
@@ -1023,7 +1080,7 @@ async function noteReach($: EngineInterface, reach: ClassicReach['reach']): Prom
     had = {}
   }
   if ((had as Partial<ClassicReach>).reach === reach) return
-  const body: ClassicReach = { reach, at: await $.clock.now() }
+  const body: ClassicReach = { reach, at: now }
   await $.fs.write(path, JSON.stringify(body))
 }
 
@@ -1055,7 +1112,10 @@ async function classicMoment(
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  classicOption = typeof options[CLASSIC_FIELD] === 'string' ? (options[CLASSIC_FIELD] as string) : CLASSIC_ALL
+  hooked = classicHooked(classicOption)
+
   on('session.start', async ($, e, next) => {
     interactive = e.isInteractive !== false
     const started = await next(e)
@@ -1090,6 +1150,7 @@ export const register: Register = on => {
     }
     // A reload stops this timer, and the new version's session.start starts its own.
     if (interactive) $.clock.every(RELOAD_CHECK_MS, () => void reloadIfUpdated($).catch(() => undefined))
+    void syncClassic($).catch(() => undefined)
 
     return started
   })
@@ -1125,10 +1186,13 @@ export const register: Register = on => {
     if (e.reason !== 'answer') return result
     // Every answer shown comes with classic MessageDisplay events: none at all, twice running,
     // means an organization's policy plugin passes the classic hooks by.
-    if (interactive && e.agentId === undefined && !classicSeen && e.answer.trim() !== '') {
+    // Only while MessageDisplay is hooked: with no classic hook at all, nothing comes either way.
+    if (interactive && e.agentId === undefined && hooked.has('MessageDisplay') && !classicSeen && e.answer.trim() !== '') {
       quietTurns += 1
       if (quietTurns >= QUIET_TURNS) void noteReach($, 'blocked').catch(() => undefined)
     }
+    // The rules may have moved to or from a moment only a classic hook serves.
+    if (e.agentId === undefined) void syncClassic($).catch(() => undefined)
     const session = await sessionId($)
     if (e.agentId !== undefined) {
       // A subagent's turn is over: nothing more reaches it, so only commands run.
@@ -1231,25 +1295,26 @@ export const register: Register = on => {
     return entered
   })
 
-  // Only the moments with no native event, each named (on() takes a literal): hooking every classic
-  // event would round-trip each one, and where sec-default passes them by, each says so.
-  on('classic.Setup', classicMoment)
-  on('classic.InstructionsLoaded', classicMoment)
-  on('classic.PreModelSwitch', classicMoment)
-  on('classic.PostToolBatch', classicMoment)
-  on('classic.PermissionRequest', classicMoment)
-  on('classic.PermissionDenied', classicMoment)
-  on('classic.Notification', classicMoment)
-  on('classic.ConfigChange', classicMoment)
-  on('classic.CwdChanged', classicMoment)
-  on('classic.FileChanged', classicMoment)
-  on('classic.DirectoryAdded', classicMoment)
-  on('classic.Elicitation', classicMoment)
-  on('classic.ElicitationResult', classicMoment)
-  on('classic.MessageDisplay', classicMoment)
-  on('classic.TaskCreated', classicMoment)
-  on('classic.TaskCompleted', classicMoment)
-  on('classic.TeammateIdle', classicMoment)
-  on('classic.WorktreeCreate', classicMoment)
-  on('classic.WorktreeRemove', classicMoment)
+  // Only the moments with no native event that a rule uses (`hooked`), each named (on() takes a
+  // literal): under sec-default each hooked one says it was skipped every time it comes.
+  // A moment a rule starts using is hooked after the next answer, when the option changes.
+  if (hooked.has('Setup')) on('classic.Setup', classicMoment)
+  if (hooked.has('InstructionsLoaded')) on('classic.InstructionsLoaded', classicMoment)
+  if (hooked.has('PreModelSwitch')) on('classic.PreModelSwitch', classicMoment)
+  if (hooked.has('PostToolBatch')) on('classic.PostToolBatch', classicMoment)
+  if (hooked.has('PermissionRequest')) on('classic.PermissionRequest', classicMoment)
+  if (hooked.has('PermissionDenied')) on('classic.PermissionDenied', classicMoment)
+  if (hooked.has('Notification')) on('classic.Notification', classicMoment)
+  if (hooked.has('ConfigChange')) on('classic.ConfigChange', classicMoment)
+  if (hooked.has('CwdChanged')) on('classic.CwdChanged', classicMoment)
+  if (hooked.has('FileChanged')) on('classic.FileChanged', classicMoment)
+  if (hooked.has('DirectoryAdded')) on('classic.DirectoryAdded', classicMoment)
+  if (hooked.has('Elicitation')) on('classic.Elicitation', classicMoment)
+  if (hooked.has('ElicitationResult')) on('classic.ElicitationResult', classicMoment)
+  if (hooked.has('MessageDisplay')) on('classic.MessageDisplay', classicMoment)
+  if (hooked.has('TaskCreated')) on('classic.TaskCreated', classicMoment)
+  if (hooked.has('TaskCompleted')) on('classic.TaskCompleted', classicMoment)
+  if (hooked.has('TeammateIdle')) on('classic.TeammateIdle', classicMoment)
+  if (hooked.has('WorktreeCreate')) on('classic.WorktreeCreate', classicMoment)
+  if (hooked.has('WorktreeRemove')) on('classic.WorktreeRemove', classicMoment)
 }

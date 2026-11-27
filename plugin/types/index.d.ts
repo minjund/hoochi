@@ -142,7 +142,10 @@ export type SkillGroup = {
 
 declare module 'claude-code' {
   interface PluginState {
-    /** started: the chat (session id) whose chat-start moment already ran, kept across a reload */
-    hoochi: { activity: Shaped<Activity>; reloaded: string; started: string }
+    /**
+     * started: the chat (session id) whose chat-start moment already ran, kept across a reload;
+     * classicAsked: the values this chat asked the classic moments option to take
+     */
+    hoochi: { activity: Shaped<Activity>; reloaded: string; started: string; classicAsked: string[] }
   }
 }

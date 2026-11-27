@@ -1,6 +1,6 @@
 {
   "name": "hoochi",
-  "version": "0.1.48",
+  "version": "0.1.49",
   "description": "Why doesn't my hook run? Checks every Claude Code and Codex hook the way the agent does and shows the first thing that stops it, then lets you fix it or put in new ones, from a little floating window.",
   "license": "MIT",
   "types": "./types/index.d.ts",
@@ -9,5 +9,13 @@
     "url": "https://github.com/minjund"
   },
   "homepage": "https://github.com/minjund/hoochi",
-  "repository": "https://github.com/minjund/hoochi"
+  "repository": "https://github.com/minjund/hoochi",
+  "userConfig": {
+    "classicMoments": {
+      "type": "string",
+      "title": "Classic hook moments",
+      "description": "Kept by hoochi: the moments it hooks through Claude Code's settings hooks, the ones a rule in the window uses (all, none, or names joined by commas). Leave it to hoochi.",
+      "default": "all"
+    }
+  }
 }

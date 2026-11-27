@@ -1,6 +1,16 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
-import { newerOf, noteOnce, noteRuns, noteSeen, oldPluginInstalled, parseOnce } from '../hooks/register'
+import {
+  classicHooked,
+  classicWanted,
+  newerOf,
+  noteOnce,
+  noteRuns,
+  noteSeen,
+  oldPluginInstalled,
+  parseConfig,
+  parseOnce,
+} from '../hooks/register'
 
 type On = Parameters<TestBody>[1]
 
@@ -399,7 +409,7 @@ test('without the app and no release to download, it says so plainly', async ($,
     {
       '/usr/bin/uname -s': { exitCode: 0, stdout: 'Darwin\n' },
       '/usr/bin/uname -m': { exitCode: 0, stdout: 'arm64\n' },
-      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.48/Hoochi-macos-arm64.zip':
+      '/usr/bin/curl -fsSL -o /home/me/.hoochi/Hoochi-macos-arm64.zip https://github.com/minjund/hoochi/releases/download/v0.1.49/Hoochi-macos-arm64.zip':
         { exitCode: 22, stdout: '' },
     },
   )
@@ -417,7 +427,7 @@ test('without the app and no release to download, it says so plainly', async ($,
 
 const PLIST = (app: string) =>
   `/usr/bin/plutil -extract CFBundleShortVersionString raw -o - ${app}/Contents/Info.plist`
-const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.48'
+const V = 'https://github.com/minjund/hoochi/releases/download/v0.1.49'
 
 test("an older window app is replaced by this plugin's version, checked first", async ($, on) => {
   const app = '/home/me/.hoochi/Hoochi.app'
@@ -1055,6 +1065,100 @@ test('answers with no classic event at all mark the classic hooks blocked; one a
   await $.classic.MessageDisplay({ turn_id: 't1', message_id: 'm1', index: 0 } as never)
   await tick()
   expect(reach()).toBe('open')
+})
+
+test('a chat that finds the classic hooks blocked says so again after another chat wrote them open', async ($, on) => {
+  let now = 1_000
+  const { fs } = machine(on, { [CONFIG]: config() }, {}, undefined, { clock: false })
+  on('clock.now', () => ({ value: now }))
+  const REACH = '/home/me/.hoochi/classic-claude.json'
+  const reach = () => JSON.parse(fs.get(REACH) ?? '{}').reach
+
+  await turnEnds($, { answer: 'one' })
+  await turnEnds($, { answer: 'two' })
+  expect(reach()).toBe('blocked')
+
+  // a chat where the classic hooks do arrive writes the file over
+  fs.set(REACH, JSON.stringify({ reach: 'open', at: now }))
+  await turnEnds($, { answer: 'three' })
+  expect(reach()).toBe('open')
+  now += 61_000
+  await turnEnds($, { answer: 'four' })
+  expect(reach()).toBe('blocked')
+})
+
+test('the classic moments worth hooking are the ones a switched-on rule uses, with MessageDisplay beside them', () => {
+  const cfg = (claude: Record<string, unknown>) =>
+    parseConfig(JSON.stringify({ version: 2, claude: { global: [], projects: {}, terminals: {}, ...claude }, codex: {} }))
+  expect(classicWanted(cfg({}))).toBe('none')
+  // native moments, a switched-off rule and an empty one need no classic hook
+  expect(
+    classicWanted(
+      cfg({
+        global: [
+          item({ text: 'Answer in English.' }),
+          item({ id: 'i2', event: 'Notification', text: 'x', enabled: false }),
+          item({ id: 'i3', event: 'ConfigChange', text: '  ' }),
+        ],
+      }),
+    ),
+  ).toBe('none')
+  expect(
+    classicWanted(
+      cfg({
+        projects: { '/work/app': [item({ event: 'PostToolBatch', text: 'Check it.' })] },
+        terminals: { 'terminal:t9': [item({ id: 'i2', event: 'InstructionsLoaded', kind: 'command', command: 'echo' })] },
+      }),
+    ),
+  ).toBe('InstructionsLoaded,PostToolBatch,MessageDisplay')
+
+  expect(classicHooked('all').size).toBe(19)
+  expect(classicHooked(undefined).size).toBe(19)
+  expect([...classicHooked('none')]).toEqual([])
+  expect([...classicHooked('PostToolBatch, Stop,nope,MessageDisplay')]).toEqual(['PostToolBatch', 'MessageDisplay'])
+})
+
+test('with no classic moment hooked, a classic event passes hoochi by and answers never mark the hooks blocked', { options: { classicMoments: 'none' } }, async ($, on) => {
+  const { fs } = machine(on, { [CONFIG]: config(item({ event: 'PostToolBatch', text: 'Check the batch.' })) })
+  on('classic.PostToolBatch', () => ({}))
+
+  expect((await $.classic.PostToolBatch({ tool_calls: [] } as never)).additionalContext).toBeUndefined()
+  await turnEnds($, { answer: 'one' })
+  await turnEnds($, { answer: 'two' })
+  await turnEnds($, { answer: 'three' })
+  expect(fs.get('/home/me/.hoochi/classic-claude.json')).toBeUndefined()
+})
+
+test('after an answer the option is pointed at the moments the rules use, once', { options: { classicMoments: 'all' } }, async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'PostToolBatch', text: 'Check the batch.' })) })
+  const sets: unknown[] = []
+  on('config.set', (_, e) => {
+    sets.push([e.key, e.value])
+    return { value: e.value } as never
+  })
+
+  await turnEnds($, { answer: 'one' })
+  await tick()
+  expect(sets).toEqual([['hoochi.classicMoments', 'PostToolBatch,MessageDisplay']])
+  // the change reloads hoochi; until then, the same value is not asked again
+  await turnEnds($, { answer: 'two' })
+  await tick()
+  expect(sets.length).toBe(1)
+})
+
+test('the option already saying what the rules use is left alone', { options: { classicMoments: 'PostToolBatch,MessageDisplay' } }, async ($, on) => {
+  machine(on, { [CONFIG]: config(item({ event: 'PostToolBatch', text: 'Check the batch.' })) })
+  let asked = 0
+  on('config.set', (_, e) => {
+    asked += 1
+    return { value: e.value } as never
+  })
+  on('classic.PostToolBatch', () => ({}))
+
+  await turnEnds($)
+  await tick()
+  expect(asked).toBe(0)
+  expect((await $.classic.PostToolBatch({ tool_calls: [] } as never)).additionalContext).toEqual(['Check the batch.'])
 })
 
 /** Starts a chat on the fake machine; returns the toasts it showed. */
